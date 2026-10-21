@@ -26,7 +26,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, Plus } from "lucide-react";
+import { Copy, Trash2, Plus } from "lucide-react";
 import {
   useCreateTeacherSalaryPackage,
   useUpdateTeacherSalaryPackage,
@@ -139,6 +139,24 @@ export function SalaryPackageDialog({ open, onOpenChange, editItem }: Props) {
 
   const handleAddRoleRate = () => {
     setRoleRates((prev) => [...prev, { role: "", unitPrice: "", ranges: [] }]);
+  };
+
+  const handleCopyRoleRate = (index: number) => {
+    setRoleRates((prev) => {
+      const source = prev[index];
+      if (!source || (trainingRoles.length > 0 && prev.length >= trainingRoles.length)) {
+        return prev;
+      }
+
+      return [
+        ...prev,
+        {
+          ...source,
+          role: "",
+          ranges: source.ranges.map((range) => ({ ...range })),
+        },
+      ];
+    });
   };
 
   const handleRemoveRoleRate = (index: number) => {
@@ -311,9 +329,24 @@ export function SalaryPackageDialog({ open, onOpenChange, editItem }: Props) {
                 <div key={roleIndex} className="space-y-3 rounded-md border p-3">
                   <div className="flex items-end gap-2">
                     <div className="flex-1 space-y-2">
-                      <label className="text-sm font-medium">
-                        Vai trò <span className="text-destructive">*</span>
-                      </label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium">
+                          Vai trò <span className="text-destructive">*</span>
+                        </label>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleCopyRoleRate(roleIndex)}
+                          disabled={!rate.role || (trainingRoles.length > 0 && roleRates.length >= trainingRoles.length)}
+                          aria-label="Sao chép dòng vai trò và mức lương"
+                          title="Sao chép dòng này"
+                          data-testid={`button-copy-package-role-${roleIndex}`}
+                          className="h-7 w-7"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </div>
                       <Select
                         value={rate.role || undefined}
                         onValueChange={(value) => setRoleRates((prev) => prev.map((item, index) =>
