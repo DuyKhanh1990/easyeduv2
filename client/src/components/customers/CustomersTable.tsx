@@ -41,7 +41,7 @@ function EndingSoonBadge({ classes, compact = false }: { classes: { className: s
   const [popPos, setPopPos] = useState<{ x: number; y: number } | null>(null);
   return (
     <span
-      className={cn("inline-flex items-center gap-0.5 text-orange-600 font-semibold cursor-default leading-none", compact ? "text-[12px]" : "text-[12.5px]")}
+      className={cn("inline-flex items-center gap-0.5 text-orange-600 font-semibold cursor-default leading-none", compact ? "text-[11px]" : "text-[12.5px]")}
       onMouseEnter={(e) => {
         const r = e.currentTarget.getBoundingClientRect();
         setPopPos({ x: r.left, y: r.bottom + 6 });
@@ -108,7 +108,7 @@ function OverdueInvoicesBadge({ invoices, compact = false }: { invoices: DebtInv
 
   return (
     <span
-      className={cn("inline-flex items-center gap-0.5 font-semibold cursor-default leading-none", compact ? "text-[12px]" : "text-[12.5px]", cfg.textColor)}
+      className={cn("inline-flex items-center gap-0.5 font-semibold cursor-default leading-none", compact ? "text-[11px]" : "text-[12.5px]", cfg.textColor)}
       onMouseEnter={(e) => {
         const r = e.currentTarget.getBoundingClientRect();
         setPopPos({ x: r.left, y: r.bottom + 6 });
@@ -481,10 +481,10 @@ export function CustomersTable({
               >
                 {name}
               </a>
-              <span className="font-['Roboto'] text-[12px] leading-tight text-slate-500">{student.code || "—"}</span>
+              <span className="font-['Roboto'] text-[11px] leading-tight text-slate-500">{student.code || "—"}</span>
               {(scoreResult?.gradeBandLabel || passLabel) && (
                 <span
-                  className="font-['Roboto'] text-[12px] font-bold leading-tight"
+                  className="font-['Roboto'] text-[11px] font-bold leading-tight"
                   title={[scoreResult?.assessmentName, scoreResult?.examDate ? formatDate(scoreResult.examDate) : null].filter(Boolean).join(" · ")}
                   data-testid={`latest-score-result-${student.id}`}
                 >
@@ -497,9 +497,9 @@ export function CustomersTable({
                   )}
                 </span>
               )}
-              <div className="customer-name-meta flex flex-wrap items-center gap-x-2 gap-y-1">
+              <div className="customer-class-name-meta flex flex-wrap items-center gap-x-2 gap-y-1">
                 {starBalancesMap[student.id] != null && starBalancesMap[student.id] > 0 && (
-                  <span className="flex items-center gap-0.5 text-xs text-amber-600 font-semibold leading-none">
+                  <span className="flex items-center gap-0.5 text-[11px] text-amber-600 font-semibold leading-none">
                     {starBalancesMap[student.id]}<Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
                   </span>
                 )}
@@ -1205,7 +1205,7 @@ export function CustomersTable({
   };
 
   const usesStandardCustomerFont = (columnId: string) =>
-    !["selection", "code", "fullName", "location"].includes(columnId);
+    !isClassRosterView && !["selection", "code", "fullName", "location"].includes(columnId);
 
   return (
     <>
@@ -1222,6 +1222,7 @@ export function CustomersTable({
                     isClassRosterView ? "px-2" : "px-3",
                   ),
                   "text-[11px] font-semibold text-slate-500 uppercase tracking-wide",
+                  isClassRosterView && "font-['Roboto'] !text-[13px]",
                   usesStandardCustomerFont(col.id) && "standard-customer-font",
                   getHeaderStyle(col)
                 )}

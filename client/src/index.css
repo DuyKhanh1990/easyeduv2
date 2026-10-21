@@ -105,6 +105,12 @@
     font-size: 11.5px !important;
   }
 
+  .customers-table .customer-class-name-meta,
+  .customers-table .customer-class-name-meta *:not(svg) {
+    font-family: 'Roboto', Helvetica, Arial, sans-serif !important;
+    font-size: 11px !important;
+  }
+
   .glass-panel {
     @apply bg-white/70 backdrop-blur-xl border border-white/20 shadow-sm;
   }
