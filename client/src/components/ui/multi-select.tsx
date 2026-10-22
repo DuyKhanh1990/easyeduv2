@@ -44,6 +44,7 @@ interface MultiSelectProps
     icon?: React.ComponentType<{ className?: string }>;
     color?: string;
     isActive?: boolean;
+    disabledReason?: string;
   }[];
   onValueChange: (value: string[]) => void;
   defaultValue?: string[];
@@ -263,7 +264,7 @@ export const MultiSelect = React.forwardRef<
                               <AlertCircle className="h-3.5 w-3.5 text-amber-500 ml-1 shrink-0" />
                             </TooltipTrigger>
                             <TooltipContent side="left">
-                              <p>Không hoạt động</p>
+                              <p>{option.disabledReason ?? "Không hoạt động"}</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>

@@ -56,6 +56,7 @@ import {
 import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import type { MyPermissionsResult } from "@/hooks/use-my-permissions";
+import { staffRoleAssignmentPermissionResource } from "@shared/staff-role-assignment-permissions";
 import { DOWNLOAD_FILES_RESOURCE } from "@/hooks/use-can-download-files";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, getAuthHeaders } from "@/lib/queryClient";
@@ -2370,6 +2371,17 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
       : permission;
   };
 
+  const staffRolePermissionItems = (departments ?? []).flatMap((department: any) =>
+    (department.roles ?? [])
+      .filter((role: any) => !["Học viên", "Phụ huynh"].includes(role.name))
+      .map((role: any) => ({
+        value: staffRoleAssignmentPermissionResource(role.id),
+        resource: staffRoleAssignmentPermissionResource(role.id),
+        name: `Quyền phân vai trò ${department.name} — ${role.name}`,
+        permissionKeys: ["canView"] as ("canView" | "canViewAll")[],
+        section: "Quyền phân vai trò",
+      })),
+  );
   const modules = navigation
     .filter((e): e is Extract<typeof navigation[number], { module: string }> => "module" in e)
     .filter(mod => isModuleVisible(mod.module))
@@ -2379,6 +2391,9 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
         .filter(item => isItemVisible(item.href, mod.module))
         .map(item => ({
           ...item,
+          permissionItems: item.href === "/staff"
+            ? [...(item.permissionItems ?? []), ...staffRolePermissionItems]
+            : item.permissionItems,
           subTabs: item.subTabs
             ?.filter(sub => isSubTabVisible(item.href, sub.value, mod.module))
             .map(sub => ({

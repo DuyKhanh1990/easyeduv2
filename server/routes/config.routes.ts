@@ -38,6 +38,7 @@ import {
   MY_SPACE_CALENDAR_RESOURCE,
   normalizeMySpaceCalendarPermissions,
 } from "@shared/my-space-calendar-permissions";
+import { staffRoleAssignmentPermissionResource } from "@shared/staff-role-assignment-permissions";
 import { eq, and, or, sql, notExists, inArray, ne, isNull } from "drizzle-orm";
 import {
   staff, staffAssignments, departments, users, roles, students, studentLocations, shiftTemplates, classes, studentClasses, centerConfig,
@@ -967,6 +968,20 @@ export function registerConfigRoutes(app: Express): void {
   app.post(api.staff.create.path, async (req, res) => {
     try {
       const body = { ...req.body, dateOfBirth: sanitizeDateField(req.body.dateOfBirth) };
+      const roleIds: string[] = Array.from(new Set<string>(
+        (Array.isArray(body.roleIds) ? body.roleIds : [])
+          .filter((roleId: unknown): roleId is string => typeof roleId === "string" && roleId.length > 0),
+      ));
+      const rolePermissions = await Promise.all(roleIds.map((roleId: string) =>
+        req.isSuperAdmin
+          ? Promise.resolve(true)
+          : storage.getEffectivePermissions(req.roleIds ?? [], staffRoleAssignmentPermissionResource(roleId))
+            .then(permission => permission.canView),
+      ));
+      if (rolePermissions.some(allowed => !allowed)) {
+        return res.status(403).json({ message: "Bạn chưa được cấp quyền phân vai trò đã chọn." });
+      }
+      body.roleIds = roleIds;
       const newStatus = body.status || "Hoạt động";
       if (newStatus === "Hoạt động") {
         const { limit, activeCount } = await getStaffLimitInfo();
@@ -997,6 +1012,29 @@ export function registerConfigRoutes(app: Express): void {
     try {
       const body = { ...req.body, dateOfBirth: sanitizeDateField(req.body.dateOfBirth) };
       const before = (await storage.getStaff(req.allowedLocationIds, req.isSuperAdmin)).find((item: any) => item.id === req.params.id);
+      const existingRoleIds: string[] = Array.isArray(before?.roleIds) ? before.roleIds : [];
+      const submittedRoleIds = Array.isArray(body.roleIds) ? body.roleIds : existingRoleIds;
+      const requestedRoleIds: string[] = Array.from(new Set<string>(
+        submittedRoleIds
+          .filter((roleId: unknown): roleId is string => typeof roleId === "string" && roleId.length > 0),
+      ));
+      const roleIdsToCheck = Array.from(new Set([...requestedRoleIds, ...existingRoleIds]));
+      const rolePermissions = await Promise.all(roleIdsToCheck.map(async (roleId: string) => ({
+        roleId,
+        allowed: req.isSuperAdmin
+          || (await storage.getEffectivePermissions(req.roleIds ?? [], staffRoleAssignmentPermissionResource(roleId))).canView,
+      })));
+      const allowedRoleIds = new Set(rolePermissions.filter(permission => permission.allowed).map(permission => permission.roleId));
+      const unauthorizedNewRoles = requestedRoleIds.filter(roleId =>
+        !existingRoleIds.includes(roleId) && !allowedRoleIds.has(roleId),
+      );
+      if (unauthorizedNewRoles.length > 0) {
+        return res.status(403).json({ message: "Bạn chưa được cấp quyền phân vai trò đã chọn." });
+      }
+      body.roleIds = Array.from(new Set([
+        ...requestedRoleIds,
+        ...existingRoleIds.filter(roleId => !allowedRoleIds.has(roleId)),
+      ]));
       if (body.status === "Hoạt động") {
         const { staff: staffSchema } = await import("@shared/schema");
         const [currentStaff] = await db.select({ status: staffSchema.status }).from(staffSchema).where(eq(staffSchema.id, req.params.id));

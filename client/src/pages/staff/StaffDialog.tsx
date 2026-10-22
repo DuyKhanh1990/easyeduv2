@@ -30,6 +30,8 @@ import {
 import { MultiSelect } from "@/components/ui/multi-select";
 import { useLocations } from "@/hooks/use-locations";
 import { useDepartments } from "@/hooks/use-departments";
+import { useMyPermissions } from "@/hooks/use-my-permissions";
+import { staffRoleAssignmentPermissionResource } from "@shared/staff-role-assignment-permissions";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Radio, UserRound, UsersRound, Eye, EyeOff } from "lucide-react";
@@ -70,6 +72,7 @@ interface StaffDialogProps {
 export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffDialogProps) {
   const { data: locations } = useLocations();
   const { data: departments } = useDepartments();
+  const { data: myPermissions } = useMyPermissions();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -176,7 +179,16 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
 
   const availableRoles = staffDepartments
     .filter((d: any) => selectedDepts.includes(d.id))
-    .flatMap((d: any) => d.roles) || [];
+    .flatMap((d: any) => (d.roles ?? [])
+      .filter((role: any) => !["Học viên", "Phụ huynh"].includes(role.name))
+      .map((role: any) => ({
+        ...role,
+        isActive: myPermissions?.isSuperAdmin === true
+          || myPermissions?.permissions?.[staffRoleAssignmentPermissionResource(role.id)]?.canView === true,
+        disabledReason: myPermissions
+          ? "Chưa được cấp quyền phân vai trò này"
+          : "Đang tải quyền phân vai trò",
+      }))) || [];
 
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -322,8 +334,18 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
                     <FormLabel className={FL}>Vai trò *</FormLabel>
                     <FormControl>
                       <MultiSelect
-                        options={availableRoles.map(r => ({ label: r.name, value: r.id }))}
-                        onValueChange={field.onChange}
+                        options={availableRoles.map((r: any) => ({
+                          label: r.name,
+                          value: r.id,
+                          isActive: r.isActive,
+                          disabledReason: r.disabledReason,
+                        }))}
+                        onValueChange={(nextRoleIds) => {
+                          const lockedExistingRoleIds = (staff?.roleIds ?? []).filter((roleId: string) =>
+                            availableRoles.some((role: any) => role.id === roleId && !role.isActive),
+                          );
+                          field.onChange(Array.from(new Set([...nextRoleIds, ...lockedExistingRoleIds])));
+                        }}
                         defaultValue={field.value}
                         placeholder="Chọn vai trò"
                         disabled={selectedDepts.length === 0}
