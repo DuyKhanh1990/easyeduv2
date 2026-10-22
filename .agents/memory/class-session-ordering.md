@@ -17,6 +17,12 @@ When a date/shift edit changes the chronological position, users choose one of t
 
 **How to apply:** Do not prompt when the resulting index is unchanged. In schedule-only mode, rotate date, shift, room, teacher, and learning format across fixed session IDs/indexes; never recreate or reassign linked data.
 
+Canceling a class session must preserve every `student_sessions` row and its student-specific details. Mark the class session canceled; do not delete its roster, attendance, notes, pricing, or review records.
+
+**Why:** The user explicitly requires canceled lessons to retain their full student list and information.
+
+**How to apply:** Keep the linked student-session rows intact when changing `class_sessions.status`. The session detail list reads those rows directly, so preserving them keeps the roster and its recorded details available.
+
 Cycle updates do not reposition lessons. From the selected lesson through the final lesson, assign the newly calculated timetable sequentially to the existing lesson positions. Every lesson keeps its identity, number, status, and linked data.
 
 **Why:** Recreating lessons can silently break attendance, finance, gradebook, and personalized-content links. A bounded middle range needs separate restoration rules that the current product does not expose.
