@@ -69,6 +69,18 @@ type ManualAdjustment = {
 
 const SURCHARGE_CATEGORY_ID = "__surcharge__";
 
+function getDefaultInvoiceItemName(
+  categoryId: string | null | undefined,
+  categories: any[],
+  surchargeName: string,
+): string {
+  if (categoryId === SURCHARGE_CATEGORY_ID) return surchargeName;
+  const categoryName = String(categories.find(category => category.id === categoryId)?.name ?? "");
+  const normalizedName = categoryName.toLocaleLowerCase();
+  if (normalizedName.includes("học phí") || normalizedName.includes("kho")) return "";
+  return categoryName;
+}
+
 type PaymentScheduleEntry = {
   id: string;
   label: string;
@@ -550,7 +562,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
           id: item.id ?? String(i + 1),
           packageId: item.packageId ?? null,
           packageType: item.packageType ?? null,
-          name: item.packageName ?? "",
+          name: String(item.packageName ?? "").trim()
+            ? item.packageName
+            : getDefaultInvoiceItemName(
+              isExistingSurchargeLine ? SURCHARGE_CATEGORY_ID : itemCat?.id ?? fallbackCatId,
+              allCategoriesForEdit,
+              t("finance.surcharge"),
+            ),
           unitPrice: parseFloat(item.unitPrice) || 0,
           quantity: item.quantity ?? 1,
           vatRate: Number(item.vatRate) || 0,
@@ -1113,7 +1131,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
 
   const addProduct = (categoryId?: string) => {
     const resolvedCategoryId = categoryId ?? products[0]?.categoryId ?? "";
-    setProducts(prev => [...prev, { id: Date.now().toString(), packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, vatRate: getCategoryVatRate(resolvedCategoryId), promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: resolvedCategoryId }]);
+    setProducts(prev => [...prev, { id: Date.now().toString(), packageId: null, packageType: null, name: getDefaultInvoiceItemName(resolvedCategoryId, allCategories, t("finance.surcharge")), unitPrice: 0, quantity: 1, vatRate: getCategoryVatRate(resolvedCategoryId), promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: resolvedCategoryId }]);
   };
   const removeProduct = (id: string) => setProducts(prev => prev.filter(p => p.id !== id));
   const ensureAdjustmentRows = (
@@ -1543,7 +1561,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       id,
       packageId: null,
       packageType: null,
-      name: "",
+      name: t("finance.surcharge"),
       unitPrice: 0,
       quantity: 1,
       vatRate: 0,
@@ -1646,6 +1664,10 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     if (!locationId) { toast({ title: t("finance.create.branchRequiredError"), variant: "destructive" }); return; }
     if (products.some(p => !p.categoryId)) { toast({ title: t("finance.create.categoryRequiredError"), variant: "destructive" }); return; }
     if (!studentId && !subjectName.trim()) { toast({ title: t("finance.create.nameRequiredError"), variant: "destructive" }); return; }
+    if (products.some(product => !product.name.trim())) {
+      toast({ title: t("finance.create.nameRequiredError"), variant: "destructive" });
+      return;
+    }
     const incompleteSurcharge = products.some(product =>
       product.categoryId === SURCHARGE_CATEGORY_ID &&
       (product.name.trim() || product.unitPrice !== 0) &&
@@ -2173,7 +2195,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                   </colgroup>
                   <thead className="bg-muted/60">
                     <tr className="border-b">
-                      <th className="p-2 text-left font-semibold text-muted-foreground">{t("finance.create.packageName")}</th>
+                       <th className="p-2 text-left font-semibold text-muted-foreground">
+                         {t("finance.create.packageName")} <span className="text-rose-500">*</span>
+                       </th>
                       <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.unitPrice")}</th>
                       <th className="p-2 text-center font-semibold text-muted-foreground">{t("finance.create.quantity")}</th>
                       <th className="p-2 text-right font-semibold text-muted-foreground">{t("finance.promotion")}</th>
@@ -2206,7 +2230,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                       vatAmountOverride: undefined,
                                       packageId: null,
                                       packageType: null,
-                                      name: "",
+                                      name: getDefaultInvoiceItemName(value, allCategories, t("finance.surcharge")),
                                       storeProductId: null,
                                       storeProductCode: null,
                                       warehouseId: null,
@@ -2252,7 +2276,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                           if (!group.categoryId) {
                                             const defaultVatRate = getCategoryVatRate(category.id);
                                             setProducts(prev => prev.map(product => product.categoryId === group.categoryId
-                                              ? { ...product, categoryId: category.id, vatRate: defaultVatRate, vatAmountOverride: undefined }
+                                              ? {
+                                                ...product,
+                                                categoryId: category.id,
+                                                name: getDefaultInvoiceItemName(category.id, allCategories, t("finance.surcharge")),
+                                                vatRate: defaultVatRate,
+                                                vatAmountOverride: undefined,
+                                              }
                                               : product));
                                           } else {
                                             addProduct(category.id);
@@ -2271,7 +2301,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                         onClick={() => {
                                           if (!group.categoryId) {
                                             setProducts(prev => prev.map(product => product.categoryId === group.categoryId
-                                              ? { ...product, categoryId: SURCHARGE_CATEGORY_ID }
+                                              ? { ...product, categoryId: SURCHARGE_CATEGORY_ID, name: t("finance.surcharge") }
                                               : product));
                                           } else {
                                             addProduct(SURCHARGE_CATEGORY_ID);

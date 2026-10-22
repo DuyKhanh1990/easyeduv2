@@ -255,6 +255,7 @@ async function syncSchedulePaymentSideEffects(
 }
 
 const invoiceItemBodySchema = insertInvoiceItemSchema.omit({ invoiceId: true }).extend({
+  packageName: z.string().trim().min(1, "Tên gói/dịch vụ là bắt buộc."),
   vatRate: z.coerce.number().int().refine(isInvoiceVatRate, "Tỷ lệ VAT không hợp lệ.").optional(),
   vatAmount: z.coerce.string().optional(),
   storeProductId: z.string().uuid().optional().nullable(),
