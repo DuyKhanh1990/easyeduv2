@@ -1626,10 +1626,9 @@ export function InvoicePrintTemplate({
     const pane = previewPaneRef.current;
     if (!pane) return;
     const availableWidth = Math.max(120, pane.clientWidth - 48);
-    const availableHeight = Math.max(160, pane.clientHeight - 72);
-    const scale = Math.min(1, availableWidth / editorPaperWidth, availableHeight / editorPaperHeight);
+    const scale = Math.min(1, availableWidth / editorPaperWidth);
     setPreviewScale(Math.max(0.15, Math.floor(scale * 100) / 100));
-  }, [editorPaperHeight, editorPaperWidth]);
+  }, [editorPaperWidth]);
 
   useLayoutEffect(() => {
     const pane = previewPaneRef.current;
