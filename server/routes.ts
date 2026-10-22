@@ -218,17 +218,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.status(400).json({ message: "Mật khẩu hiện tại không đúng." });
       }
 
-      const [staffProfile] = await db
-        .select({ id: staff.id })
-        .from(staff)
-        .where(eq(staff.userId, userId))
-        .limit(1);
       const updateValues: Partial<typeof users.$inferInsert> = {
         passwordHash: hashPassword(parsed.data.newPassword),
+        passwordEncrypted: encrypt(parsed.data.newPassword),
         authVersion: (user.authVersion ?? 0) + 1,
         updatedAt: new Date(),
       };
-      if (staffProfile) updateValues.passwordEncrypted = encrypt(parsed.data.newPassword);
 
       await db.transaction(async (tx) => {
         await tx.update(users).set(updateValues).where(eq(users.id, userId));
