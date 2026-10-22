@@ -96,14 +96,11 @@ export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = fal
                     )}
                     {canEdit && (
                       <button
-                        className={actionBtn(scheduleActions.isCancelled ? "from-emerald-500 to-teal-600" : "from-red-500 to-rose-500")}
-                        onClick={() => scheduleActions.isCancelled
-                          ? scheduleActions.openRestoreSession()
-                          : scheduleActions.openCancelSession()}
+                        className={actionBtn("from-red-500 to-rose-500", scheduleActions.isCancelled ? "opacity-50 cursor-not-allowed" : "")}
+                        onClick={() => scheduleActions.openCancelSession()}
+                        disabled={scheduleActions.isCancelled}
                       >
-                        {scheduleActions.isCancelled
-                          ? "Hoàn hủy buổi"
-                          : <><XCircle className="h-3 w-3" /> Huỷ buổi</>}
+                        <XCircle className="h-3 w-3" /> Huỷ buổi
                       </button>
                     )}
                     {canEdit && (

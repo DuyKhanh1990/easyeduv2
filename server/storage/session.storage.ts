@@ -114,7 +114,6 @@ export async function recalculateStudentClass(studentClassId: string, tx?: any):
   .where(and(
     eq(studentSessions.studentClassId, studentClassId),
     sql`${studentSessions.status} NOT IN ('transferred', 'cancelled')`,
-    sql`${classSessions.status} != 'cancelled'`,
   ));
 
   const result = stats[0];
@@ -171,10 +170,7 @@ export async function recalculateClass(classId: string, tx?: any): Promise<void>
       endDate:   sql<string>`MAX(${classSessions.sessionDate})`,
     })
     .from(classSessions)
-    .where(and(
-      eq(classSessions.classId, classId),
-      sql`${classSessions.status} != 'cancelled'`,
-    ));
+    .where(eq(classSessions.classId, classId));
 
     startDate = sessionRange[0]?.startDate ?? null;
     endDate   = sessionRange[0]?.endDate ?? null;
@@ -231,7 +227,6 @@ export async function batchRecalculateStudentClasses(
   .where(and(
     inArray(studentSessions.studentClassId, scIds),
     sql`${studentSessions.status} NOT IN ('transferred', 'cancelled')`,
-    sql`${classSessions.status} != 'cancelled'`,
   ))
   .groupBy(studentSessions.studentClassId);
 
@@ -576,7 +571,6 @@ export async function transferStudentClass(data: {
       eq(studentSessions.classId, data.fromClassId),
       sql`${classSessions.sessionIndex} >= ${data.fromSessionIndex}`,
       sql`${studentSessions.status} NOT IN ('transferred', 'cancelled')`,
-      sql`${classSessions.status} != 'cancelled'`,
     ))
     .orderBy(asc(classSessions.sessionIndex))
     .limit(data.transferCount);
@@ -2851,94 +2845,49 @@ export async function getClassCycles(classId: string): Promise<Array<{
 export async function cancelClassSessions(params: { classId: string; fromSessionId: string; toSessionId: string; reason: string; userId: string }): Promise<void> {
   const { classId, fromSessionId, toSessionId, reason, userId } = params;
 
-  await db.transaction(async (tx) => {
-    const [fromSession] = await tx.select().from(classSessions).where(and(
-      eq(classSessions.id, fromSessionId),
-      eq(classSessions.classId, classId),
-    ));
-    const [toSession] = await tx.select().from(classSessions).where(and(
-      eq(classSessions.id, toSessionId),
-      eq(classSessions.classId, classId),
-    ));
-    if (!fromSession || !toSession) throw new Error("Không tìm thấy buổi học");
+  const [fromSession] = await db.select().from(classSessions).where(eq(classSessions.id, fromSessionId));
+  const [toSession] = await db.select().from(classSessions).where(eq(classSessions.id, toSessionId));
 
-    const fromIndex = Math.min(fromSession.sessionIndex || 0, toSession.sessionIndex || 0);
-    const toIndex = Math.max(fromSession.sessionIndex || 0, toSession.sessionIndex || 0);
-    const affectedSessions = await tx.select({ id: classSessions.id })
-      .from(classSessions)
-      .where(and(
-        eq(classSessions.classId, classId),
-        sql`${classSessions.sessionIndex} BETWEEN ${fromIndex} AND ${toIndex}`,
-      ));
-    const affectedIds = affectedSessions.map((session) => session.id);
-    const affectedStudentClasses = affectedIds.length > 0
-      ? await tx.selectDistinct({ studentClassId: studentSessions.studentClassId })
-        .from(studentSessions)
-        .where(inArray(studentSessions.classSessionId, affectedIds))
-      : [];
+  if (!fromSession || !toSession) throw new Error("Không tìm thấy buổi học");
 
-    await tx.update(classSessions)
-      .set({
-        status: "cancelled",
-        cancelReason: reason,
-        cancelledAt: new Date(),
-        cancelledBy: userId,
-        updatedAt: new Date(),
-      })
-      .where(and(
-        eq(classSessions.classId, classId),
-        sql`${classSessions.sessionIndex} BETWEEN ${fromIndex} AND ${toIndex}`,
-      ));
+  const fromIndex = fromSession.sessionIndex || 0;
+  const toIndex = toSession.sessionIndex || 0;
 
-    // Preserve student-session rows and their links so a mistaken cancellation
-    // can be reversed without reconstructing the student's lesson data.
-    const affectedScIds = affectedStudentClasses
-      .map((row) => row.studentClassId)
-      .filter((id): id is string => !!id);
-    await batchRecalculateStudentClasses(affectedScIds, classId, tx);
-  });
-}
-
-export async function restoreClassSession(params: {
-  classId: string;
-  classSessionId: string;
-}): Promise<void> {
-  const { classId, classSessionId } = params;
-  await db.transaction(async (tx) => {
-    const [session] = await tx.select({
-      id: classSessions.id,
-      status: classSessions.status,
+  await db.update(classSessions)
+    .set({
+      status: "cancelled",
+      cancelReason: reason,
+      cancelledAt: new Date(),
+      cancelledBy: userId,
+      updatedAt: new Date(),
     })
-      .from(classSessions)
-      .where(and(
-        eq(classSessions.id, classSessionId),
-        eq(classSessions.classId, classId),
-      ))
-      .limit(1);
-    if (!session) throw new Error("Không tìm thấy buổi học");
-    if (session.status !== "cancelled") throw new Error("Buổi học không ở trạng thái đã hủy");
+    .where(and(
+      eq(classSessions.classId, classId),
+      sql`${classSessions.sessionIndex} BETWEEN ${fromIndex} AND ${toIndex}`,
+    ));
 
-    const affectedStudentClasses = await tx.selectDistinct({
-      studentClassId: studentSessions.studentClassId,
-    })
+  const affectedSessions = await db.select({ id: classSessions.id })
+    .from(classSessions)
+    .where(and(
+      eq(classSessions.classId, classId),
+      sql`${classSessions.sessionIndex} BETWEEN ${fromIndex} AND ${toIndex}`,
+    ));
+
+  const affectedIds = affectedSessions.map(s => s.id);
+  if (affectedIds.length > 0) {
+    const affectedStudentClasses = await db.selectDistinct({ studentClassId: studentSessions.studentClassId })
       .from(studentSessions)
-      .where(eq(studentSessions.classSessionId, classSessionId));
+      .where(inArray(studentSessions.classSessionId, affectedIds));
 
-    await tx.update(classSessions)
-      .set({
-        status: "scheduled",
-        cancelReason: null,
-        cancelledAt: null,
-        cancelledBy: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(classSessions.id, classSessionId));
+    await db.delete(studentSessions)
+      .where(inArray(studentSessions.classSessionId, affectedIds));
 
+    // FIX: Batch recalculate học viên bị ảnh hưởng → ~5 queries thay vì N×5 queries
     const affectedScIds = affectedStudentClasses
-      .map((row) => row.studentClassId)
+      .map(sc => sc.studentClassId)
       .filter((id): id is string => !!id);
-    await batchRecalculateStudentClasses(affectedScIds, classId, tx);
-  });
+    await batchRecalculateStudentClasses(affectedScIds, classId);
+  }
 }
 
 // ---------------------------------------------------------------------------

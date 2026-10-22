@@ -1,10 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { isSameDay } from "date-fns";
-import { useMutation } from "@tanstack/react-query";
 import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
-import { useToast } from "@/hooks/use-toast";
 import { getCenterDateString, isPastCenterDate } from "@/lib/center-time-format";
-import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export interface ScheduleHeaderActions {
   selectedSessionId: string | null;
@@ -14,7 +11,6 @@ export interface ScheduleHeaderActions {
   openUpdateSession: () => void;
   openChangeTeacher: () => void;
   openCancelSession: () => void;
-  openRestoreSession: () => void;
   openUpdateCycle: () => void;
   openExcludeSession: () => void;
   openDeleteSchedule: () => void;
@@ -44,31 +40,6 @@ export function useScheduleTab({
   const today = getCenterDateString();
 
   const [isCancelSessionsDialogOpen, setIsCancelSessionsDialogOpen] = useState(false);
-  const { toast } = useToast();
-  const restoreSessionMutation = useMutation({
-    mutationFn: async (sessionId: string) => {
-      await apiRequest("POST", `/api/classes/${classId}/restore-cancelled-session`, { sessionId });
-    },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/sessions`] }),
-        queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/active-students`] }),
-        queryClient.invalidateQueries({ queryKey: [`/api/class-sessions/${selectedClassSessionId}/student-sessions`] }),
-        queryClient.invalidateQueries({ queryKey: ["/api/classes", classId] }),
-      ]);
-      toast({ title: "Thành công", description: "Đã hoàn hủy buổi học" });
-    },
-    onError: (error: any) => toast({
-      title: "Lỗi",
-      description: error?.message || "Không thể hoàn hủy buổi học",
-      variant: "destructive",
-    }),
-  });
-  const openRestoreSession = useCallback(() => {
-    if (!selectedClassSessionId) return;
-    if (!window.confirm("Hoàn hủy buổi học này và khôi phục trạng thái như bình thường?")) return;
-    restoreSessionMutation.mutate(selectedClassSessionId);
-  }, [selectedClassSessionId, restoreSessionMutation.mutate]);
   const [isDeleteScheduleOpen, setIsDeleteScheduleOpen] = useState(false);
   const [isExcludeSessionsOpen, setIsExcludeSessionsOpen] = useState(false);
   const [isUpdateSessionOpen, setIsUpdateSessionOpen] = useState(false);
@@ -170,12 +141,11 @@ export function useScheduleTab({
         setSelectedSessionId(selectedClassSessionId);
         setIsCancelSessionsDialogOpen(true);
       },
-        openRestoreSession,
       openUpdateCycle: () => setIsUpdateCycleOpen(true),
       openExcludeSession: () => setIsExcludeSessionsOpen(true),
       openDeleteSchedule: () => setIsDeleteScheduleOpen(true),
     });
-  }, [selectedClassSessionId, classSessions, onActionsChange, canRunPast, today, openRestoreSession]);
+  }, [selectedClassSessionId, classSessions, onActionsChange, canRunPast, today]);
 
   return {
     selectedClassSessionId,

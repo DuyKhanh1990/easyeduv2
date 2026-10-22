@@ -5324,40 +5324,6 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/classes/:id/restore-cancelled-session", async (req, res) => {
-    try {
-      if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
-      const classId = req.params.id;
-      const sessionId = String(req.body?.sessionId ?? "");
-      if (!sessionId) return res.status(400).json({ message: "Thiếu mã buổi học" });
-
-      const [session] = await db.select({
-        sessionIndex: classSessions.sessionIndex,
-      })
-        .from(classSessions)
-        .where(and(
-          eq(classSessions.id, sessionId),
-          eq(classSessions.classId, classId),
-          eq(classSessions.status, "cancelled"),
-        ))
-        .limit(1);
-      if (!session) return res.status(404).json({ message: "Không tìm thấy buổi đã hủy" });
-      if (!(await assertNoPastClassSessions(
-        req,
-        res,
-        classId,
-        session.sessionIndex ?? 0,
-        session.sessionIndex ?? 0,
-      ))) return;
-
-      await storage.restoreClassSession({ classId, classSessionId: sessionId });
-      emitCalendarUpdateForClass(classId).catch(() => {});
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(400).json({ message: err.message || "Không thể hoàn hủy buổi học" });
-    }
-  });
-
   // Check attendance for exclusion
   app.post(api.classes.checkAttendanceForExclusion.path, async (req, res) => {
     try {

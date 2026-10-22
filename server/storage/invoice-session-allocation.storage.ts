@@ -1,8 +1,7 @@
 import {
   db, eq, and, inArray,
-  invoiceSessionAllocations, invoiceItems, studentSessions, classSessions, tuitionPackageSessionAdjustments,
+  invoiceSessionAllocations, invoiceItems, studentSessions, tuitionPackageSessionAdjustments,
 } from "./base";
-import { ne } from "drizzle-orm";
 import type { InvoiceSessionAllocation } from "@shared/schema";
 
 // ==========================================
@@ -54,12 +53,10 @@ async function distributeInvoiceFeeToSessionsWithExecutor(
   for (const item of eligibleItems) {
     const matchedSessions = await executor.select()
       .from(studentSessions)
-      .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
       .where(and(
         eq(studentSessions.studentId, studentId),
         eq(studentSessions.classId, classId),
         eq(studentSessions.packageId, item.packageId!),
-        ne(classSessions.status, "cancelled"),
       ))
       .orderBy(studentSessions.sessionOrder);
 
