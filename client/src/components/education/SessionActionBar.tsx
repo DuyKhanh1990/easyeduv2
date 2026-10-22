@@ -5,6 +5,7 @@ import {
   XCircle,
   Trash2,
   RefreshCw,
+  RotateCcw,
 } from "lucide-react";
 import type { ClassPermissions } from "@/pages/education/ClassDetail";
 
@@ -21,6 +22,8 @@ interface SessionActionBarProps {
   setIsDeleteScheduleOpen: (open: boolean) => void;
   classPerm?: ClassPermissions;
   classId?: string;
+  onRestoreCancelledSession?: (sessionId: string) => void;
+  isRestoringCancelledSession?: boolean;
 }
 
 const btn = (grad: string, extra?: string) =>
@@ -38,6 +41,8 @@ export function SessionActionBar({
   setIsExcludeSessionsOpen,
   setIsDeleteScheduleOpen,
   classPerm,
+  onRestoreCancelledSession,
+  isRestoringCancelledSession = false,
 }: SessionActionBarProps) {
   const canAdd = classPerm?.canAdd ?? true;
   const canEdit = classPerm?.canEdit ?? true;
@@ -76,10 +81,18 @@ export function SessionActionBar({
               <UserCog className="h-3 w-3" /> Đổi giáo viên
             </button>
           )}
-          {canEdit && (
+          {canEdit && (isCancelled ? (
             <button
-              className={btn("from-red-500 to-rose-500", isCancelled ? "opacity-50 cursor-not-allowed" : "")}
-              disabled={isCancelled}
+              className={btn("from-emerald-500 to-teal-600", isRestoringCancelledSession ? "opacity-60 cursor-wait" : "")}
+              disabled={isRestoringCancelledSession}
+              onClick={() => onRestoreCancelledSession?.(selectedClassSessionId)}
+              data-testid="button-restore-cancelled-session"
+            >
+              <RotateCcw className="h-3 w-3" /> {isRestoringCancelledSession ? "Đang hoàn hủy..." : "Hoàn hủy buổi"}
+            </button>
+          ) : (
+            <button
+              className={btn("from-red-500 to-rose-500")}
               onClick={() => {
                 setSelectedSessionId(selectedClassSessionId || undefined);
                 setIsCancelSessionsDialogOpen(true);
@@ -87,7 +100,7 @@ export function SessionActionBar({
             >
               <XCircle className="h-3 w-3" /> Huỷ buổi
             </button>
-          )}
+          ))}
           {canEdit && (
             <button
               className={btn("from-emerald-500 to-teal-500")}

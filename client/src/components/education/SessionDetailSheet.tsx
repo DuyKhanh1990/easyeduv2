@@ -4,7 +4,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Calendar, UserCog, XCircle, Trash2, CalendarDays, Plus,
+  Calendar, UserCog, XCircle, Trash2, CalendarDays, Plus, RotateCcw,
 } from "lucide-react";
 import { ScheduleTabContent } from "@/components/education/ScheduleTabContent";
 import { ScheduleHeaderActions } from "@/hooks/use-schedule-tab";
@@ -94,15 +94,23 @@ export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = fal
                         <UserCog className="h-3 w-3" /> Đổi giáo viên
                       </button>
                     )}
-                    {canEdit && (
+                    {canEdit && scheduleActions.isCancelled ? (
                       <button
-                        className={actionBtn("from-red-500 to-rose-500", scheduleActions.isCancelled ? "opacity-50 cursor-not-allowed" : "")}
+                        className={actionBtn("from-emerald-500 to-teal-600", scheduleActions.isRestoringCancelledSession ? "opacity-60 cursor-wait" : "")}
+                        onClick={scheduleActions.restoreCancelledSession}
+                        disabled={scheduleActions.isRestoringCancelledSession}
+                        data-testid="button-restore-cancelled-session"
+                      >
+                        <RotateCcw className="h-3 w-3" /> {scheduleActions.isRestoringCancelledSession ? "Đang hoàn hủy..." : "Hoàn hủy buổi"}
+                      </button>
+                    ) : canEdit && !scheduleActions.isCancelled ? (
+                      <button
+                        className={actionBtn("from-red-500 to-rose-500")}
                         onClick={() => scheduleActions.openCancelSession()}
-                        disabled={scheduleActions.isCancelled}
                       >
                         <XCircle className="h-3 w-3" /> Huỷ buổi
                       </button>
-                    )}
+                    ) : null}
                     {canEdit && (
                       <button onClick={() => scheduleActions.openUpdateCycle()} className={actionBtn("from-emerald-500 to-teal-600")}>
                         <Calendar className="h-3 w-3" /> Cập nhật chu kỳ

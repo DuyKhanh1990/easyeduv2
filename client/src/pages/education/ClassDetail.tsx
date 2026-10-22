@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { ArrowLeft, XCircle, X, Plus, RefreshCw, UserCog, Calendar, Trash2, Copy } from "lucide-react";
+import { ArrowLeft, XCircle, X, Plus, RefreshCw, UserCog, Calendar, Trash2, Copy, RotateCcw } from "lucide-react";
 import { ScheduleHeaderActions } from "@/hooks/use-schedule-tab";
 import { WaitingTabContent } from "@/components/education/WaitingTabContent";
 import { ActiveTabContent } from "@/components/education/ActiveTabContent";
@@ -462,10 +462,19 @@ export function ClassDetail() {
                           <UserCog className="h-3 w-3" /> Đổi giáo viên
                         </button>
                       )}
-                      {classPerm.canEdit && !scheduleActions.isPastReadOnly && (
+                      {classPerm.canEdit && scheduleActions.isCancelled && !scheduleActions.isPastReadOnly && (
                         <button
-                          className={actionBtn("from-red-500 to-rose-500", scheduleActions.isCancelled ? "opacity-50 cursor-not-allowed" : "")}
-                          disabled={scheduleActions.isCancelled}
+                          className={actionBtn("from-emerald-500 to-teal-500", scheduleActions.isRestoringCancelledSession ? "opacity-60 cursor-wait" : "")}
+                          disabled={scheduleActions.isRestoringCancelledSession}
+                          onClick={scheduleActions.restoreCancelledSession}
+                          data-testid="button-restore-cancelled-session"
+                        >
+                          <RotateCcw className="h-3 w-3" /> {scheduleActions.isRestoringCancelledSession ? "Đang hoàn hủy..." : "Hoàn hủy buổi"}
+                        </button>
+                      )}
+                      {classPerm.canEdit && !scheduleActions.isCancelled && !scheduleActions.isPastReadOnly && (
+                        <button
+                          className={actionBtn("from-red-500 to-rose-500")}
                           onClick={() => scheduleActions.openCancelSession()}
                         >
                           <XCircle className="h-3 w-3" /> Huỷ buổi

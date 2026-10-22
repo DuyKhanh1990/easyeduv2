@@ -522,6 +522,7 @@ export const api = {
     deleteSessions: { path: "/api/classes/delete-sessions", method: "POST" },
     updateCycle: { path: "/api/classes/:id/update-cycle", method: "POST" },
     cancelSessions: { path: "/api/classes/:id/cancel-sessions", method: "POST" },
+    restoreCancelledSession: { path: "/api/classes/:id/restore-cancelled-session", method: "POST" },
     checkAttendanceForExclusion: { path: "/api/classes/check-attendance-for-exclusion", method: "POST" },
     excludeSessions: { path: "/api/classes/exclude-sessions", method: "POST" },
     exclusions: { path: "/api/classes/:id/exclusions", method: "GET" },

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { VoucherHint } from "@/components/finance/VoucherHint";
 import { useToast } from "@/hooks/use-toast";
@@ -7,7 +7,7 @@ import { getCenterDateString, isPastCenterDate } from "@/lib/center-time-format"
 import { apiRequest } from "@/lib/queryClient";
 import { normalizeSearchText } from "@/lib/search-text";
 import { useScheduleTab, ScheduleHeaderActions } from "@/hooks/use-schedule-tab";
-import { useClassMutations } from "@/hooks/use-class-mutations";
+import { useClassMutations, useRestoreCancelledSessionMutation } from "@/hooks/use-class-mutations";
 import {
   Dialog,
   DialogContent,
@@ -85,6 +85,11 @@ export function ScheduleTabContent({
     canRunPast || !session.sessionDate || !isPastCenterDate(session.sessionDate, today),
   );
 
+  const restoreCancelledSessionMutation = useRestoreCancelledSessionMutation(classId);
+  const handleRestoreCancelledSession = useCallback(
+    (sessionId: string) => restoreCancelledSessionMutation.mutate(sessionId),
+    [restoreCancelledSessionMutation.mutate],
+  );
   const {
     selectedClassSessionId,
     setSelectedClassSessionId,
@@ -174,7 +179,14 @@ export function ScheduleTabContent({
     setApplyScoreSheetFromIdx,
     applyScoreSheetToIdx,
     setApplyScoreSheetToIdx,
-  } = useScheduleTab({ classId, classSessions, onActionsChange, initialSessionId });
+  } = useScheduleTab({
+    classId,
+    classSessions,
+    onActionsChange,
+    initialSessionId,
+    onRestoreCancelledSession: handleRestoreCancelledSession,
+    isRestoringCancelledSession: restoreCancelledSessionMutation.isPending,
+  });
 
   const [previewConflicts, setPreviewConflicts] = useState<any[]>([]);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
@@ -702,6 +714,8 @@ export function ScheduleTabContent({
               setIsDeleteScheduleOpen={setIsDeleteScheduleOpen}
               classPerm={classPerm}
               classId={classId}
+              onRestoreCancelledSession={handleRestoreCancelledSession}
+              isRestoringCancelledSession={restoreCancelledSessionMutation.isPending}
               showGrid={false}
             />
           )}

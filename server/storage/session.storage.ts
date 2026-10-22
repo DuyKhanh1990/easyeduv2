@@ -2893,6 +2893,44 @@ export async function cancelClassSessions(params: { classId: string; fromSession
   });
 }
 
+/**
+ * Restore one canceled lesson without recreating or changing its student-session rows.
+ * Cancellation metadata is retained on the class-session row as history.
+ */
+export async function restoreCancelledClassSession(params: { classId: string; sessionId: string }): Promise<void> {
+  const { classId, sessionId } = params;
+
+  await db.transaction(async (tx) => {
+    const [session] = await tx.select({
+      id: classSessions.id,
+      status: classSessions.status,
+    }).from(classSessions).where(and(
+      eq(classSessions.id, sessionId),
+      eq(classSessions.classId, classId),
+    )).for("update");
+
+    if (!session) throw new Error("Không tìm thấy buổi học");
+    if (session.status !== "cancelled") throw new Error("Buổi học không ở trạng thái đã hủy");
+
+    const linkedStudentClasses = await tx.selectDistinct({
+      studentClassId: studentSessions.studentClassId,
+    }).from(studentSessions).where(eq(studentSessions.classSessionId, sessionId));
+
+    await tx.update(classSessions)
+      .set({ status: "scheduled", updatedAt: new Date() })
+      .where(and(
+        eq(classSessions.id, sessionId),
+        eq(classSessions.classId, classId),
+        eq(classSessions.status, "cancelled"),
+      ));
+
+    const studentClassIds = linkedStudentClasses
+      .map((row) => row.studentClassId)
+      .filter((id): id is string => !!id);
+    await batchRecalculateStudentClasses(studentClassIds, classId, tx);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // batchCaseIdUpdate — helper
 // ---------------------------------------------------------------------------

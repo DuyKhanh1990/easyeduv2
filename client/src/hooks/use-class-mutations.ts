@@ -462,3 +462,44 @@ export function useClassMutations(
     removeWaitingStudentMutation,
   };
 }
+
+export function useRestoreCancelledSessionMutation(classId?: string) {
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (sessionId: string) => {
+      if (!classId) throw new Error("Thiếu thông tin lớp học");
+      const response = await apiRequest("POST", `/api/classes/${classId}/restore-cancelled-session`, { sessionId });
+      return response.json();
+    },
+    onSuccess: (_data, sessionId) => {
+      if (classId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/sessions`] });
+        queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/active-students`] });
+        queryClient.invalidateQueries({ queryKey: ["/api/classes", classId] });
+        queryClient.invalidateQueries({ queryKey: ["/api/classes", classId, "sessions"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/classes", classId, "active-students"] });
+        queryClient.invalidateQueries({ queryKey: [`/api/class-sessions/${sessionId}/student-sessions`] });
+        queryClient.invalidateQueries({ queryKey: ["/api/class-sessions", sessionId, "student-sessions"] });
+        queryClient.invalidateQueries({
+          predicate: (query) => {
+            const key = query.queryKey[0];
+            return typeof key === "string" && (
+              key.startsWith(`/api/classes/${classId}/student/`) ||
+              key.startsWith("/api/my-space/calendar") ||
+              key === "/api/schedule"
+            );
+          },
+        });
+      }
+      toast({ title: "Thành công", description: "Đã hoàn hủy buổi học; danh sách và thông tin học viên được giữ nguyên" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Lỗi",
+        description: error.message || "Không thể hoàn hủy buổi học",
+        variant: "destructive",
+      });
+    },
+  });
+}

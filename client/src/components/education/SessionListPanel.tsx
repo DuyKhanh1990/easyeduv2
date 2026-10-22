@@ -21,6 +21,8 @@ interface SessionListPanelProps {
   setIsDeleteScheduleOpen: (open: boolean) => void;
   classPerm?: ClassPermissions;
   classId?: string;
+  onRestoreCancelledSession?: (sessionId: string) => void;
+  isRestoringCancelledSession?: boolean;
   /** When true (default), render the session grid. Set false to show only the action bar. */
   showGrid?: boolean;
 }
@@ -40,6 +42,8 @@ export function SessionListPanel({
   setIsDeleteScheduleOpen,
   classPerm,
   classId,
+  onRestoreCancelledSession,
+  isRestoringCancelledSession,
   showGrid = true,
 }: SessionListPanelProps) {
   return (
@@ -67,6 +71,8 @@ export function SessionListPanel({
               setIsDeleteScheduleOpen={setIsDeleteScheduleOpen}
               classPerm={classPerm}
               classId={classId}
+              onRestoreCancelledSession={onRestoreCancelledSession}
+              isRestoringCancelledSession={isRestoringCancelledSession}
             />
           </div>
         </div>

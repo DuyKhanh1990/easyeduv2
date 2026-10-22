@@ -5324,6 +5324,41 @@ export function registerClassesRoutes(app: Express): void {
     }
   });
 
+  // Restore a canceled session without changing any linked student-session data.
+  app.post(api.classes.restoreCancelledSession.path, async (req, res) => {
+    try {
+      if (!(await assertScheduleMutationPermission(req, res, "canEdit"))) return;
+      const classId = String(req.params.id);
+      const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
+      if (!sessionId) return res.status(400).json({ message: "Thiếu buổi học cần hoàn hủy" });
+
+      const [session] = await db.select({
+        id: classSessions.id,
+        status: classSessions.status,
+        sessionDate: classSessions.sessionDate,
+      }).from(classSessions).where(and(
+        eq(classSessions.id, sessionId),
+        eq(classSessions.classId, classId),
+      )).limit(1);
+
+      if (!session) return res.status(404).json({ message: "Không tìm thấy buổi học" });
+      if (session.status !== "cancelled") {
+        return res.status(400).json({ message: "Buổi học không ở trạng thái đã hủy" });
+      }
+      if (!(await assertNoPastScheduleDates(
+        req,
+        res,
+        [session.sessionDate],
+      ))) return;
+
+      await storage.restoreCancelledClassSession({ classId, sessionId });
+      res.json({ success: true });
+      emitCalendarUpdateForClass(classId).catch(() => {});
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Không thể hoàn hủy buổi học" });
+    }
+  });
+
   // Check attendance for exclusion
   app.post(api.classes.checkAttendanceForExclusion.path, async (req, res) => {
     try {

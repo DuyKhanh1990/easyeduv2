@@ -23,6 +23,12 @@ Canceling a class session must preserve every `student_sessions` row and its stu
 
 **How to apply:** Keep the linked student-session rows intact when changing `class_sessions.status`. The session detail list reads those rows directly, so preserving them keeps the roster and its recorded details available.
 
+Restoring a canceled session only changes its class-session status back to `scheduled`; keep the student-session rows and cancellation metadata unchanged.
+
+**Why:** The user requires a canceled lesson to return to normal without losing any information associated with it.
+
+**How to apply:** Validate the canceled state and edit permission, update only the class-session status, and never recreate or rewrite the linked student-session records.
+
 Cycle updates do not reposition lessons. From the selected lesson through the final lesson, assign the newly calculated timetable sequentially to the existing lesson positions. Every lesson keeps its identity, number, status, and linked data.
 
 **Why:** Recreating lessons can silently break attendance, finance, gradebook, and personalized-content links. A bounded middle range needs separate restoration rules that the current product does not expose.

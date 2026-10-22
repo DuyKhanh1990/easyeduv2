@@ -7,6 +7,8 @@ export interface ScheduleHeaderActions {
   selectedSessionId: string | null;
   isCancelled: boolean;
   isPastReadOnly: boolean;
+  isRestoringCancelledSession: boolean;
+  restoreCancelledSession: () => void;
   openContent: () => void;
   openUpdateSession: () => void;
   openChangeTeacher: () => void;
@@ -23,6 +25,8 @@ interface UseScheduleTabParams {
   classSessions: any[] | undefined;
   onActionsChange?: (actions: ScheduleHeaderActions | null) => void;
   initialSessionId?: string | null;
+  onRestoreCancelledSession?: (sessionId: string) => void;
+  isRestoringCancelledSession?: boolean;
 }
 
 export function useScheduleTab({
@@ -30,6 +34,8 @@ export function useScheduleTab({
   classSessions,
   onActionsChange,
   initialSessionId,
+  onRestoreCancelledSession,
+  isRestoringCancelledSession = false,
 }: UseScheduleTabParams) {
   const [selectedClassSessionId, setSelectedClassSessionId] = useState<string | null>(null);
   const [sessionPage, setSessionPage] = useState(0);
@@ -134,6 +140,8 @@ export function useScheduleTab({
       selectedSessionId: selectedClassSessionId,
       isCancelled: session?.status === "cancelled",
       isPastReadOnly,
+      isRestoringCancelledSession,
+      restoreCancelledSession: () => onRestoreCancelledSession?.(selectedClassSessionId),
       openContent: () => setIsSessionContentDialogOpen(true),
       openUpdateSession: () => setIsUpdateSessionOpen(true),
       openChangeTeacher: () => setIsChangeTeacherOpen(true),
@@ -145,7 +153,7 @@ export function useScheduleTab({
       openExcludeSession: () => setIsExcludeSessionsOpen(true),
       openDeleteSchedule: () => setIsDeleteScheduleOpen(true),
     });
-  }, [selectedClassSessionId, classSessions, onActionsChange, canRunPast, today]);
+  }, [selectedClassSessionId, classSessions, onActionsChange, canRunPast, today, onRestoreCancelledSession, isRestoringCancelledSession]);
 
   return {
     selectedClassSessionId,
