@@ -350,7 +350,7 @@ export interface IStorage {
   // Finance - Transaction Categories
   getFinanceTransactionCategories(type?: string): Promise<FinanceTransactionCategory[]>;
   createFinanceTransactionCategory(data: InsertFinanceTransactionCategory): Promise<FinanceTransactionCategory>;
-  updateFinanceTransactionCategory(id: string, data: Partial<InsertFinanceTransactionCategory>): Promise<FinanceTransactionCategory>;
+  updateFinanceTransactionCategory(id: string, data: Pick<InsertFinanceTransactionCategory, "vatRate">): Promise<FinanceTransactionCategory>;
   deleteFinanceTransactionCategory(id: string): Promise<void>;
 
   // Finance - Promotions & Surcharges
@@ -1190,7 +1190,7 @@ export class DatabaseStorage implements IStorage {
     return financeStorage.createFinanceTransactionCategory(data);
   }
 
-  async updateFinanceTransactionCategory(id: string, data: Partial<InsertFinanceTransactionCategory>): Promise<FinanceTransactionCategory> {
+  async updateFinanceTransactionCategory(id: string, data: Pick<InsertFinanceTransactionCategory, "vatRate">): Promise<FinanceTransactionCategory> {
     return financeStorage.updateFinanceTransactionCategory(id, data);
   }
 

@@ -308,9 +308,9 @@ export async function createFinanceTransactionCategory(data: InsertFinanceTransa
   return cat;
 }
 
-export async function updateFinanceTransactionCategory(id: string, data: Partial<InsertFinanceTransactionCategory>): Promise<FinanceTransactionCategory> {
+export async function updateFinanceTransactionCategory(id: string, data: Pick<InsertFinanceTransactionCategory, "vatRate">): Promise<FinanceTransactionCategory> {
   const [cat] = await db.update(financeTransactionCategories)
-    .set({ ...data, updatedAt: new Date() })
+    .set({ vatRate: data.vatRate, updatedAt: new Date() })
     .where(eq(financeTransactionCategories.id, id))
     .returning();
   return cat;

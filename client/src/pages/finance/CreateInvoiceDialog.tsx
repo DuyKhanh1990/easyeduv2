@@ -693,6 +693,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
 
   const { data: locations = [] } = useQuery<any[]>({ queryKey: ["/api/locations"] });
   const { data: allCategories = [] } = useQuery<any[]>({ queryKey: ["/api/finance/transaction-categories"] });
+  const getCategoryVatRate = (categoryId: string) =>
+    Number(allCategories.find((category: any) => category.id === categoryId)?.vatRate ?? 0);
 
   const selectedLocation = (locations as any[]).find((l: any) => l.id === locationId);
   const locationBanks: { bankName: string; bankAccount: string; accountHolder: string }[] = (() => {
@@ -1109,7 +1111,10 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     });
   }, [directPaidAmount, finalTotal, hasSchedulePromotion, open, scheduleAllocated]);
 
-  const addProduct = (categoryId?: string) => setProducts(prev => [...prev, { id: Date.now().toString(), packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, vatRate: 0, promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: categoryId ?? prev[0]?.categoryId ?? "" }]);
+  const addProduct = (categoryId?: string) => {
+    const resolvedCategoryId = categoryId ?? products[0]?.categoryId ?? "";
+    setProducts(prev => [...prev, { id: Date.now().toString(), packageId: null, packageType: null, name: "", unitPrice: 0, quantity: 1, vatRate: getCategoryVatRate(resolvedCategoryId), promotionKeys: [], surchargeKeys: [], manualPromotionRows: [], manualSurchargeRows: [], categoryId: resolvedCategoryId }]);
+  };
   const removeProduct = (id: string) => setProducts(prev => prev.filter(p => p.id !== id));
   const ensureAdjustmentRows = (
     keys: string[],
@@ -1562,7 +1567,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       name: pkg.name,
       unitPrice: parseFloat(pkg.totalAmount || pkg.fee || "0"),
       quantity: isCoursePackage && Number.isFinite(suggestedQuantity) && suggestedQuantity > 0 ? suggestedQuantity : 1,
-      vatRate: 0,
+      vatRate: getCategoryVatRate(categoryId),
       promotionKeys: [],
       surchargeKeys: [],
       manualPromotionRows: [],
@@ -1579,7 +1584,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       name: product.name,
       unitPrice: parseFloat(product.sale_price) || 0,
       quantity: 1,
-      vatRate: 0,
+      vatRate: getCategoryVatRate(categoryId),
       promotionKeys: [],
       surchargeKeys: [],
       manualPromotionRows: [],
@@ -2193,9 +2198,12 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 <SearchableSelect
                                   value={group.categoryId}
                                   onChange={value => {
+                                    const defaultVatRate = getCategoryVatRate(value);
                                     setProducts(prev => prev.map(product => product.categoryId === group.categoryId ? {
                                       ...product,
                                       categoryId: value,
+                                      vatRate: defaultVatRate,
+                                      vatAmountOverride: undefined,
                                       packageId: null,
                                       packageType: null,
                                       name: "",
@@ -2242,8 +2250,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                         className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
                                         onClick={() => {
                                           if (!group.categoryId) {
+                                            const defaultVatRate = getCategoryVatRate(category.id);
                                             setProducts(prev => prev.map(product => product.categoryId === group.categoryId
-                                              ? { ...product, categoryId: category.id }
+                                              ? { ...product, categoryId: category.id, vatRate: defaultVatRate, vatAmountOverride: undefined }
                                               : product));
                                           } else {
                                             addProduct(category.id);

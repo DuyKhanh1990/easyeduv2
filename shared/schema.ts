@@ -1365,6 +1365,7 @@ export const financeTransactionCategories = pgTable("finance_transaction_categor
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name", { length: 255 }).notNull(),
   type: varchar("type", { length: 20 }).notNull(), // 'income' | 'expense'
+  vatRate: integer("vat_rate").notNull().default(0),
   isDefault: boolean("is_default").default(false).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

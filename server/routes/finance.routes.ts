@@ -523,7 +523,15 @@ export function registerFinanceRoutes(app: Express): void {
 
   app.post("/api/finance/transaction-categories", async (req, res) => {
     try {
-      const data = await storage.createFinanceTransactionCategory(req.body);
+      const parsed = z.object({
+        name: z.string().trim().min(1).max(255),
+        type: z.enum(["income", "expense"]),
+        vatRate: z.number().int().refine(isInvoiceVatRate, "Invalid VAT rate").default(0),
+      }).strict().safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Tên, loại danh mục hoặc mức VAT không hợp lệ." });
+      }
+      const data = await storage.createFinanceTransactionCategory(parsed.data);
       res.status(201).json(data);
     } catch (err: any) {
       res.status(400).json({ message: err.message });
@@ -532,7 +540,13 @@ export function registerFinanceRoutes(app: Express): void {
 
   app.put("/api/finance/transaction-categories/:id", async (req, res) => {
     try {
-      const data = await storage.updateFinanceTransactionCategory(req.params.id, req.body);
+      const parsed = z.object({
+        vatRate: z.number().int().refine(isInvoiceVatRate, "Invalid VAT rate"),
+      }).strict().safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Chỉ được cập nhật VAT với mức 0%, 5%, 8% hoặc 10%." });
+      }
+      const data = await storage.updateFinanceTransactionCategory(req.params.id, parsed.data);
       res.json(data);
     } catch (err: any) {
       res.status(400).json({ message: err.message });

@@ -320,10 +320,14 @@ function CategoryPanel({
 }) {
   const { t } = useLanguage();
   const canAdd = perm?.canAdd ?? true;
+  const canEdit = perm?.canEdit ?? true;
   const canDelete = perm?.canDelete ?? true;
   const { toast } = useToast();
   const [addOpen, setAddOpen] = useState(false);
   const [inputVal, setInputVal] = useState("");
+  const [addVatRate, setAddVatRate] = useState("0");
+  const [editingCategory, setEditingCategory] = useState<FinanceTransactionCategory | null>(null);
+  const [editingVatRate, setEditingVatRate] = useState("0");
 
   const { data: items = [], isLoading } = useQuery<FinanceTransactionCategory[]>({
     queryKey: ["/api/finance/transaction-categories", catType],
@@ -332,12 +336,24 @@ function CategoryPanel({
   });
 
   const createMutation = useMutation({
-    mutationFn: (name: string) => apiRequest("POST", "/api/finance/transaction-categories", { name, type: catType, isDefault: false }),
+    mutationFn: (input: { name: string; vatRate: number }) => apiRequest("POST", "/api/finance/transaction-categories", { ...input, type: catType }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/transaction-categories", catType] });
       setInputVal("");
+      setAddVatRate("0");
       setAddOpen(false);
       toast({ title: t("financeConfig.categoryAdded") });
+    },
+    onError: (e: any) => toast({ title: t("financeConfig.error"), description: e.message, variant: "destructive" }),
+  });
+
+  const updateVatMutation = useMutation({
+    mutationFn: ({ id, vatRate }: { id: string; vatRate: number }) =>
+      apiRequest("PUT", `/api/finance/transaction-categories/${id}`, { vatRate }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/finance/transaction-categories", catType] });
+      setEditingCategory(null);
+      toast({ title: t("financeConfig.categoryVatUpdated") });
     },
     onError: (e: any) => toast({ title: t("financeConfig.error"), description: e.message, variant: "destructive" }),
   });
@@ -353,7 +369,7 @@ function CategoryPanel({
 
   const handleAdd = () => {
     if (!inputVal.trim()) return;
-    createMutation.mutate(inputVal.trim());
+    createMutation.mutate({ name: inputVal.trim(), vatRate: Number(addVatRate) });
   };
 
   return (
@@ -392,6 +408,23 @@ function CategoryPanel({
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0 ml-2">
                     <Badge className={`text-xs ${badgeClass}`}>{badgeLabel}</Badge>
+                    <Badge variant="outline" className="text-xs">{t("financeConfig.suggestedVat")} {item.vatRate ?? 0}%</Badge>
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => {
+                          setEditingCategory(item);
+                          setEditingVatRate(String(item.vatRate ?? 0));
+                        }}
+                        title={t("financeConfig.editCategoryVat")}
+                        aria-label={t("financeConfig.editCategoryVat")}
+                        data-testid={`button-edit-vat-${catType}-${item.id}`}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                     {canDelete && (
                       item.isDefault ? (
                         <span className="h-6 w-6 inline-flex items-center justify-center text-muted-foreground/30" title={t("financeConfig.cannotDeleteDefault")}>
@@ -425,13 +458,51 @@ function CategoryPanel({
               data-testid={`input-${catType}`}
               autoFocus
             />
+            <label className="block pt-2 text-sm font-medium">{t("financeConfig.suggestedVat")}</label>
+            <Select value={addVatRate} onValueChange={setAddVatRate}>
+              <SelectTrigger data-testid={`select-new-category-vat-${catType}`}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {[0, 5, 8, 10].map(rate => <SelectItem key={rate} value={String(rate)}>{rate}%</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddOpen(false)} disabled={createMutation.isPending}>
+              <Button variant="outline" onClick={() => setAddOpen(false)} disabled={createMutation.isPending}>
               {t("financeConfig.cancel")}
             </Button>
-            <Button onClick={handleAdd} disabled={!inputVal.trim() || createMutation.isPending} data-testid={`button-add-${catType}`}>
+              <Button onClick={handleAdd} disabled={!inputVal.trim() || createMutation.isPending} data-testid={`button-add-${catType}`}>
               {createMutation.isPending ? t("financeConfig.saving") : t("financeConfig.save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!editingCategory} onOpenChange={open => { if (!open && !updateVatMutation.isPending) setEditingCategory(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("financeConfig.editCategoryVat")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <label className="text-sm font-medium">{t("financeConfig.categoryName")}</label>
+            <Input value={editingCategory?.name ?? ""} readOnly />
+            <label className="block pt-2 text-sm font-medium">{t("financeConfig.suggestedVat")}</label>
+            <p className="text-xs text-muted-foreground">{t("financeConfig.suggestedVatHint")}</p>
+            <Select value={editingVatRate} onValueChange={setEditingVatRate}>
+              <SelectTrigger data-testid="select-edit-category-vat"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {[0, 5, 8, 10].map(rate => <SelectItem key={rate} value={String(rate)}>{rate}%</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingCategory(null)} disabled={updateVatMutation.isPending}>
+              {t("financeConfig.cancel")}
+            </Button>
+            <Button
+              onClick={() => editingCategory && updateVatMutation.mutate({ id: editingCategory.id, vatRate: Number(editingVatRate) })}
+              disabled={!editingCategory || updateVatMutation.isPending}
+              data-testid="button-save-category-vat"
+            >
+              {updateVatMutation.isPending ? t("financeConfig.saving") : t("financeConfig.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
