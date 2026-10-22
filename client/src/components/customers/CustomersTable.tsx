@@ -460,7 +460,7 @@ export function CustomersTable({
       if (column.id === "classTime") return cn("w-[125px] min-w-[125px]", base);
       if (column.id === "classSessions") return cn("w-[110px] min-w-[110px]", base);
       if (column.id.startsWith("classDay:")) return cn("w-[76px] min-w-[76px] border-l border-sky-200 bg-sky-50 text-center dark:border-sky-900 dark:bg-sky-950/40", base);
-      if (column.id === "actions") return cn("w-12 sticky right-0 z-20 text-center", STICKY_BG_HEADER, BLOCK_SHADOW_LEFT);
+      if (column.id === "actions") return cn("w-14 min-w-[56px] max-w-[56px] sticky right-0 z-20 text-center", STICKY_BG_HEADER, BLOCK_SHADOW_LEFT);
     }
     if (column.id === "selection") return cn("w-10 min-w-[40px] max-w-[40px] sticky left-0", base);
     if (column.id === "code")      return cn("min-w-[100px] sticky left-10", base);
@@ -483,7 +483,7 @@ export function CustomersTable({
       if (columnId === "classTime") return "w-[125px] min-w-[125px]";
       if (columnId === "classSessions") return "w-[110px] min-w-[110px]";
       if (columnId.startsWith("classDay:")) return "w-[76px] min-w-[76px] border-l border-slate-200 p-1 text-center";
-      if (columnId === "actions") return cn("sticky right-0 z-10 text-center", bg, BLOCK_SHADOW_LEFT);
+      if (columnId === "actions") return cn("sticky right-0 z-10 w-14 min-w-[56px] max-w-[56px] text-center", bg, BLOCK_SHADOW_LEFT);
     }
     if (columnId === "selection") return cn("sticky left-0 w-10 min-w-[40px] max-w-[40px]", base);
     if (columnId === "code")      return cn("sticky left-10 min-w-[100px]", base);
@@ -1283,7 +1283,7 @@ export function CustomersTable({
 
   return (
     <>
-      <table className={cn("customers-table caption-bottom text-sm border-separate border-spacing-0", isClassRosterView ? "customers-class-roster-table w-max" : "w-full")}>
+      <table className={cn("customers-table caption-bottom text-sm border-separate border-spacing-0", isClassRosterView ? "customers-class-roster-table w-max min-w-full" : "w-full")}>
         {/* ── Header ── */}
         <thead className={cn("sticky z-20", isClassRosterView ? "top-10" : "top-0")}>
           <tr className="bg-slate-50 dark:bg-slate-900">
