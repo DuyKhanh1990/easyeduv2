@@ -91,6 +91,34 @@ function getContentSummary(generalContents: MyCalendarSession["generalContents"]
   });
 }
 
+function StudentLatestScoreLabel({ result, studentId }: {
+  result?: {
+    gradeBandLabel: string | null;
+    gradeBandColor: string | null;
+    passStatus: "passed" | "failed" | null;
+  } | null;
+  studentId: string;
+}) {
+  const passLabel = result?.passStatus === "passed"
+    ? "Đạt"
+    : result?.passStatus === "failed" ? "Không đạt" : null;
+  if (!result?.gradeBandLabel && !passLabel) return null;
+  return (
+    <p
+      className="font-['Roboto'] text-[11px] font-bold leading-tight"
+      data-testid={`latest-score-result-${studentId}`}
+    >
+      {result?.gradeBandLabel && (
+        <span style={{ color: result.gradeBandColor ?? undefined }}>{result.gradeBandLabel}</span>
+      )}
+      {result?.gradeBandLabel && passLabel && <span className="text-slate-400"> · </span>}
+      {passLabel && (
+        <span className={result?.passStatus === "passed" ? "text-green-600" : "text-red-600"}>{passLabel}</span>
+      )}
+    </p>
+  );
+}
+
 interface StaffSessionDetailSheetProps {
   session: MyCalendarSession | null;
   onClose: () => void;
@@ -174,6 +202,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
     reviewData: student.reviewData,
     reviewPublished: student.reviewPublished ?? false,
     student: { fullName: student.fullName, code: student.code },
+    latestScoreResult: student.latestScoreResult ?? null,
     registrationId: student.registrationId,
   }));
   const studentSessions = isFreeSession
@@ -734,6 +763,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                                 <div>
                                   <p className="font-medium text-foreground">{ss.student?.fullName || "—"}</p>
                                   <p className="text-xs text-muted-foreground">{ss.student?.code}</p>
+                                  <StudentLatestScoreLabel result={ss.latestScoreResult} studentId={ss.studentId} />
                                 </div>
                               </td>
                               <td className="px-4 py-3">
@@ -840,6 +870,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
                               <div>
                                 <p className="font-medium text-foreground">{ss.student?.fullName || "—"}</p>
                                 <p className="text-xs text-muted-foreground">{ss.student?.code}</p>
+                                <StudentLatestScoreLabel result={ss.latestScoreResult} studentId={ss.studentId} />
                               </div>
                             </td>
                             <td className="px-4 py-3">

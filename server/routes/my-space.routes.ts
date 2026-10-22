@@ -555,6 +555,179 @@ async function getRegularSessionStudents(classSessionId: string) {
   }));
 }
 
+function normalizeScoreExamDate(value: unknown): string {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const text = String(value ?? "");
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+}
+
+async function getLatestPublishedScoreResults(studentIds: string[]) {
+  const uniqueStudentIds = Array.from(new Set(studentIds.filter(Boolean)));
+  if (uniqueStudentIds.length === 0) return new Map<string, {
+    gradeBandLabel: string | null;
+    gradeBandColor: string | null;
+    passStatus: "passed" | "failed" | null;
+    examDate: string;
+  }>();
+
+  const [assessmentSettings] = await db
+    .select({ value: systemSettings.value })
+    .from(systemSettings)
+    .where(eq(systemSettings.key, "scoreSheetAssessments"))
+    .limit(1);
+  const assessmentConfigs = assessmentSettings
+    ? z.array(scoreSheetAssessmentSchema).parse(JSON.parse(assessmentSettings.value))
+    : [];
+  const conversionAssessments = assessmentConfigs.filter(
+    (assessment) => Boolean(assessment.templateSnapshot.scoreConversionTemplateId),
+  );
+  const conversionAssessmentIds = conversionAssessments
+    .filter((assessment) => assessment.creationMode !== "manual")
+    .map((assessment) => assessment.id);
+  const assessmentsById = new Map(conversionAssessments.map((assessment) => [assessment.id, assessment]));
+  const latestResultsByStudent = new Map<string, {
+    gradeBandLabel: string | null;
+    gradeBandColor: string | null;
+    passStatus: "passed" | "failed" | null;
+    examDate: string;
+  }>();
+  const candidates: Array<{
+    studentId: string;
+    gradeBandLabel: string | null;
+    gradeBandColor: string | null;
+    passStatus: "passed" | "failed" | null;
+    examDate: string;
+  }> = [];
+
+  if (conversionAssessmentIds.length > 0) {
+    const assessmentAttemptRows = await db
+      .select({
+        assessmentId: scoreSheetAssessmentStudentAttempts.assessmentId,
+        classSessionId: scoreSheetAssessmentStudentAttempts.classSessionId,
+        studentId: scoreSheetAssessmentStudentAttempts.studentId,
+        attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
+        result: scoreSheetAssessmentStudentAttempts.result,
+        sessionPublished: classSessions.scoreSheetAssessmentPublished,
+        sessionDate: classSessions.sessionDate,
+      })
+      .from(scoreSheetAssessmentStudentAttempts)
+      .innerJoin(
+        classSessions,
+        and(
+          eq(classSessions.id, scoreSheetAssessmentStudentAttempts.classSessionId),
+          eq(classSessions.scoreSheetAssessmentId, scoreSheetAssessmentStudentAttempts.assessmentId),
+        ),
+      )
+      .innerJoin(
+        studentSessions,
+        and(
+          eq(studentSessions.classSessionId, classSessions.id),
+          eq(studentSessions.studentId, scoreSheetAssessmentStudentAttempts.studentId),
+        ),
+      )
+      .where(and(
+        inArray(scoreSheetAssessmentStudentAttempts.studentId, uniqueStudentIds),
+        inArray(scoreSheetAssessmentStudentAttempts.assessmentId, conversionAssessmentIds),
+        sql`NOT (${scoreSheetAssessmentStudentAttempts.studentId} = ANY(COALESCE(${classSessions.scoreSheetAssessmentExcludedStudentIds}, ARRAY[]::uuid[])))`,
+      ))
+      .orderBy(desc(classSessions.sessionDate), desc(scoreSheetAssessmentStudentAttempts.attemptNumber));
+
+    const groups = new Map<string, { assessmentId: string; studentId: string; sessionPublished: boolean; sessionDate: string; attempts: any[] }>();
+    for (const row of assessmentAttemptRows) {
+      const key = `${row.assessmentId}:${row.classSessionId}:${row.studentId}`;
+      const group = groups.get(key) ?? {
+        assessmentId: row.assessmentId,
+        studentId: row.studentId,
+        sessionPublished: row.sessionPublished === true,
+        sessionDate: normalizeScoreExamDate(row.sessionDate),
+        attempts: [],
+      };
+      group.attempts.push({ attemptNumber: row.attemptNumber, result: row.result });
+      groups.set(key, group);
+    }
+
+    for (const group of groups.values()) {
+      const assessment = assessmentsById.get(group.assessmentId);
+      if (!assessment) continue;
+      const summary = selectScoreSheetAssessmentAttemptSummary(group.attempts, assessment.scoringPolicy, true);
+      if (!summary) continue;
+      const selectedAttempt = group.attempts.find((attempt) => attempt.attemptNumber === summary.attemptNumber);
+      const selectedAttemptPublished = Boolean(
+        selectedAttempt && isScoreSheetAssessmentStudentPublished(selectedAttempt.result),
+      );
+      if (!group.sessionPublished && !selectedAttemptPublished) continue;
+      if (
+        summary.result.overallConvertedScore === null
+        && !summary.result.skills.some((skill) => skill.convertedScore !== null)
+      ) continue;
+      if (!summary.result.gradeBand && !summary.result.passStatus) continue;
+      candidates.push({
+        studentId: group.studentId,
+        gradeBandLabel: summary.result.gradeBand?.label ?? null,
+        gradeBandColor: summary.result.gradeBand?.color ?? null,
+        passStatus: summary.result.passStatus ?? null,
+        examDate: group.sessionDate,
+      });
+    }
+  }
+
+  const manualAssessments = conversionAssessments.filter((assessment) => assessment.creationMode === "manual");
+  const manualAssessmentIds = manualAssessments.map((assessment) => assessment.id);
+  if (manualAssessmentIds.length > 0) {
+    const manualAttempts = await db
+      .select({
+        assessmentId: scoreSheetAssessmentStudentAttempts.assessmentId,
+        studentId: scoreSheetAssessmentStudentAttempts.studentId,
+        attemptNumber: scoreSheetAssessmentStudentAttempts.attemptNumber,
+        result: scoreSheetAssessmentStudentAttempts.result,
+      })
+      .from(scoreSheetAssessmentStudentAttempts)
+      .where(and(
+        isNull(scoreSheetAssessmentStudentAttempts.classSessionId),
+        inArray(scoreSheetAssessmentStudentAttempts.assessmentId, manualAssessmentIds),
+        inArray(scoreSheetAssessmentStudentAttempts.studentId, uniqueStudentIds),
+      ));
+    const groups = new Map<string, { assessmentId: string; studentId: string; attempts: any[] }>();
+    for (const row of manualAttempts) {
+      const key = `${row.assessmentId}:${row.studentId}`;
+      const group = groups.get(key) ?? { assessmentId: row.assessmentId, studentId: row.studentId, attempts: [] };
+      group.attempts.push({ attemptNumber: row.attemptNumber, result: row.result });
+      groups.set(key, group);
+    }
+    for (const group of groups.values()) {
+      const assessment = assessmentsById.get(group.assessmentId);
+      if (!assessment?.manualStudentIds.includes(group.studentId)) continue;
+      const summary = selectScoreSheetAssessmentAttemptSummary(group.attempts, assessment.scoringPolicy, true);
+      if (!summary) continue;
+      const selectedAttempt = group.attempts.find((attempt) => attempt.attemptNumber === summary.attemptNumber);
+      if (!selectedAttempt || !isScoreSheetAssessmentStudentPublished(selectedAttempt.result)) continue;
+      if (
+        summary.result.overallConvertedScore === null
+        && !summary.result.skills.some((skill) => skill.convertedScore !== null)
+      ) continue;
+      if (!summary.result.gradeBand && !summary.result.passStatus) continue;
+      candidates.push({
+        studentId: group.studentId,
+        gradeBandLabel: summary.result.gradeBand?.label ?? null,
+        gradeBandColor: summary.result.gradeBand?.color ?? null,
+        passStatus: summary.result.passStatus ?? null,
+        examDate: normalizeScoreExamDate(assessment.createdAt),
+      });
+    }
+  }
+
+  candidates.sort((left, right) => right.examDate.localeCompare(left.examDate));
+  for (const result of candidates) {
+    if (!latestResultsByStudent.has(result.studentId)) {
+      const { studentId, ...summary } = result;
+      latestResultsByStudent.set(studentId, summary);
+    }
+  }
+  return latestResultsByStudent;
+}
+
 async function getTeacherNames(teacherIds: string[]): Promise<string[]> {
   if (!teacherIds || teacherIds.length === 0) return [];
   const records = await db
@@ -2615,6 +2788,9 @@ export function registerMySpaceRoutes(app: Express): void {
           return res.status(404).json({ message: "Không tìm thấy buổi học tự do" });
         }
 
+        const latestScoreResults = await getLatestPublishedScoreResults(
+          visibleFreeRows.map((row) => String(row.studentId)),
+        );
         const first = visibleFreeRows[0];
         const teacherIds = [...new Set(
           visibleFreeRows.map((row) =>
@@ -2661,6 +2837,7 @@ export function registerMySpaceRoutes(app: Express): void {
             studentId: row.studentId,
             fullName: row.studentName,
             code: row.studentCode,
+            latestScoreResult: latestScoreResults.get(String(row.studentId)) ?? null,
             status: row.status,
             teacherId: row.effectiveTeacherId,
             shiftTemplateId: row.shiftTemplateId || dayAssignment?.shiftTemplateId || null,
@@ -2786,6 +2963,13 @@ export function registerMySpaceRoutes(app: Express): void {
         getSessionAttendanceStats(row.classSessionId),
         getRegularSessionStudents(row.classSessionId),
       ]);
+      const latestScoreResults = await getLatestPublishedScoreResults(
+        regularStudentSessions.map((student) => String(student.studentId)),
+      );
+      const studentSessionsWithScoreResults = regularStudentSessions.map((student) => ({
+        ...student,
+        latestScoreResult: latestScoreResults.get(String(student.studentId)) ?? null,
+      }));
       const teacherNames = teachers.map((t) => t.fullName);
 
       res.json({
@@ -2818,7 +3002,7 @@ export function registerMySpaceRoutes(app: Express): void {
         enrolledCount: stats.enrolledCount,
         attendancePendingCount: stats.pendingCount,
         reviewedCount: stats.reviewedCount,
-        studentSessions: regularStudentSessions,
+        studentSessions: studentSessionsWithScoreResults,
       });
     } catch (err: any) {
       console.error("Staff session detail error:", err);

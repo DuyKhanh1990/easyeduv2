@@ -34,7 +34,7 @@
 - [Commission board rules](commission-board-rules.md) — bảng tính từ cấu hình; ngày nghiệp vụ theo trạng thái, xếp chung các trạng thái và cộng dồn cấu hình trùng.
 - [Customer status card source](customer-status-card-source.md) — các thẻ trạng thái trên /customers lấy từ student_classes; không thay logic báo cáo, bộ lọc hoặc trạng thái từng dòng.
 - [Customers class-view scope](customers-class-view-scope.md) — thay đổi chế độ Theo lớp chỉ được tác động giao diện theo lớp; không đổi nghiệp vụ hoặc các chế độ xem khác.
-- [Customer latest score display](customer-latest-score-display.md) — kết quả bảng điểm gần nhất nằm nhỏ dưới mã học viên; trạng thái dưới tên dùng Roboto 11.5px.
+- [Customer latest score display](customer-latest-score-display.md) — nhãn điểm mới nhất đã công bố đồng bộ giữa Customers và lịch staff, không thêm cổng quyền.
 - [Holiday bulk all-scope rule](holiday-bulk-all-scope.md) — “Tất cả” phải loại trừ mọi buổi trong kỳ nghỉ, không lọc ngày quá khứ hay trạng thái lớp/buổi.
 - [Student renewal shift fallback](student-renewal-shift-fallback.md) — gia hạn phải lấy ca theo lịch hiện có khi lớp cũ/import thiếu shift_template_ids.
 - [Drizzle schema push prompt](drizzle-schema-push-prompt.md) — schema push có thể bị chặn bởi prompt data-loss không liên quan; không truncate dữ liệu để áp dụng thay đổi cộng thêm.

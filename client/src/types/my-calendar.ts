@@ -90,6 +90,12 @@ export interface MyCalendarSessionLight {
     note?: string | null;
     reviewData?: unknown;
     reviewPublished?: boolean;
+    latestScoreResult?: {
+      gradeBandLabel: string | null;
+      gradeBandColor: string | null;
+      passStatus: "passed" | "failed" | null;
+      examDate: string;
+    } | null;
   }[];
 }
 
