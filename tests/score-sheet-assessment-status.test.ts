@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  resolveScoreSheetAssessmentLifecycleStatus,
   resolveScoreSheetAssessmentDeadlineStatus,
   resolveScoreSheetAssessmentStatus,
 } from "../shared/score-sheet-assessment-status";
@@ -55,10 +56,22 @@ describe("score-sheet assessment status", () => {
   });
 
   it("prioritizes processing when scoring has started but is incomplete", () => {
-    expect(resolveScoreSheetAssessmentStatus({
+    const assessment = {
       ...baseAssessment,
       enteredStudentCount: 1,
-    }, Date.UTC(2026, 8, 30, 12, 0))).toBe("processing");
+    };
+    expect(resolveScoreSheetAssessmentStatus(
+      assessment,
+      Date.UTC(2026, 8, 30, 12, 0),
+    )).toBe("processing");
+    expect(resolveScoreSheetAssessmentLifecycleStatus(
+      assessment,
+      Date.UTC(2026, 8, 30, 12, 0),
+    )).toBe("in_progress");
+    expect(resolveScoreSheetAssessmentLifecycleStatus(
+      assessment,
+      Date.UTC(2026, 8, 29, 12, 0),
+    )).toBe("not_started");
   });
 
   it("keeps fully graded but unpublished assessments in processing", () => {

@@ -27,7 +27,7 @@ Keep “Đang xử lý” distinct from “Đang thi” and “Hoàn thành”. 
 
 **Why:** The user clarified that only the start rule for “Đang thi” changes; completion retains its existing score/publication logic, while processing remains a separate state.
 
-**How to apply:** Preserve the resolver’s completed/processing precedence. Apply the exam-date threshold only to “Đang thi”; keep processing available in detailed status filters even when it is removed from the top tabs.
+**How to apply:** Preserve the resolver’s completed/processing precedence for workflow progress. On `/score-conversion`, derive the displayed lifecycle status and the three lifecycle quick filters independently of processing; show “Đang xử lý” separately below student counts and retain it as an independent detailed filter.
 
 In the “Theo học viên” score-conversion view, show a green “Đã công bố” badge beside a student's name when that student has a publishable result released individually or through the whole session.
 

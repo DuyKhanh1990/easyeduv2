@@ -81,3 +81,18 @@ export function resolveScoreSheetAssessmentStatus(
 
   return "in_progress";
 }
+
+/**
+ * Resolve the assessment's lifecycle status without letting score-entry
+ * progress replace it. "processing" remains an independent workflow state.
+ */
+export function resolveScoreSheetAssessmentLifecycleStatus(
+  assessment: ScoreSheetAssessmentStatusInput,
+  nowBangkokWallClockMs: number,
+): Exclude<ScoreSheetAssessmentStatus, "processing"> | null {
+  const status = resolveScoreSheetAssessmentStatus(
+    { ...assessment, enteredStudentCount: 0 },
+    nowBangkokWallClockMs,
+  );
+  return status === "processing" ? null : status;
+}

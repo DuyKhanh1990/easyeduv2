@@ -58,6 +58,7 @@ import type {
   ScoreSheetTemplateInput,
 } from "@shared/score-sheet-template";
 import {
+  resolveScoreSheetAssessmentLifecycleStatus,
   resolveScoreSheetAssessmentDeadlineStatus,
   resolveScoreSheetAssessmentStatus,
   type ScoreSheetAssessmentDeadlineStatus,
@@ -265,6 +266,14 @@ function getAssessmentStatus(
   nowWallClockMs: number,
 ): AssessmentStatusPresentation | null {
   const status = resolveScoreSheetAssessmentStatus(assessment, nowWallClockMs);
+  return status ? ASSESSMENT_STATUS_PRESENTATION[status] : null;
+}
+
+function getAssessmentLifecycleStatus(
+  assessment: StaffAssignedScoreSheetAssessment,
+  nowWallClockMs: number,
+): AssessmentStatusPresentation | null {
+  const status = resolveScoreSheetAssessmentLifecycleStatus(assessment, nowWallClockMs);
   return status ? ASSESSMENT_STATUS_PRESENTATION[status] : null;
 }
 
@@ -503,12 +512,13 @@ export default function ScoreConversion() {
   const filteredConversionAssessments = conversionAssessments.filter((assessment) => {
     const dateKey = assessment.examDate.substring(0, 10);
     const status = getAssessmentStatus(assessment, nowWallClockMs);
+    const lifecycleStatus = getAssessmentLifecycleStatus(assessment, nowWallClockMs);
     const deadlineStatusKey = resolveScoreSheetAssessmentDeadlineStatus(
       assessment.scoreDeadlineAt,
       nowWallClockMs,
     );
     const deadlineDateKey = assessment.scoreDeadlineAt?.substring(0, 10) ?? "";
-    if (assessmentStatusFilter !== "all" && status?.key !== assessmentStatusFilter) return false;
+    if (assessmentStatusFilter !== "all" && lifecycleStatus?.key !== assessmentStatusFilter) return false;
     if (classFilters.length > 0 && !classFilters.includes(assessment.classId)) return false;
     if (
       teacherFilters.length > 0
@@ -518,7 +528,12 @@ export default function ScoreConversion() {
       assessmentFilters.length > 0
       && !assessmentFilters.includes(getScoreSheetTemplateLabel(assessment))
     ) return false;
-    if (statusFilters.length > 0 && (!status || !statusFilters.includes(status.key))) return false;
+    if (
+      statusFilters.length > 0
+      && !statusFilters.some((filter) => filter === "processing"
+        ? status?.key === "processing"
+        : lifecycleStatus?.key === filter)
+    ) return false;
     if (
       deadlineStatusFilters.length > 0
       && (!deadlineStatusKey || !deadlineStatusFilters.includes(deadlineStatusKey))
@@ -1366,7 +1381,11 @@ export default function ScoreConversion() {
                               onChange={(values) => {
                                 const nextStatuses = values as ScoreSheetAssessmentStatus[];
                                 setStatusFilters(nextStatuses);
-                                setAssessmentStatusFilter(nextStatuses.length === 1 ? nextStatuses[0] : "all");
+                                setAssessmentStatusFilter(
+                                  nextStatuses.length === 1 && nextStatuses[0] !== "processing"
+                                    ? nextStatuses[0]
+                                    : "all",
+                                );
                               }}
                               placeholder="Chọn trạng thái"
                               searchPlaceholder="Tìm trạng thái..."
@@ -1742,6 +1761,10 @@ export default function ScoreConversion() {
                             </tr>,
                             ...assessments.map((assessment) => {
                               const status = getAssessmentStatus(assessment, nowWallClockMs);
+                              const lifecycleStatus = getAssessmentLifecycleStatus(
+                                assessment,
+                                nowWallClockMs,
+                              );
                               const deadlineStatusKey = resolveScoreSheetAssessmentDeadlineStatus(
                                 assessment.scoreDeadlineAt,
                                 nowWallClockMs,
@@ -1850,9 +1873,9 @@ export default function ScoreConversion() {
                                     </span>
                                   </td>
                                   <td className="border-b border-r border-border px-3 py-2.5 group-hover:bg-accent/50">
-                                    {status && status.key !== "processing" ? (
-                                      <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-medium ${status.className}`}>
-                                        {status.indicator} {status.label}
+                                    {lifecycleStatus ? (
+                                      <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 text-[11px] font-medium ${lifecycleStatus.className}`}>
+                                        {lifecycleStatus.indicator} {lifecycleStatus.label}
                                       </span>
                                     ) : (
                                       <span className="text-muted-foreground" aria-label="Chưa có trạng thái">—</span>
