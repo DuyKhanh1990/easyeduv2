@@ -464,11 +464,14 @@ export function ClassDetail() {
                       )}
                       {classPerm.canEdit && !scheduleActions.isPastReadOnly && (
                         <button
-                          className={actionBtn("from-red-500 to-rose-500", scheduleActions.isCancelled ? "opacity-50 cursor-not-allowed" : "")}
-                          disabled={scheduleActions.isCancelled}
-                          onClick={() => scheduleActions.openCancelSession()}
+                          className={actionBtn(scheduleActions.isCancelled ? "from-emerald-500 to-teal-600" : "from-red-500 to-rose-500")}
+                          onClick={() => scheduleActions.isCancelled
+                            ? scheduleActions.openRestoreSession()
+                            : scheduleActions.openCancelSession()}
                         >
-                          <XCircle className="h-3 w-3" /> Huỷ buổi
+                          {scheduleActions.isCancelled
+                            ? <><RefreshCw className="h-3 w-3" /> Hoàn hủy buổi</>
+                            : <><XCircle className="h-3 w-3" /> Huỷ buổi</>}
                         </button>
                       )}
                       {classPerm.canEdit && !scheduleActions.isPastReadOnly && (

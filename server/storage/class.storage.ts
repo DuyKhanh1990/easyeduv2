@@ -2179,7 +2179,10 @@ export async function scheduleClassStudents(classId: string, configs: any[], use
       })
       .from(studentSessions)
       .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
-      .where(eq(studentSessions.studentClassId, sc.id));
+      .where(and(
+        eq(studentSessions.studentClassId, sc.id),
+        sql`${classSessions.status} != 'cancelled'`,
+      ));
 
       const result = stats[0];
 
