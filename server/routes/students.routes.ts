@@ -21,6 +21,7 @@ import { scoreSheetTemplateSchema } from "@shared/score-sheet-template";
 import { getStudentLearningStatusSummary, getCustomerLearningStatusSummary, getCustomerSummary, getNewCustomersSummary, getStudentsBySource, getStudentsByRelationship, getStudentsByLocation, getStudentsByStaff, getStudentsLearningStatuses, getMonthlyStudentCounts } from "../storage/student.storage";
 import { createCrmConfigAuditLog, getCrmConfigAuditLogs } from "../storage/crm-config-audit.storage";
 import { codeStem, nextCodeForStem } from "../lib/role-code";
+import { decrypt } from "../lib/encryption";
 
 const CRM_RESOURCE = "/customers";
 const CRM_CONFIG_BASE = "/customers/crm-config";
@@ -1238,6 +1239,45 @@ export function registerStudentsRoutes(app: Express): void {
         }
       }
       res.json(student);
+    } catch (err) {
+      res.status(500).json({ message: (err as any).message });
+    }
+  });
+
+  app.get("/api/students/:id/password", async (req, res) => {
+    try {
+      const crmPerms = await getCrmPermissions(req);
+      if (!crmPerms.canEdit) {
+        return res.status(403).json({ message: "Bạn không có quyền xem mật khẩu tài khoản khách hàng." });
+      }
+
+      const student = await storage.getStudent(req.params.id, req.allowedLocationIds, req.isSuperAdmin);
+      if (!student) return res.status(404).json({ message: "Not found" });
+
+      if (!crmPerms.canViewAll && req.staffId) {
+        const staffId = req.staffId;
+        const isOwner =
+          (student.salesByIds || []).includes(staffId) ||
+          (student.managedByIds || []).includes(staffId) ||
+          (student.teacherIds || []).includes(staffId);
+        if (!isOwner) {
+          return res.status(403).json({ message: "Bạn không có quyền xem mật khẩu khách hàng này." });
+        }
+      }
+
+      if (!student.userId) return res.json({ password: null });
+      const [account] = await db
+        .select({ passwordEncrypted: users.passwordEncrypted })
+        .from(users)
+        .where(eq(users.id, student.userId))
+        .limit(1);
+      if (!account?.passwordEncrypted) return res.json({ password: null });
+
+      try {
+        return res.json({ password: decrypt(account.passwordEncrypted) });
+      } catch {
+        return res.status(409).json({ message: "Không thể giải mã mật khẩu đã lưu." });
+      }
     } catch (err) {
       res.status(500).json({ message: (err as any).message });
     }
