@@ -1,10 +1,10 @@
 import { Link, useLocation } from "wouter";
 import { useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronRight, LogOut, X } from "lucide-react";
+import { ChevronDown, ChevronRight, KeyRound, LogOut, X } from "lucide-react";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { ChatButton } from "@/components/chat/ChatButton";
-import { useAuth, useLogout } from "@/hooks/use-auth";
+import { useAuth, useChangePassword, useLogout } from "@/hooks/use-auth";
 import { useLanguage } from "@/hooks/use-language";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLocations } from "@/hooks/use-locations";
@@ -22,6 +22,11 @@ import { navigation, type NavItem, type NavModule } from "@/lib/sidebar-navigati
 import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
 import { useMyPermissions, canAccessItem } from "@/hooks/use-my-permissions";
 import { useTinodeContext } from "@/hooks/use-tinode";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter,
+  DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 
 const APP_VERSION =
   import.meta.env.VITE_DISPLAY_VERSION ||
@@ -64,6 +69,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps = {}) {
   const [location] = useLocation();
   const { data: user } = useAuth();
   const logout = useLogout();
+  const changePassword = useChangePassword();
   const { data: locations } = useLocations();
   const { locationId, setLocation } = useLocationFilter();
   const { t, tNav } = useLanguage();
@@ -71,6 +77,10 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps = {}) {
   const [isCollapsedState, setIsCollapsedState] = useState(false);
   const [isHoveringCollapsed, setIsHoveringCollapsed] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   // DropdownMenuContent is portaled outside the sidebar. Keep the sidebar
   // expanded while the pointer moves from the trigger into that content,
   // otherwise onMouseLeave collapses the trigger and makes Radix reopen/close
@@ -79,6 +89,15 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps = {}) {
   const { isModuleVisible, isItemVisible, hasServerData } = useSidebarVisibility();
   const { data: myPerms, isLoading: permsLoading } = useMyPermissions();
   const hasInitialized = useRef(false);
+  const passwordMismatch = confirmPassword.length > 0 && newPassword !== confirmPassword;
+
+  const resetChangePassword = () => {
+    setChangePasswordOpen(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    changePassword.reset();
+  };
 
   const { topics } = useTinodeContext();
   const chatUnread = topics.reduce((sum, t) => sum + (t.unread ?? 0), 0);
@@ -380,6 +399,14 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps = {}) {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem
+              onSelect={() => setChangePasswordOpen(true)}
+              className="cursor-pointer"
+            >
+              <KeyRound className="mr-2 h-4 w-4" />
+              <span>{t("sidebar.changePassword")}</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
               onClick={() => logout.mutate()}
               className="text-destructive focus:bg-destructive/10 cursor-pointer"
             >
@@ -389,6 +416,74 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps = {}) {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <Dialog open={changePasswordOpen} onOpenChange={open => !open && !changePassword.isPending && resetChangePassword()}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("sidebar.changePassword")}</DialogTitle>
+            <DialogDescription>{t("sidebar.changePasswordDescription")}</DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={event => {
+              event.preventDefault();
+              if (newPassword !== confirmPassword) return;
+              changePassword.mutate({ currentPassword, newPassword });
+            }}
+          >
+            <div className="space-y-2">
+              <label htmlFor="current-password" className="text-sm font-medium">{t("sidebar.currentPassword")}</label>
+              <Input
+                id="current-password"
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={event => setCurrentPassword(event.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="new-password" className="text-sm font-medium">{t("sidebar.newPassword")}</label>
+              <Input
+                id="new-password"
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                maxLength={128}
+                value={newPassword}
+                onChange={event => setNewPassword(event.target.value)}
+                required
+              />
+              <p className="text-xs text-muted-foreground">{t("sidebar.passwordMinLength")}</p>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="confirm-password" className="text-sm font-medium">{t("sidebar.confirmPassword")}</label>
+              <Input
+                id="confirm-password"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={event => setConfirmPassword(event.target.value)}
+                required
+              />
+              {passwordMismatch && <p className="text-xs text-destructive">{t("sidebar.passwordMismatch")}</p>}
+            </div>
+            {changePassword.isError && (
+              <p className="text-sm text-destructive">{changePassword.error.message}</p>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={resetChangePassword} disabled={changePassword.isPending}>
+                {t("sidebar.cancel")}
+              </Button>
+              <Button
+                type="submit"
+                disabled={changePassword.isPending || passwordMismatch || newPassword.length < 8}
+              >
+                {changePassword.isPending ? t("sidebar.savingPassword") : t("sidebar.changePassword")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       </div>
     </>
   );

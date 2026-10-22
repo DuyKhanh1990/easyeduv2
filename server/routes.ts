@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
 import { setupAuth, jwtAuthMiddleware, JWT_SECRET } from "./auth";
+import { comparePasswords, hashPassword } from "./auth";
 import { locationAccessMiddleware } from "./middleware/location-access";
 import { api } from "@shared/routes";
 import passport from "passport";
@@ -63,8 +64,10 @@ import { startClassBellReminderCron } from "./services/class-bell-reminder.servi
 import { startTuitionReminderCron } from "./services/tuition-reminder.service";
 import { startDebtReminderCron } from "./services/debt-reminder.service";
 import { db } from "./db";
-import { zaloOaConversations, zaloOaMessages } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { staff, users, zaloOaConversations, zaloOaMessages } from "@shared/schema";
+import { eq, sql } from "drizzle-orm";
+import { z } from "zod";
+import { encrypt } from "./lib/encryption";
 import { registerDeferredTuitionRoutes } from "./routes/deferred-tuition.routes";
 import { registerBidvAdminRoutes } from "./routes/bidv.routes";
 import { registerBidvGatewayRoutes } from "./routes/bidv-gateway.routes";
@@ -179,8 +182,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
       req.login(user, (loginErr) => {
         if (loginErr) return next(loginErr);
-        const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "30d" });
-        const { passwordHash: _ph, passwordEncrypted: _pe, ...safeUser } = user as any;
+        const token = jwt.sign({ id: user.id, authVersion: user.authVersion ?? 0 }, JWT_SECRET, { expiresIn: "30d" });
+        const { passwordHash: _ph, passwordEncrypted: _pe, authVersion: _av, ...safeUser } = user as any;
         res.status(200).json({ user: safeUser, token });
       });
     })(req, res, next);
@@ -193,9 +196,57 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     });
   });
 
+  app.post("/api/auth/change-password", async (req, res) => {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: "Vui lòng đăng nhập lại." });
+
+    const parsed = z.object({
+      currentPassword: z.string().min(1),
+      newPassword: z.string().min(8).max(128),
+    }).strict().safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Mật khẩu mới phải có từ 8 đến 128 ký tự." });
+    }
+    if (parsed.data.currentPassword === parsed.data.newPassword) {
+      return res.status(400).json({ message: "Mật khẩu mới phải khác mật khẩu hiện tại." });
+    }
+
+    try {
+      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (!user || !user.isActive) return res.status(401).json({ message: "Tài khoản không còn hoạt động." });
+      if (!comparePasswords(parsed.data.currentPassword, user.passwordHash)) {
+        return res.status(400).json({ message: "Mật khẩu hiện tại không đúng." });
+      }
+
+      const [staffProfile] = await db
+        .select({ id: staff.id })
+        .from(staff)
+        .where(eq(staff.userId, userId))
+        .limit(1);
+      const updateValues: Partial<typeof users.$inferInsert> = {
+        passwordHash: hashPassword(parsed.data.newPassword),
+        authVersion: (user.authVersion ?? 0) + 1,
+        updatedAt: new Date(),
+      };
+      if (staffProfile) updateValues.passwordEncrypted = encrypt(parsed.data.newPassword);
+
+      await db.transaction(async (tx) => {
+        await tx.update(users).set(updateValues).where(eq(users.id, userId));
+        await tx.execute(sql`
+          DELETE FROM "session"
+          WHERE sess #>> '{passport,user}' = ${userId}
+        `);
+      });
+      return res.json({ message: "Đổi mật khẩu thành công. Vui lòng đăng nhập lại." });
+    } catch (error) {
+      console.error("[Auth] Change password failed:", error);
+      return res.status(500).json({ message: "Không thể đổi mật khẩu lúc này." });
+    }
+  });
+
   app.get(api.auth.me.path, (req, res) => {
     if (!req.isAuthenticated() && !req.user) return res.sendStatus(401);
-    const { passwordHash, passwordEncrypted, ...safeUser } = req.user as any;
+    const { passwordHash, passwordEncrypted, authVersion, ...safeUser } = req.user as any;
     res.status(200).json(safeUser);
   });
 

@@ -49,10 +49,16 @@ export async function jwtAuthMiddleware(
 
   const token = authHeader.slice(7);
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
+    const decoded = jwt.verify(token, JWT_SECRET) as { id: string; authVersion?: number };
     if (!req.user) {
       const user = await storage.getUser(decoded.id);
-      if (user && user.isActive) req.user = user;
+      if (
+        user &&
+        user.isActive &&
+        (decoded.authVersion ?? 0) === user.authVersion
+      ) {
+        req.user = user;
+      }
     }
   } catch {
     // Token không hợp lệ hoặc hết hạn — bỏ qua, để route tự xử lý 401

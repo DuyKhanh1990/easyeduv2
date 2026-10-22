@@ -90,3 +90,30 @@ export function useLogout() {
     },
   });
 }
+
+export function useChangePassword() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: { currentPassword: string; newPassword: string }) => {
+      const token = getAuthToken();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: JSON.stringify(input),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || "Không thể đổi mật khẩu.");
+      return body;
+    },
+    onSuccess: () => {
+      clearAuthToken();
+      queryClient.clear();
+      window.location.href = "/login";
+    },
+  });
+}

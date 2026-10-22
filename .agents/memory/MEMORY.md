@@ -30,6 +30,7 @@
 - [Invoice confirmed status](invoice-confirmed-status.md) — trạng thái confirmed hiển thị riêng nhưng dùng toàn bộ nghiệp vụ paid: tab, thu/chi, ví, đối soát, thông báo và hoa hồng.
 - [Paid invoice edit dialog lock](paid-invoice-edit-dialog-lock.md) — giữ dialog hóa đơn paid/confirmed mở ở chế độ khóa, hiện cảnh báo trong dialog và yêu cầu chuyển về chưa thanh toán trước.
 - [Deleted account login](deleted-account-login.md) — xoá hồ sơ phải vô hiệu hóa user liên kết; login cũng chặn user mồ côi còn sót lại để tránh đăng nhập bằng mật khẩu cũ.
+- [Password change session invalidation](password-change-session-invalidation.md) — đổi mật khẩu phải thu hồi phiên web và JWT trên mọi thiết bị; mật khẩu mã hóa của staff cũng cần đồng bộ.
 - [Commission board rules](commission-board-rules.md) — bảng tính từ cấu hình; ngày nghiệp vụ theo trạng thái, xếp chung các trạng thái và cộng dồn cấu hình trùng.
 - [Customer status card source](customer-status-card-source.md) — các thẻ trạng thái trên /customers lấy từ student_classes; không thay logic báo cáo, bộ lọc hoặc trạng thái từng dòng.
 - [Customers class-view scope](customers-class-view-scope.md) — thay đổi chế độ Theo lớp chỉ được tác động giao diện theo lớp; không đổi nghiệp vụ hoặc các chế độ xem khác.

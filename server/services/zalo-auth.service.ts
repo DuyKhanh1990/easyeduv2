@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import { db } from "../db";
-import { centerConfig, studentNotificationChannels, students } from "@shared/schema";
+import { centerConfig, studentNotificationChannels, students, users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { JWT_SECRET } from "../auth";
 
@@ -87,7 +87,16 @@ export async function resolveZaloAuth(zaloAccessToken: string): Promise<ZaloAuth
   }
 
   // Bước 4: Ký JWT student/parent
-  const token = jwt.sign({ id: student.userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  const [account] = await db
+    .select({ authVersion: users.authVersion })
+    .from(users)
+    .where(eq(users.id, student.userId))
+    .limit(1);
+  const token = jwt.sign(
+    { id: student.userId, authVersion: account?.authVersion ?? 0 },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN },
+  );
   const userType = student.type === "Phụ huynh" ? "parent" : "student";
 
   console.log(`[ZaloAuthService] Đăng nhập thành công: studentId=${student.id}, userId=${student.userId}`);

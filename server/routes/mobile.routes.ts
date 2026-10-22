@@ -342,7 +342,7 @@ export function registerMobileRoutes(app: Express) {
         if (loginErr) return next(loginErr);
 
         try {
-          const tokenPayload = { id: user.id, username: user.username, isActive: user.isActive };
+          const tokenPayload = { id: user.id, username: user.username, isActive: user.isActive, authVersion: user.authVersion ?? 0 };
           const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
           // Trả về URL của server nhận request — đảm bảo mobile app gọi đúng server (dev hoặc prod)
           const requestOrigin = `${req.protocol}://${req.get("host")}`;

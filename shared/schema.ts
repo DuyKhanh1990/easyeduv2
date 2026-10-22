@@ -551,6 +551,7 @@ export const users = pgTable("users", {
   username: varchar("username", { length: 255 }).notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   passwordEncrypted: text("password_encrypted"),
+  authVersion: integer("auth_version").notNull().default(0),
   isActive: boolean("is_active").default(true),
   tinodeUserId: varchar("tinode_user_id", { length: 100 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
