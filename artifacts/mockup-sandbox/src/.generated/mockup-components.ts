@@ -3,6 +3,7 @@ type ModuleMap = Record<string, () => Promise<Record<string, unknown>>>;
 export const modules: ModuleMap = {
   "./components/mockups/bang-tin/CardGrid.tsx": () => import("../components/mockups/bang-tin/CardGrid.tsx"),
   "./components/mockups/bang-tin/Magazine.tsx": () => import("../components/mockups/bang-tin/Magazine.tsx"),
+  "./components/mockups/calendar-responsive/Current.tsx": () => import("../components/mockups/calendar-responsive/Current.tsx"),
   "./components/mockups/score-conversion-layout/Current.tsx": () => import("../components/mockups/score-conversion-layout/Current.tsx"),
   "./components/mockups/score-conversion-layout/Requested.tsx": () => import("../components/mockups/score-conversion-layout/Requested.tsx"),
   "./components/mockups/score-conversion-layout/ScoreConversionLayoutPreview.tsx": () => import("../components/mockups/score-conversion-layout/ScoreConversionLayoutPreview.tsx"),
@@ -10,6 +11,5 @@ export const modules: ModuleMap = {
   "./components/mockups/score-conversion-layout/StudentScoreSheetDialog.tsx": () => import("../components/mockups/score-conversion-layout/StudentScoreSheetDialog.tsx"),
   "./components/mockups/student-score-sheet-cards/Aligned.tsx": () => import("../components/mockups/student-score-sheet-cards/Aligned.tsx"),
   "./components/mockups/student-score-sheet-cards/Current.tsx": () => import("../components/mockups/student-score-sheet-cards/Current.tsx"),
-  "./components/mockups/calendar-responsive/Current.tsx": () => import("../components/mockups/calendar-responsive/Current.tsx"),
   "./components/mockups/zbs-payment-template/Current.tsx": () => import("../components/mockups/zbs-payment-template/Current.tsx")
 };
