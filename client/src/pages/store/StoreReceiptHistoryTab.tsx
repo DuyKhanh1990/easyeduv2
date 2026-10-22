@@ -11,6 +11,10 @@ import {
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
 import { HistoryPaginationFooter } from "@/components/common/HistoryPaginationFooter";
+import {
+  formatStoreAuditQuantityDelta,
+  getStoreAuditQuantityDelta,
+} from "./storeAuditQuantityDelta";
 
 /* ── Types ─────────────────────────────────────────────── */
 type EvType = "created" | "completed" | "cancelled" | "edited" | "deleted";
@@ -123,22 +127,35 @@ function DiffTable({ oldContent, newContent }: { oldContent: Record<string, any>
       <thead>
         <tr className="border-b border-slate-100">
           <th className="text-left py-1.5 pr-3 font-semibold text-slate-500 w-[30%]">Trường</th>
-          <th className="text-left py-1.5 pr-3 font-semibold text-red-500 w-[35%]">Trước</th>
-          <th className="text-left py-1.5 font-semibold text-emerald-600 w-[35%]">Sau</th>
+          <th className="text-left py-1.5 pr-3 font-semibold text-red-500 w-[30%]">Trước</th>
+          <th className="text-left py-1.5 pr-3 font-semibold text-slate-500 w-[15%]">Tăng/Giảm</th>
+          <th className="text-left py-1.5 font-semibold text-emerald-600 w-[25%]">Sau</th>
         </tr>
       </thead>
       <tbody>
-        {keys.map((k) => (
+        {keys.map((k) => {
+          const quantityDelta = getStoreAuditQuantityDelta(k, oldContent[k], newContent[k]);
+          return (
           <tr key={k} className="border-b border-slate-50">
             <td className="py-1.5 pr-3 font-medium text-slate-600">{k}</td>
             <td className="py-1.5 pr-3 text-red-600 line-through opacity-80">
               {oldContent[k] == null ? <span className="italic text-slate-400 no-underline line-through-none">—</span> : String(oldContent[k])}
             </td>
+            <td className="py-1.5 pr-3 font-semibold tabular-nums">
+              {quantityDelta == null ? (
+                <span className="text-slate-400">—</span>
+              ) : (
+                <span className={quantityDelta > 0 ? "text-emerald-700" : quantityDelta < 0 ? "text-red-600" : "text-slate-500"}>
+                  {formatStoreAuditQuantityDelta(quantityDelta)}
+                </span>
+              )}
+            </td>
             <td className="py-1.5 text-emerald-700 font-medium">
               {newContent[k] == null ? <span className="italic text-slate-400">—</span> : String(newContent[k])}
             </td>
           </tr>
-        ))}
+          );
+        })}
       </tbody>
     </table>
   );

@@ -45,6 +45,7 @@
 - [Production PostgreSQL client](production-postgres-client.md) — backup/restore cần PostgreSQL client ở runtime của cả Replit và Docker, không chỉ trong workspace dev.
 - [Bulk finance child-first behavior](bulk-child-first-finance.md) — bulk phải tách invoice/schedule targets và luôn đồng bộ summary của invoice cha sau thao tác trên đợt.
 - [Inventory availability expiry](inventory-availability-expiry.md) — tồn thực tách khỏi giữ chỗ; khả dụng trừ đúng reservation và phiếu xuất nháp còn hạn, không ghi giữ chỗ vào ledger.
+- [Store audit quantity deltas](store-audit-quantity-deltas.md) — nhật ký nhập/xuất hiển thị tăng giảm số lượng tính từ Trước/Sau; không đổi nghiệp vụ tồn kho.
 - [Student discussion edit audit](student-discussion-edit-audit.md) — giữ tác giả gốc và lưu riêng người sửa/thời điểm sửa để hiển thị lịch sử minh bạch.
 - [Admin Hub connection testing](admin-hub-connection-testing.md) — cross-domain claim cần endpoint public và mã được sinh trong cùng môi trường/database.
 - [Class session ordering](class-session-ordering.md) — thao tác từ lịch dùng ID/vị trí buổi lớp, không dùng sessionOrder riêng của học viên.
