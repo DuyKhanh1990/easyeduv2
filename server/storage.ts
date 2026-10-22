@@ -236,6 +236,7 @@ export interface IStorage {
   ): Promise<{ warning?: string; adjustments: Array<{ studentClassId: string; difference: number; invoiceId: string | null }>; replayed?: boolean }>;
   makeupClassStudents(classId: string, data: any, userId: string): Promise<void>;
   cancelClassSessions(params: { classId: string, fromSessionId: string, toSessionId: string, reason: string, userId: string }): Promise<void>;
+  restoreClassSession(params: { classId: string; classSessionId: string }): Promise<void>;
   updateClassSession(id: string, updates: any): Promise<ClassSession>;
   updateClassCycle(classId: string, data: {
     fromSessionId: string;
@@ -715,6 +716,10 @@ export class DatabaseStorage implements IStorage {
 
   async cancelClassSessions(params: { classId: string, fromSessionId: string, toSessionId: string, reason: string, userId: string }): Promise<void> {
     return sessionStorage.cancelClassSessions(params);
+  }
+
+  async restoreClassSession(params: { classId: string; classSessionId: string }): Promise<void> {
+    return sessionStorage.restoreClassSession(params);
   }
 
   async excludeClassSessions(params: { classId: string; fromSessionId: string; toSessionId: string; reason: string; userId: string; weekdays?: number[]; skipRecalculate?: boolean }): Promise<void> {
