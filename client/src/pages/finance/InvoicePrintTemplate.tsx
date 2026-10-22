@@ -824,11 +824,13 @@ export function InvoicePrintTemplate({
   const editorRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
   const editorPaneRef = useRef<HTMLDivElement>(null);
+  const previewPaneRef = useRef<HTMLDivElement>(null);
   const [pageSize, setPageSize] = useState<PageSize>((template.pageSize as PageSize) || "A4");
   const [orientation, setOrientation] = useState<Orientation>((template.orientation as Orientation) || "portrait");
   const [isPreview, setIsPreview] = useState(false);
   const [editorScale, setEditorScale] = useState(1);
   const [editorViewportWidth, setEditorViewportWidth] = useState(0);
+  const [previewScale, setPreviewScale] = useState(1);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [previewHtml, setPreviewHtml] = useState("");
   const [sidebarTableOpen, setSidebarTableOpen] = useState(false);
@@ -1595,6 +1597,8 @@ export function InvoicePrintTemplate({
   const editorPaperHeight = (parseFloat(ps.minHeight) * 96) / 25.4;
   const scaledPaperWidth = editorPaperWidth * editorScale;
   const scaledPaperHeight = editorPaperHeight * editorScale;
+  const scaledPreviewWidth = editorPaperWidth * previewScale;
+  const scaledPreviewHeight = editorPaperHeight * previewScale;
 
   const fitEditorToPane = useCallback(() => {
     const pane = editorPaneRef.current;
@@ -1617,6 +1621,28 @@ export function InvoicePrintTemplate({
       window.removeEventListener("resize", fitEditorToPane);
     };
   }, [fitEditorToPane, isPreview]);
+
+  const fitPreviewToPane = useCallback(() => {
+    const pane = previewPaneRef.current;
+    if (!pane) return;
+    const availableWidth = Math.max(120, pane.clientWidth - 48);
+    const availableHeight = Math.max(160, pane.clientHeight - 72);
+    const scale = Math.min(1, availableWidth / editorPaperWidth, availableHeight / editorPaperHeight);
+    setPreviewScale(Math.max(0.15, Math.floor(scale * 100) / 100));
+  }, [editorPaperHeight, editorPaperWidth]);
+
+  useLayoutEffect(() => {
+    const pane = previewPaneRef.current;
+    if (!pane) return;
+    fitPreviewToPane();
+    const observer = new ResizeObserver(fitPreviewToPane);
+    observer.observe(pane);
+    window.addEventListener("resize", fitPreviewToPane);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", fitPreviewToPane);
+    };
+  }, [fitPreviewToPane, isPreview]);
 
   return (
     <div className="flex flex-col h-full gap-0 overflow-hidden">
@@ -2129,29 +2155,49 @@ export function InvoicePrintTemplate({
             )}
 
             {/* ── PREVIEW PANE ── */}
-            <div className="flex-1 min-w-0 overflow-auto p-6 flex justify-center bg-muted/30">
-              <div className="flex flex-col items-center gap-2">
+            <div ref={previewPaneRef} className="flex-1 min-w-0 overflow-auto p-6 bg-muted/30">
+              <div
+                className="flex flex-col items-center gap-2"
+                style={{
+                  width: `${scaledPreviewWidth}px`,
+                  marginLeft: "auto",
+                  marginRight: "auto",
+                }}
+              >
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold flex items-center gap-1.5">
                   <Eye className="h-3 w-3" /> Xem trước (dữ liệu mẫu)
                 </div>
                 <div
                   style={{
-                    width: ps.width,
-                    minHeight: ps.minHeight,
-                    background: "white",
-                    boxShadow: "0 2px 16px rgba(0,0,0,0.12)",
-                    padding: "10mm",
+                    width: `${scaledPreviewWidth}px`,
+                    height: `${scaledPreviewHeight}px`,
+                    position: "relative",
                   }}
                 >
                   <div
-                    dangerouslySetInnerHTML={{ __html: previewHtml }}
-                    data-testid="preview-content"
                     style={{
-                      fontFamily: "Arial, sans-serif",
-                      fontSize: "13px",
-                      lineHeight: "1.5",
+                      width: ps.width,
+                      minHeight: ps.minHeight,
+                      background: "white",
+                      boxShadow: "0 2px 16px rgba(0,0,0,0.12)",
+                      padding: "10mm",
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      transform: `scale(${previewScale})`,
+                      transformOrigin: "top left",
                     }}
-                  />
+                  >
+                    <div
+                      dangerouslySetInnerHTML={{ __html: previewHtml }}
+                      data-testid="preview-content"
+                      style={{
+                        fontFamily: "Arial, sans-serif",
+                        fontSize: "13px",
+                        lineHeight: "1.5",
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
