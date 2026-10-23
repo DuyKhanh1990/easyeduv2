@@ -138,4 +138,3 @@
 - [Teacher salary package role rates](teacher-salary-role-rates.md) — `role_rates` is authoritative; sync legacy single-role fields to its first row and fall back for older packages.
 - [Teacher attendance overview scope](teacher-attendance-view-scope.md) — “Xem” sees only the logged-in teacher’s assigned classes; “Xem all” and Super Admin retain all rows.
 - [Staff role assignment permissions](staff-role-assignment-permissions.md) — role-assignment grants are per department/role; unchecked roles stay visible but disabled, while staff create/edit rights remain unchanged.
-- [Invoice template editor sizing](invoice-template-editor-sizing.md) — keep the split editor/preview; scale the A4 editing page to the editor pane width, without extra zoom controls or changing print size.

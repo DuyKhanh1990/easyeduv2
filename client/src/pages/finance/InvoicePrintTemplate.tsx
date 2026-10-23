@@ -823,14 +823,9 @@ export function InvoicePrintTemplate({
   const queryClient = useQueryClient();
   const editorRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
-  const editorPaneRef = useRef<HTMLDivElement>(null);
-  const previewPaneRef = useRef<HTMLDivElement>(null);
   const [pageSize, setPageSize] = useState<PageSize>((template.pageSize as PageSize) || "A4");
   const [orientation, setOrientation] = useState<Orientation>((template.orientation as Orientation) || "portrait");
   const [isPreview, setIsPreview] = useState(false);
-  const [editorScale, setEditorScale] = useState(1);
-  const [editorViewportWidth, setEditorViewportWidth] = useState(0);
-  const [previewScale, setPreviewScale] = useState(1);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [previewHtml, setPreviewHtml] = useState("");
   const [sidebarTableOpen, setSidebarTableOpen] = useState(false);
@@ -1219,18 +1214,18 @@ export function InvoicePrintTemplate({
       const startY = e.clientY;
       const cellRect = cell.getBoundingClientRect();
       const row = cell.closest("tr") as HTMLTableRowElement;
-      const startW = cellRect.width / editorScale;
-      const startH = row.getBoundingClientRect().height / editorScale;
+      const startW = cellRect.width;
+      const startH = row.getBoundingClientRect().height;
 
       document.body.style.cursor = mode === "col" ? "col-resize" : "row-resize";
       document.body.style.userSelect = "none";
 
       const onMove = (ev: MouseEvent) => {
         if (mode === "col") {
-          const newW = Math.max(20, startW + (ev.clientX - startX) / editorScale);
+          const newW = Math.max(20, startW + (ev.clientX - startX));
           cell.style.width = newW + "px";
         } else {
-          const newH = Math.max(20, startH + (ev.clientY - startY) / editorScale);
+          const newH = Math.max(20, startH + (ev.clientY - startY));
           row.style.height = newH + "px";
         }
       };
@@ -1245,7 +1240,7 @@ export function InvoicePrintTemplate({
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
     },
-    [editorScale, refreshPreview],
+    [refreshPreview],
   );
 
   const detectResizeEdge = useCallback(
@@ -1593,55 +1588,6 @@ export function InvoicePrintTemplate({
   }, [pageSize, orientation]);
 
   const ps = PAGE_SIZES[pageSize];
-  const editorPaperWidth = (parseFloat(ps.width) * 96) / 25.4;
-  const editorPaperHeight = (parseFloat(ps.minHeight) * 96) / 25.4;
-  const scaledPaperWidth = editorPaperWidth * editorScale;
-  const scaledPaperHeight = editorPaperHeight * editorScale;
-  const scaledPreviewWidth = editorPaperWidth * previewScale;
-  const scaledPreviewHeight = editorPaperHeight * previewScale;
-
-  const fitEditorToPane = useCallback(() => {
-    const pane = editorPaneRef.current;
-    if (!pane) return;
-    const availableWidth = Math.max(120, pane.clientWidth - 32);
-    const scale = Math.min(1, availableWidth / editorPaperWidth);
-    setEditorViewportWidth(availableWidth);
-    setEditorScale(Math.max(0.15, Math.floor(scale * 100) / 100));
-  }, [editorPaperWidth]);
-
-  useLayoutEffect(() => {
-    const pane = editorPaneRef.current;
-    if (!pane || isPreview) return;
-    fitEditorToPane();
-    const observer = new ResizeObserver(fitEditorToPane);
-    observer.observe(pane);
-    window.addEventListener("resize", fitEditorToPane);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", fitEditorToPane);
-    };
-  }, [fitEditorToPane, isPreview]);
-
-  const fitPreviewToPane = useCallback(() => {
-    const pane = previewPaneRef.current;
-    if (!pane) return;
-    const availableWidth = Math.max(120, pane.clientWidth - 48);
-    const scale = Math.min(1, availableWidth / editorPaperWidth);
-    setPreviewScale(Math.max(0.15, Math.floor(scale * 100) / 100));
-  }, [editorPaperWidth]);
-
-  useLayoutEffect(() => {
-    const pane = previewPaneRef.current;
-    if (!pane) return;
-    fitPreviewToPane();
-    const observer = new ResizeObserver(fitPreviewToPane);
-    observer.observe(pane);
-    window.addEventListener("resize", fitPreviewToPane);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", fitPreviewToPane);
-    };
-  }, [fitPreviewToPane, isPreview]);
 
   return (
     <div className="flex flex-col h-full gap-0 overflow-hidden">
@@ -2034,66 +1980,47 @@ export function InvoicePrintTemplate({
           <div className="flex-1 overflow-hidden flex">
             {/* ── EDITOR PANE ── */}
             {!isPreview && (
-              <div ref={editorPaneRef} className="flex-1 min-w-0 overflow-auto p-4 bg-muted/10 border-r">
-                <div
-                  className="flex flex-col items-center gap-2"
-                  style={{
-                    width: `${scaledPaperWidth}px`,
-                    marginLeft: scaledPaperWidth <= editorViewportWidth ? "auto" : undefined,
-                    marginRight: scaledPaperWidth <= editorViewportWidth ? "auto" : undefined,
-                  }}
-                >
+              <div className="flex-1 min-w-0 overflow-auto p-6 flex justify-center bg-muted/10 border-r">
+                <div className="flex flex-col items-center gap-2">
                   <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">
                     Trình thiết kế (chỉnh sửa)
                   </div>
                   <div
+                    ref={paperRef}
                     style={{
-                      width: `${scaledPaperWidth}px`,
-                      height: `${scaledPaperHeight}px`,
+                      width: ps.width,
+                      minHeight: ps.minHeight,
+                      background: "white",
+                      boxShadow: "0 2px 16px rgba(0,0,0,0.12)",
+                      padding: "10mm",
                       position: "relative",
                     }}
                   >
                     <div
-                      ref={paperRef}
+                      ref={editorRef}
+                      contentEditable
+                      suppressContentEditableWarning
+                      className="outline-none min-h-full invoice-template-editor"
                       style={{
-                        width: ps.width,
-                        minHeight: ps.minHeight,
-                        background: "white",
-                        boxShadow: "0 2px 16px rgba(0,0,0,0.12)",
-                        padding: "10mm",
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        transform: `scale(${editorScale})`,
-                        transformOrigin: "top left",
+                        fontFamily: "Arial, sans-serif",
+                        fontSize: "13px",
+                        lineHeight: "1.5",
+                        userSelect: isDraggingRef.current ? "none" : undefined,
                       }}
-                    >
-                      <div
-                        ref={editorRef}
-                        contentEditable
-                        suppressContentEditableWarning
-                        className="outline-none min-h-full invoice-template-editor"
-                        style={{
-                          fontFamily: "Arial, sans-serif",
-                          fontSize: "13px",
-                          lineHeight: "1.5",
-                          userSelect: isDraggingRef.current ? "none" : undefined,
-                        }}
-                        onMouseDown={handleEditorMouseDown}
-                        onMouseOver={handleEditorMouseOver}
-                        onMouseMove={handleEditorMouseMove}
-                        onMouseLeave={scheduleHideTableLineBtns}
-                        onPaste={handleEditorPaste}
-                        onDragOver={event => event.preventDefault()}
-                        onDrop={handleEditorDrop}
-                        onInput={refreshPreview}
-                        data-testid="template-editor"
-                        data-placeholder="Nhập nội dung mẫu hoá đơn tại đây..."
-                      />
-                    </div>
-                      {/* ── Floating ↑/↓ buttons to insert line above/below a table ── */}
-                      {tableHoverBtns && (
-                        <>
+                      onMouseDown={handleEditorMouseDown}
+                      onMouseOver={handleEditorMouseOver}
+                      onMouseMove={handleEditorMouseMove}
+                      onMouseLeave={scheduleHideTableLineBtns}
+                      onPaste={handleEditorPaste}
+                      onDragOver={event => event.preventDefault()}
+                      onDrop={handleEditorDrop}
+                      onInput={refreshPreview}
+                      data-testid="template-editor"
+                      data-placeholder="Nhập nội dung mẫu hoá đơn tại đây..."
+                    />
+                    {/* ── Floating ↑/↓ buttons to insert line above/below a table ── */}
+                    {tableHoverBtns && (
+                      <>
                         <button
                           style={{
                             position: "fixed",
@@ -2146,57 +2073,37 @@ export function InvoicePrintTemplate({
                         >
                           <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 8L5 2M2 5L5 8L8 5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                         </button>
-                        </>
-                      )}
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
             )}
 
             {/* ── PREVIEW PANE ── */}
-            <div ref={previewPaneRef} className="flex-1 min-w-0 overflow-auto p-6 bg-muted/30">
-              <div
-                className="flex flex-col items-center gap-2"
-                style={{
-                  width: `${scaledPreviewWidth}px`,
-                  marginLeft: "auto",
-                  marginRight: "auto",
-                }}
-              >
+            <div className="flex-1 min-w-0 overflow-auto p-6 flex justify-center bg-muted/30">
+              <div className="flex flex-col items-center gap-2">
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold flex items-center gap-1.5">
                   <Eye className="h-3 w-3" /> Xem trước (dữ liệu mẫu)
                 </div>
                 <div
                   style={{
-                    width: `${scaledPreviewWidth}px`,
-                    height: `${scaledPreviewHeight}px`,
-                    position: "relative",
+                    width: ps.width,
+                    minHeight: ps.minHeight,
+                    background: "white",
+                    boxShadow: "0 2px 16px rgba(0,0,0,0.12)",
+                    padding: "10mm",
                   }}
                 >
                   <div
+                    dangerouslySetInnerHTML={{ __html: previewHtml }}
+                    data-testid="preview-content"
                     style={{
-                      width: ps.width,
-                      minHeight: ps.minHeight,
-                      background: "white",
-                      boxShadow: "0 2px 16px rgba(0,0,0,0.12)",
-                      padding: "10mm",
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      transform: `scale(${previewScale})`,
-                      transformOrigin: "top left",
+                      fontFamily: "Arial, sans-serif",
+                      fontSize: "13px",
+                      lineHeight: "1.5",
                     }}
-                  >
-                    <div
-                      dangerouslySetInnerHTML={{ __html: previewHtml }}
-                      data-testid="preview-content"
-                      style={{
-                        fontFamily: "Arial, sans-serif",
-                        fontSize: "13px",
-                        lineHeight: "1.5",
-                      }}
-                    />
-                  </div>
+                  />
                 </div>
               </div>
             </div>
