@@ -500,6 +500,11 @@ function getPageDimensions(pageSize: PageSize, orientation: Orientation) {
   return { width: page.width, height: page.minHeight };
 }
 
+function getScreenPageBackground(pageHeight: string) {
+  const pageGapEnd = `calc(${pageHeight} + 8mm)`;
+  return `repeating-linear-gradient(to bottom, #fff 0, #fff ${pageHeight}, #e2e8f0 ${pageHeight}, #e2e8f0 ${pageGapEnd})`;
+}
+
 /* ─────────────────── DEFAULT TEMPLATE ─────────────────── */
 const DEFAULT_TEMPLATE = `<div style="font-family: Arial, sans-serif; font-size: 13px;">
   <div style="text-align: center; margin-bottom: 12px;">
@@ -2109,7 +2114,8 @@ export function InvoicePrintTemplate({
                     style={{
                       width: page.width,
                       minHeight: page.height,
-                      background: "white",
+                      backgroundColor: "white",
+                      backgroundImage: getScreenPageBackground(page.height),
                       boxShadow: "0 2px 16px rgba(0,0,0,0.12)",
                       padding: PAGE_CONTENT_INSET,
                       boxSizing: "border-box",
@@ -2219,13 +2225,14 @@ export function InvoicePrintTemplate({
             >
               <div className="flex flex-col items-center gap-2">
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold flex items-center gap-1.5">
-                  <Eye className="h-3 w-3" /> Xem trước (dữ liệu mẫu)
+                    <Eye className="h-3 w-3" /> Xem trước (dữ liệu mẫu · ngắt trang A4)
                 </div>
                 <div
                   style={{
                     width: page.width,
                     minHeight: page.height,
-                    background: "white",
+                    backgroundColor: "white",
+                    backgroundImage: getScreenPageBackground(page.height),
                     boxShadow: "0 2px 16px rgba(0,0,0,0.12)",
                     padding: PAGE_CONTENT_INSET,
                     boxSizing: "border-box",
