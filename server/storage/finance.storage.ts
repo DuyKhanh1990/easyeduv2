@@ -982,7 +982,8 @@ export async function getInvoices(filters: {
       if (f.dueDateFrom) rowConditions.push(sql`${dateField} >= ${f.dueDateFrom}::date`);
       if (f.dueDateTo) rowConditions.push(sql`${dateField} <= ${f.dueDateTo}::date`);
       if (f.tabFilter === "debt") {
-        rowConditions.push(sql`${tableAlias}.status NOT IN ('paid', 'confirmed')`);
+        const statusField = sql.raw(`${tableAlias}.status`);
+        rowConditions.push(sql`${statusField} NOT IN ('paid', 'confirmed')`);
       }
     } else if (f.paidAtFrom || f.paidAtTo) {
       const dateField = sql.raw(`${tableAlias}.paid_at`);
