@@ -490,20 +490,6 @@ const PAGE_SIZES: Record<PageSize, { width: string; minHeight: string; label: st
   A5:  { width: "148mm", minHeight: "210mm", label: "A5 (148 × 210mm)",  cssSize: "A5" },
   K80: { width: "80mm",  minHeight: "120mm", label: "K80 (80mm – Bill nhiệt)", cssSize: "80mm auto" },
 };
-const PAGE_CONTENT_INSET = "10mm";
-
-function getPageDimensions(pageSize: PageSize, orientation: Orientation) {
-  const page = PAGE_SIZES[pageSize];
-  if (orientation === "landscape" && pageSize !== "K80") {
-    return { width: page.minHeight, height: page.width };
-  }
-  return { width: page.width, height: page.minHeight };
-}
-
-function getScreenPageBackground(pageHeight: string) {
-  const pageGapEnd = `calc(${pageHeight} + 8mm)`;
-  return `repeating-linear-gradient(to bottom, #fff 0, #fff ${pageHeight}, #e2e8f0 ${pageHeight}, #e2e8f0 ${pageGapEnd})`;
-}
 
 /* ─────────────────── DEFAULT TEMPLATE ─────────────────── */
 const DEFAULT_TEMPLATE = `<div style="font-family: Arial, sans-serif; font-size: 13px;">
@@ -837,14 +823,11 @@ export function InvoicePrintTemplate({
   const queryClient = useQueryClient();
   const editorRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
-  const previewPaneRef = useRef<HTMLDivElement>(null);
   const [pageSize, setPageSize] = useState<PageSize>((template.pageSize as PageSize) || "A4");
   const [orientation, setOrientation] = useState<Orientation>((template.orientation as Orientation) || "portrait");
   const [isPreview, setIsPreview] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [previewHtml, setPreviewHtml] = useState("");
-  const [previewScale, setPreviewScale] = useState(1);
-  const [isA4SplitGuideVisible, setIsA4SplitGuideVisible] = useState(false);
   const [sidebarTableOpen, setSidebarTableOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSidebarHoverOpen, setIsSidebarHoverOpen] = useState(false);
@@ -993,19 +976,12 @@ export function InvoicePrintTemplate({
     }
 
     const editor = editorRef.current;
-    if (!editor) return;
+    if (!editor || !clipboardTypes.includes("text/plain")) return;
 
-    const clipboardHtml = clipboardTypes.includes("text/html")
-      ? clipboard.getData("text/html")
-      : "";
+    // Rich clipboard HTML often contains fixed alignment and nested formatting
+    // that prevents the editor's alignment controls from taking effect.
     const text = clipboard.getData("text/plain").replace(/\r\n?/g, "\n");
-    const safeHtml = clipboardHtml
-      ? DOMPurify.sanitize(clipboardHtml, {
-          ADD_ATTR: ["style", "data-borderless"],
-        })
-      : "";
-    if (!safeHtml && !text) return;
-
+    if (!text) return;
     const selection = window.getSelection();
     if (!selection) return;
 
@@ -1019,18 +995,12 @@ export function InvoicePrintTemplate({
     }
 
     range.deleteContents();
-    let fragment: DocumentFragment;
-    if (safeHtml) {
-      const template = document.createElement("template");
-      template.innerHTML = safeHtml;
-      fragment = template.content;
-    } else {
-      fragment = document.createDocumentFragment();
-      text.split("\n").forEach((line, index) => {
-        if (index > 0) fragment.appendChild(document.createElement("br"));
-        if (line) fragment.appendChild(document.createTextNode(line));
-      });
-    }
+    const fragment = document.createDocumentFragment();
+    const lines = text.split("\n");
+    lines.forEach((line, index) => {
+      if (index > 0) fragment.appendChild(document.createElement("br"));
+      if (line) fragment.appendChild(document.createTextNode(line));
+    });
     const lastInsertedNode = fragment.lastChild;
     range.insertNode(fragment);
     if (lastInsertedNode) range.setStartAfter(lastInsertedNode);
@@ -1590,8 +1560,6 @@ export function InvoicePrintTemplate({
     const html = editorRef.current?.innerHTML || "";
     const rendered = renderTemplate(html, SAMPLE_DATA, mainLogoUrl);
     const ps = PAGE_SIZES[pageSize];
-    const page = getPageDimensions(pageSize, orientation);
-    const printPageSize = pageSize === "K80" ? ps.cssSize : `${ps.cssSize} ${orientation}`;
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
     printWindow.document.write(`<!DOCTYPE html>
@@ -1601,16 +1569,9 @@ export function InvoicePrintTemplate({
   <title>Hoá đơn</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    @page { size: ${printPageSize}; margin: 0; }
-    html, body { margin: 0; padding: 0; }
-    body { font-family: Arial, sans-serif; font-size: 13px; line-height: 1.5; }
-    table { border-collapse: collapse; border-spacing: 0; }
-    .page {
-      width: ${page.width};
-      min-height: ${page.height};
-      padding: ${PAGE_CONTENT_INSET};
-      box-sizing: border-box;
-    }
+    @page { size: ${ps.cssSize} ${orientation}; margin: 10mm; }
+    body { font-family: Arial, sans-serif; font-size: 13px; }
+    .page { width: ${ps.width}; min-height: ${ps.minHeight}; }
     /* Borderless tables behave as invisible Word-style layout grids */
     table[data-borderless="true"] { border-color: transparent !important; }
     table[data-borderless="true"] td,
@@ -1626,28 +1587,10 @@ export function InvoicePrintTemplate({
 </body>
 </html>`);
     printWindow.document.close();
-  }, [pageSize, orientation, mainLogoUrl]);
+  }, [pageSize, orientation]);
 
   const ps = PAGE_SIZES[pageSize];
-  const page = getPageDimensions(pageSize, orientation);
   const isSidebarExpanded = !isSidebarCollapsed || isSidebarHoverOpen;
-
-  useLayoutEffect(() => {
-    const pane = previewPaneRef.current;
-    if (!pane) return;
-
-    const updateScale = () => {
-      const pageWidthPx = (Number.parseFloat(page.width) * 96) / 25.4;
-      const availableWidthPx = Math.max(0, pane.clientWidth - 48);
-      if (pageWidthPx <= 0 || availableWidthPx <= 0) return;
-      setPreviewScale(Math.min(1, availableWidthPx / pageWidthPx));
-    };
-
-    updateScale();
-    const observer = new ResizeObserver(updateScale);
-    observer.observe(pane);
-    return () => observer.disconnect();
-  }, [page.width]);
 
   return (
     <div className="flex flex-col h-full gap-0 overflow-hidden">
@@ -1675,10 +1618,7 @@ export function InvoicePrintTemplate({
               </span>
             </label>
           </div>
-          <Select value={pageSize} onValueChange={(v) => {
-            setPageSize(v as PageSize);
-            if (v !== "A4") setIsA4SplitGuideVisible(false);
-          }}>
+          <Select value={pageSize} onValueChange={(v) => setPageSize(v as PageSize)}>
             <SelectTrigger className="h-8 text-xs w-48" data-testid="select-page-size">
               <SelectValue />
             </SelectTrigger>
@@ -1688,10 +1628,7 @@ export function InvoicePrintTemplate({
               ))}
             </SelectContent>
           </Select>
-          <Select value={orientation} onValueChange={(v) => {
-            setOrientation(v as Orientation);
-            if (v !== "portrait") setIsA4SplitGuideVisible(false);
-          }}>
+          <Select value={orientation} onValueChange={(v) => setOrientation(v as Orientation)}>
             <SelectTrigger className="h-8 text-xs w-36" data-testid="select-orientation">
               <SelectValue />
             </SelectTrigger>
@@ -2087,38 +2024,19 @@ export function InvoicePrintTemplate({
           <div className="flex-1 overflow-hidden flex">
             {/* ── EDITOR PANE ── */}
             {!isPreview && (
-              <div className="flex-[3] min-w-0 overflow-auto p-6 flex justify-center bg-muted/10 border-r">
+              <div className="flex-1 min-w-0 overflow-auto p-6 flex justify-center bg-muted/10 border-r">
                 <div className="flex flex-col items-center gap-2">
-                  <div className="relative w-full text-center text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">
-                    <span>Trình thiết kế (chỉnh sửa)</span>
-                    {pageSize === "A4" && orientation === "portrait" && (
-                      <button
-                        type="button"
-                        onClick={() => setIsA4SplitGuideVisible(value => !value)}
-                        aria-pressed={isA4SplitGuideVisible}
-                        title={isA4SplitGuideVisible ? "Ẩn đường chia đôi A4" : "Hiện đường chia đôi A4"}
-                        data-testid="button-a4-split-guide"
-                        className={`absolute right-0 top-1/2 -translate-y-1/2 inline-flex items-center gap-1 rounded border px-1.5 py-1 text-[9px] normal-case transition-colors ${
-                          isA4SplitGuideVisible
-                            ? "border-primary/40 bg-primary/10 text-primary"
-                            : "border-border bg-background text-muted-foreground hover:bg-muted"
-                        }`}
-                      >
-                        <Rows2 className="h-3 w-3" />
-                        Chia đôi A4
-                      </button>
-                    )}
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">
+                    Trình thiết kế (chỉnh sửa)
                   </div>
                   <div
                     ref={paperRef}
                     style={{
-                      width: page.width,
-                      minHeight: page.height,
-                      backgroundColor: "white",
-                      backgroundImage: getScreenPageBackground(page.height),
+                      width: ps.width,
+                      minHeight: ps.minHeight,
+                      background: "white",
                       boxShadow: "0 2px 16px rgba(0,0,0,0.12)",
-                      padding: PAGE_CONTENT_INSET,
-                      boxSizing: "border-box",
+                      padding: "10mm",
                       position: "relative",
                     }}
                   >
@@ -2144,18 +2062,6 @@ export function InvoicePrintTemplate({
                       data-testid="template-editor"
                       data-placeholder="Nhập nội dung mẫu hoá đơn tại đây..."
                     />
-                    {isA4SplitGuideVisible && pageSize === "A4" && orientation === "portrait" && (
-                      <div
-                        aria-hidden="true"
-                        data-testid="a4-split-guide"
-                        className="absolute left-0 right-0 border-t border-dashed border-slate-400/50"
-                        style={{
-                          top: "148.5mm",
-                          pointerEvents: "none",
-                          zIndex: 20,
-                        }}
-                      />
-                    )}
                     {/* ── Floating ↑/↓ buttons to insert line above/below a table ── */}
                     {tableHoverBtns && (
                       <>
@@ -2219,25 +2125,19 @@ export function InvoicePrintTemplate({
             )}
 
             {/* ── PREVIEW PANE ── */}
-            <div
-              ref={previewPaneRef}
-              className={`${isPreview ? "flex-1" : "flex-[2]"} min-w-0 overflow-auto p-6 flex justify-center bg-muted/30`}
-            >
+            <div className="flex-1 min-w-0 overflow-auto p-6 flex justify-center bg-muted/30">
               <div className="flex flex-col items-center gap-2">
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold flex items-center gap-1.5">
-                    <Eye className="h-3 w-3" /> Xem trước (dữ liệu mẫu · ngắt trang A4)
+                  <Eye className="h-3 w-3" /> Xem trước (dữ liệu mẫu)
                 </div>
                 <div
                   style={{
-                    width: page.width,
-                    minHeight: page.height,
-                    backgroundColor: "white",
-                    backgroundImage: getScreenPageBackground(page.height),
+                    width: ps.width,
+                    minHeight: ps.minHeight,
+                    background: "white",
                     boxShadow: "0 2px 16px rgba(0,0,0,0.12)",
-                    padding: PAGE_CONTENT_INSET,
-                    boxSizing: "border-box",
-                    zoom: previewScale,
-                  } as React.CSSProperties}
+                    padding: "10mm",
+                  }}
                 >
                   <div
                     dangerouslySetInnerHTML={{ __html: previewHtml }}
