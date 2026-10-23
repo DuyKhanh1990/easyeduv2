@@ -832,11 +832,13 @@ export function InvoicePrintTemplate({
   const queryClient = useQueryClient();
   const editorRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
+  const previewPaneRef = useRef<HTMLDivElement>(null);
   const [pageSize, setPageSize] = useState<PageSize>((template.pageSize as PageSize) || "A4");
   const [orientation, setOrientation] = useState<Orientation>((template.orientation as Orientation) || "portrait");
   const [isPreview, setIsPreview] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [previewHtml, setPreviewHtml] = useState("");
+  const [previewScale, setPreviewScale] = useState(1);
   const [sidebarTableOpen, setSidebarTableOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSidebarHoverOpen, setIsSidebarHoverOpen] = useState(false);
@@ -1611,6 +1613,23 @@ export function InvoicePrintTemplate({
   const page = getPageDimensions(pageSize, orientation);
   const isSidebarExpanded = !isSidebarCollapsed || isSidebarHoverOpen;
 
+  useLayoutEffect(() => {
+    const pane = previewPaneRef.current;
+    if (!pane) return;
+
+    const updateScale = () => {
+      const pageWidthPx = (Number.parseFloat(page.width) * 96) / 25.4;
+      const availableWidthPx = Math.max(0, pane.clientWidth - 48);
+      if (pageWidthPx <= 0 || availableWidthPx <= 0) return;
+      setPreviewScale(Math.min(1, availableWidthPx / pageWidthPx));
+    };
+
+    updateScale();
+    const observer = new ResizeObserver(updateScale);
+    observer.observe(pane);
+    return () => observer.disconnect();
+  }, [page.width]);
+
   return (
     <div className="flex flex-col h-full gap-0 overflow-hidden">
       {/* ── Header ── */}
@@ -2043,7 +2062,7 @@ export function InvoicePrintTemplate({
           <div className="flex-1 overflow-hidden flex">
             {/* ── EDITOR PANE ── */}
             {!isPreview && (
-              <div className="flex-1 min-w-0 overflow-auto p-6 flex justify-center bg-muted/10 border-r">
+              <div className="flex-[3] min-w-0 overflow-auto p-6 flex justify-center bg-muted/10 border-r">
                 <div className="flex flex-col items-center gap-2">
                   <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">
                     Trình thiết kế (chỉnh sửa)
@@ -2145,7 +2164,10 @@ export function InvoicePrintTemplate({
             )}
 
             {/* ── PREVIEW PANE ── */}
-            <div className="flex-1 min-w-0 overflow-auto p-6 flex justify-center bg-muted/30">
+            <div
+              ref={previewPaneRef}
+              className={`${isPreview ? "flex-1" : "flex-[2]"} min-w-0 overflow-auto p-6 flex justify-center bg-muted/30`}
+            >
               <div className="flex flex-col items-center gap-2">
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold flex items-center gap-1.5">
                   <Eye className="h-3 w-3" /> Xem trước (dữ liệu mẫu)
@@ -2158,7 +2180,8 @@ export function InvoicePrintTemplate({
                     boxShadow: "0 2px 16px rgba(0,0,0,0.12)",
                     padding: PAGE_CONTENT_INSET,
                     boxSizing: "border-box",
-                  }}
+                    zoom: previewScale,
+                  } as React.CSSProperties}
                 >
                   <div
                     dangerouslySetInnerHTML={{ __html: previewHtml }}
