@@ -1344,7 +1344,6 @@ export function registerStudentsRoutes(app: Express): void {
 
   app.put(api.students.update.path, async (req, res) => {
     try {
-      const isExcelSupplementImport = req.body?.__activityLogSource === "excel_supplement_import";
       const crmPerms = await getCrmPermissions(req);
       if (!crmPerms.canEdit) {
         return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa khách hàng." });
@@ -1353,7 +1352,7 @@ export function registerStudentsRoutes(app: Express): void {
       const oldStudent = await storage.getStudent(req.params.id, req.allowedLocationIds, req.isSuperAdmin);
       const input = api.students.update.input.parse(req.body);
       const student = await storage.updateStudent(req.params.id, { ...input, updatedBy: (req.user as any).id }, req.allowedLocationIds, req.isSuperAdmin);
-      if (oldStudent && !isExcelSupplementImport) {
+      if (oldStudent) {
         const userId = (req.user as any).id;
         const userName = await getActorName(userId);
         const { oldData, newData } = diffFields(oldStudent, student);

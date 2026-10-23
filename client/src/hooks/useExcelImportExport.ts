@@ -539,7 +539,7 @@ export function useExcelImportExport({
                   method: "PUT",
                   credentials: "include",
                   headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-                  body: JSON.stringify({ ...updates, __activityLogSource: "excel_supplement_import" }),
+                  body: JSON.stringify(updates),
                 });
                 if (!response.ok) {
                   const payload = await response.json().catch(() => null);
