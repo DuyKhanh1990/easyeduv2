@@ -238,110 +238,141 @@ export async function registerStoreInventoryRoutes(app: Express) {
   app.get("/api/store/inventory", async (req, res) => {
     if (!req.user) return res.status(401).json({ message: "Unauthorized" });
     await cleanupExpiredReservations();
-    const { q, warehouseId, status } = req.query as { q?: string; warehouseId?: string; status?: string };
+    const { q, warehouseId, status, dateFrom, dateTo } = req.query as {
+      q?: string;
+      warehouseId?: string;
+      status?: string;
+      dateFrom?: string;
+      dateTo?: string;
+    };
     const cfg = await getReservationConfig();
     const draftCutoff = new Date(Date.now() - cfg.draftMinutes * 60 * 1000).toISOString();
     try {
-      const rows = await db.execute(sql`
-        SELECT
-          sp.id                           AS product_id,
-          sp.code,
-          sp.name,
-          COALESCE(sp.cost_price, 0)      AS cost_price,
-          sw.id                           AS warehouse_id,
-          sw.name                         AS warehouse_name,
-          COALESCE(sw.min_stock, 0)       AS min_stock,
-          COALESCE((
-            SELECT SUM(t.quantity_delta)
-            FROM store_stock_transactions t
-            WHERE t.product_id = sp.id AND t.warehouse_id = sw.id
-          ), 0)::int                      AS actual_stock,
-          COALESCE((
-            SELECT SUM(t.quantity_delta)
-            FROM store_stock_transactions t
-            WHERE t.product_id = sp.id AND t.warehouse_id = sw.id
-              AND t.quantity_delta > 0
-          ), 0)::int                      AS total_import,
-          COALESCE((
-            SELECT SUM(-t.quantity_delta)
-            FROM store_stock_transactions t
-            WHERE t.product_id = sp.id AND t.warehouse_id = sw.id
-              AND t.quantity_delta < 0
-          ), 0)::int                      AS total_export,
-          (
-            COALESCE((
-              SELECT SUM(r.quantity)
-              FROM store_inventory_reservations r
-              WHERE r.product_id = sp.id
-                AND r.warehouse_id = sw.id
-                AND r.expires_at > NOW()
-            ), 0)
-            +
-            COALESCE((
-              SELECT SUM(ii.quantity)
-              FROM store_issue_receipt_items ii
-              JOIN store_issue_receipts ir ON ir.id = ii.receipt_id
-              WHERE ii.product_id = sp.id
-                AND ir.warehouse_id = sw.id
-                AND ir.status = 'draft'
-                AND ir.updated_at > ${draftCutoff}
-            ), 0)
-          )::int                          AS reserved_qty,
-          si.updated_at
-        FROM store_products sp
-        JOIN store_inventory si ON si.product_id = sp.id
-        JOIN store_warehouses sw ON sw.id = si.warehouse_id
-        WHERE TRUE
-          AND ${q ? sql`(sp.name ILIKE ${'%' + q + '%'} OR sp.code ILIKE ${'%' + q + '%'})` : sql`TRUE`}
-          AND ${warehouseId ? sql`sw.id = ${warehouseId}` : sql`TRUE`}
-          AND ${(!req.isSuperAdmin && req.allowedLocationIds?.length) ? sql`sw.location_id = ANY(ARRAY[${sql.raw(req.allowedLocationIds.map((id: string) => `'${id}'`).join(','))}]::uuid[])` : sql`TRUE`}
-        ORDER BY sp.name, sw.name
-      `);
+      const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
+      const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? "20"), 10) || 20));
+      const offset = (page - 1) * pageSize;
+      const filters = [sql`TRUE`];
+      if (q?.trim()) {
+        const pattern = `%${q.trim()}%`;
+        filters.push(sql`(sp.name ILIKE ${pattern} OR sp.code ILIKE ${pattern})`);
+      }
+      if (warehouseId && warehouseId !== "all") filters.push(sql`sw.id = ${warehouseId}::uuid`);
+      if (!req.isSuperAdmin && req.allowedLocationIds?.length) {
+        filters.push(sql`sw.location_id = ANY(${req.allowedLocationIds}::uuid[])`);
+      }
+      if (dateFrom?.trim()) filters.push(sql`si.updated_at >= ${dateFrom.trim()}::date`);
+      if (dateTo?.trim()) filters.push(sql`si.updated_at < (${dateTo.trim()}::date + 1)`);
+      const where = sql.join(filters, sql` AND `);
+      const statusFilter = status === "out" || status === "low" || status === "ok"
+        ? sql`WHERE status = ${status}`
+        : sql``;
 
-      let data = (rows.rows as any[]).map(r => {
-        const actual = Math.max(0, parseInt(String(r.actual_stock ?? 0)));
-        const reserved = Math.min(parseInt(String(r.reserved_qty ?? 0)), actual);
-        const available = Math.max(0, actual - reserved);
-        const minStock = parseInt(String(r.min_stock ?? 0));
-        const statusVal = actual <= 0 ? "out" : actual <= minStock ? "low" : "ok";
-        return {
-          productId: r.product_id,
-          code: r.code,
-          name: r.name,
-          costPrice: parseFloat(String(r.cost_price ?? 0)) || 0,
-          warehouseId: r.warehouse_id,
-          warehouseName: r.warehouse_name || "N/A",
-          totalImport: parseInt(String(r.total_import ?? 0)),
-          totalExport: parseInt(String(r.total_export ?? 0)),
-          actualStock: actual,
-          reservedQty: reserved,
-          availableQty: available,
-          status: statusVal,
-          updatedAt: r.updated_at,
-        };
+      const inventoryCtes = sql`
+        WITH inventory_scope AS (
+          SELECT
+            sp.id AS product_id,
+            sp.code,
+            sp.name,
+            COALESCE(sp.cost_price, 0) AS cost_price,
+            sw.id AS warehouse_id,
+            sw.name AS warehouse_name,
+            COALESCE(sw.min_stock, 0)::int AS min_stock,
+            si.updated_at
+          FROM store_products sp
+          JOIN store_inventory si ON si.product_id = sp.id
+          JOIN store_warehouses sw ON sw.id = si.warehouse_id
+          WHERE ${where}
+        ),
+        stock_totals AS (
+          SELECT t.product_id, t.warehouse_id,
+            COALESCE(SUM(t.quantity_delta), 0)::int AS actual_stock,
+            COALESCE(SUM(t.quantity_delta) FILTER (WHERE t.quantity_delta > 0), 0)::int AS total_import,
+            COALESCE(SUM(-t.quantity_delta) FILTER (WHERE t.quantity_delta < 0), 0)::int AS total_export
+          FROM store_stock_transactions t
+          WHERE EXISTS (
+            SELECT 1 FROM inventory_scope scope
+            WHERE scope.product_id = t.product_id AND scope.warehouse_id = t.warehouse_id
+          )
+          GROUP BY t.product_id, t.warehouse_id
+        ),
+        reservation_totals AS (
+          SELECT product_id, warehouse_id, COALESCE(SUM(quantity), 0)::int AS reserved_qty
+          FROM (
+            SELECT r.product_id, r.warehouse_id, r.quantity
+            FROM store_inventory_reservations r
+            WHERE r.expires_at > NOW()
+              AND EXISTS (
+                SELECT 1 FROM inventory_scope scope
+                WHERE scope.product_id = r.product_id AND scope.warehouse_id = r.warehouse_id
+              )
+            UNION ALL
+            SELECT ii.product_id, ir.warehouse_id, ii.quantity
+            FROM store_issue_receipt_items ii
+            JOIN store_issue_receipts ir ON ir.id = ii.receipt_id
+            WHERE ir.status = 'draft' AND ir.updated_at > ${draftCutoff}
+              AND EXISTS (
+                SELECT 1 FROM inventory_scope scope
+                WHERE scope.product_id = ii.product_id AND scope.warehouse_id = ir.warehouse_id
+              )
+          ) active_reservations
+          GROUP BY product_id, warehouse_id
+        ),
+        raw_rows AS (
+          SELECT
+            COALESCE(st.actual_stock, 0)::int AS raw_actual_stock,
+            COALESCE(st.total_import, 0)::int AS total_import,
+            COALESCE(st.total_export, 0)::int AS total_export,
+            COALESCE(rt.reserved_qty, 0)::int AS raw_reserved_qty,
+            scope.*
+          FROM inventory_scope scope
+          LEFT JOIN stock_totals st ON st.product_id = scope.product_id AND st.warehouse_id = scope.warehouse_id
+          LEFT JOIN reservation_totals rt ON rt.product_id = scope.product_id AND rt.warehouse_id = scope.warehouse_id
+        ),
+        calculated AS (
+          SELECT
+            product_id AS "productId",
+            code,
+            name,
+            cost_price AS "costPrice",
+            warehouse_id AS "warehouseId",
+            COALESCE(warehouse_name, 'N/A') AS "warehouseName",
+            total_import AS "totalImport",
+            total_export AS "totalExport",
+            GREATEST(raw_actual_stock, 0)::int AS "actualStock",
+            LEAST(raw_reserved_qty, GREATEST(raw_actual_stock, 0))::int AS "reservedQty",
+            GREATEST(
+              0,
+              GREATEST(raw_actual_stock, 0) - LEAST(raw_reserved_qty, GREATEST(raw_actual_stock, 0))
+            )::int AS "availableQty",
+            CASE
+              WHEN GREATEST(raw_actual_stock, 0) <= 0 THEN 'out'
+              WHEN GREATEST(raw_actual_stock, 0) <= min_stock THEN 'low'
+              ELSE 'ok'
+            END AS status,
+            updated_at AS "updatedAt"
+          FROM raw_rows
+        )
+      `;
+      const [countResult, pageResult] = await Promise.all([
+        db.execute(sql`
+          ${inventoryCtes}
+          SELECT COUNT(*)::int AS total
+          FROM calculated
+          ${statusFilter}
+        `),
+        db.execute(sql`
+          ${inventoryCtes}
+          SELECT *
+          FROM calculated
+          ${statusFilter}
+          ORDER BY name, "warehouseName", "productId", "warehouseId"
+          LIMIT ${pageSize} OFFSET ${offset}
+        `),
+      ]);
+      res.json({
+        data: pageResult.rows,
+        total: Number((countResult.rows[0] as any)?.total ?? 0),
       });
-
-      if (status === "out") data = data.filter(d => d.status === "out");
-      else if (status === "low") data = data.filter(d => d.status === "low");
-      else if (status === "ok") data = data.filter(d => d.status === "ok");
-
-      const dateFrom = String(req.query.dateFrom ?? "").trim();
-      const dateTo = String(req.query.dateTo ?? "").trim();
-      if (dateFrom) {
-        const from = new Date(dateFrom + "T00:00:00");
-        data = data.filter(d => d.updatedAt && new Date(d.updatedAt) >= from);
-      }
-      if (dateTo) {
-        const to = new Date(dateTo + "T23:59:59");
-        data = data.filter(d => d.updatedAt && new Date(d.updatedAt) <= to);
-      }
-
-      const total = data.length;
-      const page = Math.max(1, parseInt(String(req.query.page ?? "1")));
-      const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? "20"))));
-      const paged = data.slice((page - 1) * pageSize, page * pageSize);
-
-      res.json({ data: paged, total });
     } catch (err) {
       console.error("[Inventory] GET list error:", err);
       res.status(500).json({ message: "Lỗi khi lấy danh sách tồn kho" });

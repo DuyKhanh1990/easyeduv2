@@ -320,6 +320,9 @@ export function StoreInventoryTab() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   useEffect(() => { setPage(1); }, [search, warehouseFilter, statusFilter, dateRange]);
+  useEffect(() => {
+    if (!isLoading && page > totalPages) setPage(totalPages);
+  }, [isLoading, page, totalPages]);
 
   function handlePageSize(n: number) { setPageSize(n); setPage(1); }
 
