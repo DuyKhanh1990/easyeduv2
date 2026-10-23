@@ -30,6 +30,10 @@ export const INVOICE_PRINT_BASE_STYLES = `
   .invoice-print-root th {
     padding: 0;
   }
+  .invoice-print-root td[style*="border-width"][style*="border-color"]:not([style*="border-style"]),
+  .invoice-print-root th[style*="border-width"][style*="border-color"]:not([style*="border-style"]) {
+    border-style: solid;
+  }
   .invoice-print-root table[data-borderless="true"] tr > :first-child {
     padding-left: 0 !important;
   }
