@@ -7,8 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useLocations } from "@/hooks/use-locations";
-import { ScrollText, X, Building2, Zap, PlusCircle, PencilLine, Trash2, RotateCcw, Eye, ChevronLeft, ChevronRight } from "lucide-react";
+import { ScrollText, X, Building2, Zap, PlusCircle, PencilLine, Trash2, RotateCcw, Eye, ChevronLeft, ChevronRight, Download, FileSpreadsheet } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getAuthHeaders } from "@/lib/queryClient";
 
 interface ActivityLog {
   id: string;
@@ -17,7 +18,7 @@ interface ActivityLog {
   student_code: string | null;
   user_id: string;
   user_name: string;
-  action: "create" | "update" | "delete";
+  action: "create" | "update" | "delete" | "import";
   old_data: Record<string, any> | null;
   new_data: Record<string, any> | null;
   created_at: string;
@@ -79,6 +80,13 @@ function formatDateGroup(dateStr: string): string {
 }
 
 function actionConfig(action: string) {
+  if (action === "import") return {
+    label: "Import Excel",
+    icon: FileSpreadsheet,
+    classes: "bg-violet-100 text-violet-700 border-violet-200",
+    dot: "bg-violet-500",
+    rowBg: "bg-violet-50/20",
+  };
   if (action === "create") return {
     label: "Thêm mới",
     icon: PlusCircle,
@@ -133,8 +141,14 @@ function DataBlock({ data, highlight }: { data: Record<string, any> | null; high
 }
 
 function ActivityDetailDialog({ log, onClose }: { log: ActivityLog | null; onClose: () => void }) {
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
+  useEffect(() => { setDownloadError(""); }, [log?.id]);
   if (!log) return null;
   const cfg = actionConfig(log.action);
+  const importBatch = log.action === "import" && log.new_data?.__kind === "excel_import_batch"
+    ? log.new_data
+    : null;
   const { changedOldData, changedNewData } =
     log.action === "update"
       ? getChangedUpdateData(log.old_data, log.new_data)
@@ -142,6 +156,34 @@ function ActivityDetailDialog({ log, onClose }: { log: ActivityLog | null; onClo
         ? getDeletedDisplayData(log.old_data, log.new_data)
         : getCreatedDisplayData(log.old_data, log.new_data);
   const subject = log.student_name || getStudentLabelFromLogData(log.new_data || log.old_data);
+
+  const downloadOriginalFile = async () => {
+    setIsDownloading(true);
+    setDownloadError("");
+    try {
+      const response = await fetch(`/api/customers/activity-logs/${encodeURIComponent(log.id)}/file`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.message || "Không tải được file gốc.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = importBatch?.fileName || "customer-import.xlsx";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      setDownloadError(error?.message || "Không tải được file gốc.");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   return (
     <Dialog open={!!log} onOpenChange={open => !open && onClose()}>
@@ -160,18 +202,58 @@ function ActivityDetailDialog({ log, onClose }: { log: ActivityLog | null; onClo
           {formatDateTime(log.created_at)}
           {log.user_name && <div className="mt-1">Thực hiện bởi: {log.user_name}</div>}
         </div>
-        <div className="mt-2 max-h-[55vh] overflow-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-slate-200">
-                <th className="text-left py-2 pr-3 font-semibold text-slate-500 w-1/3">Thông tin</th>
-                <th className="text-left py-2 pr-3 font-semibold text-red-500 w-1/3">Trước</th>
-                <th className="text-left py-2 font-semibold text-emerald-600 w-1/3">Sau</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[{ key: "old", data: changedOldData }, { key: "new", data: changedNewData }].length > 0 &&
-                Array.from(new Set([
+        {importBatch ? (
+          <div className="mt-3 max-h-[55vh] overflow-auto space-y-4 text-sm">
+            <div className="rounded-xl border bg-slate-50 p-4">
+              <h3 className="mb-3 font-semibold text-slate-700">Thông tin chung</h3>
+              <div className="grid gap-3 sm:grid-cols-2 text-xs">
+                <div><span className="text-slate-500">Loại:</span> Import Excel tạo mới khách hàng</div>
+                <div><span className="text-slate-500">Được tạo bởi:</span> {log.user_name || "Hệ thống"}</div>
+                <div className="flex items-center gap-2 sm:col-span-2">
+                  <span className="text-slate-500">File gốc:</span>
+                  <Button type="button" size="sm" variant="ghost" className="h-auto max-w-full justify-start gap-1.5 p-0 text-blue-700 underline"
+                    onClick={downloadOriginalFile} disabled={isDownloading}>
+                    <span className="truncate">{isDownloading ? "Đang tải..." : (importBatch.fileName || "customer-import.xlsx")}</span>
+                    <Download className="h-3.5 w-3.5 shrink-0" />
+                  </Button>
+                </div>
+                <div><span className="text-slate-500">Cơ sở:</span> {importBatch.locationName || "Theo dữ liệu trong file"}</div>
+                <div><span className="text-slate-500">Thời gian:</span> {formatDateTime(log.created_at)}</div>
+                <div><span className="text-slate-500">Cho phép trùng SĐT:</span> {importBatch.options?.allowDuplicatePhone ? "Có" : "Không"}</div>
+                <div><span className="text-slate-500">Cho phép trùng email:</span> {importBatch.options?.allowDuplicateEmail ? "Có" : "Không"}</div>
+              </div>
+              {downloadError && <p className="mt-2 text-xs text-destructive">{downloadError}</p>}
+            </div>
+            <div className="rounded-xl border p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="font-semibold text-slate-700">Kết quả</h3>
+                <span className="text-xs font-medium text-emerald-700">Hoàn tất · 100%</span>
+              </div>
+              <div className="mb-4 h-2.5 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full w-full rounded-full bg-blue-500" />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3 text-xs">
+                <div><span className="text-slate-500">Số dòng:</span> {Number(importBatch.totalRows) || 0}</div>
+                <div><span className="text-slate-500">Đã tạo:</span> {Number(importBatch.successCount) || 0}</div>
+                <div><span className="text-slate-500">Có lỗi:</span> {Number(importBatch.errorCount) || 0}</div>
+              </div>
+              {importBatch.classAssignments?.error && (
+                <p className="mt-3 text-xs text-amber-700">{importBatch.classAssignments.error}</p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="mt-2 max-h-[55vh] overflow-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-slate-200">
+                  <th className="text-left py-2 pr-3 font-semibold text-slate-500 w-1/3">Thông tin</th>
+                  <th className="text-left py-2 pr-3 font-semibold text-red-500 w-1/3">Trước</th>
+                  <th className="text-left py-2 font-semibold text-emerald-600 w-1/3">Sau</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from(new Set([
                   ...Object.keys(changedOldData || {}),
                   ...Object.keys(changedNewData || {}),
                 ])).map(key => (
@@ -185,9 +267,10 @@ function ActivityDetailDialog({ log, onClose }: { log: ActivityLog | null; onClo
                     </td>
                   </tr>
                 ))}
-            </tbody>
-          </table>
-        </div>
+              </tbody>
+            </table>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -364,6 +447,7 @@ export function CustomerActivityLogDialog({ open, onOpenChange }: Props) {
                 <SelectContent>
                   <SelectItem value="__all__">Tất cả hành động</SelectItem>
                   <SelectItem value="create">✦ Thêm mới</SelectItem>
+                  <SelectItem value="import">▤ Import Excel</SelectItem>
                   <SelectItem value="update">✎ Sửa</SelectItem>
                   <SelectItem value="delete">✕ Xoá</SelectItem>
                 </SelectContent>
@@ -526,6 +610,7 @@ export function CustomerActivityLogDialog({ open, onOpenChange }: Props) {
             </div>
             <div className="flex items-center gap-2 text-[11px]">
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Thêm mới</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-500" /> Import Excel</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" /> Cập nhật</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500" /> Xoá</span>
             </div>

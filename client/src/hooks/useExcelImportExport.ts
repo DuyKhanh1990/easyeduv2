@@ -585,9 +585,41 @@ export function useExcelImportExport({
           variant: "destructive",
         });
       }
+      const totalRows = dataRows.filter((row) => row && row.length >= 2 && row[1]).length;
+      try {
+        const auditForm = new FormData();
+        auditForm.append("file", importFile, importFile.name);
+        auditForm.append("summary", JSON.stringify({
+          locationId: importLocation || "",
+          locationName: locations?.find((location: any) => location.id === importLocation)?.name || "",
+          successCount,
+          totalRows,
+          errorCount: errorRows.length,
+          classAssignments: classAssignmentSummary || null,
+          allowDuplicatePhone: Boolean(options.allowDuplicatePhone),
+          allowDuplicateEmail: Boolean(options.allowDuplicateEmail),
+        }));
+        const auditResponse = await fetch("/api/customers/activity-logs/import", {
+          method: "POST",
+          credentials: "include",
+          headers: getAuthHeaders(),
+          body: auditForm,
+        });
+        if (!auditResponse.ok) {
+          const responseBody = await auditResponse.json().catch(() => null);
+          throw new Error(responseBody?.message || "Không lưu được file gốc vào nhật ký.");
+        }
+        await queryClient.invalidateQueries({ queryKey: ["/api/customers/activity-logs"] });
+      } catch (auditError: any) {
+        toast({
+          title: "Đã nhập xong nhưng chưa lưu được nhật ký file gốc",
+          description: `${auditError?.message || "Không lưu được file gốc."} Kết quả nhập học viên vẫn được giữ.`,
+          variant: "destructive",
+        });
+      }
       return {
         successCount,
-        totalRows: dataRows.filter(r => r && r.length >= 2 && r[1]).length,
+        totalRows,
         errorRows,
         ...(classAssignmentSummary ? { classAssignmentSummary } : {}),
       };

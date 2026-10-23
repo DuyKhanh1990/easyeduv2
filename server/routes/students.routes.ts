@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import multer from "multer";
 import { storage } from "../storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
@@ -21,7 +22,17 @@ import { scoreSheetTemplateSchema } from "@shared/score-sheet-template";
 import { getStudentLearningStatusSummary, getCustomerLearningStatusSummary, getCustomerSummary, getNewCustomersSummary, getStudentsBySource, getStudentsByRelationship, getStudentsByLocation, getStudentsByStaff, getStudentsLearningStatuses, getMonthlyStudentCounts } from "../storage/student.storage";
 import { createCrmConfigAuditLog, getCrmConfigAuditLogs } from "../storage/crm-config-audit.storage";
 import { codeStem, nextCodeForStem } from "../lib/role-code";
-import { decrypt } from "../lib/encryption";
+import { decrypt, encrypt } from "../lib/encryption";
+import {
+  deletePrivateCustomerImport,
+  downloadPrivateCustomerImport,
+  uploadPrivateCustomerImport,
+} from "../lib/s3";
+
+const customerImportFileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
 
 const CRM_RESOURCE = "/customers";
 const CRM_CONFIG_BASE = "/customers/crm-config";
@@ -1449,7 +1460,7 @@ export function registerStudentsRoutes(app: Express): void {
         )`);
       }
 
-      if (action && ["create", "update", "delete"].includes(action)) {
+    if (action && ["create", "update", "delete", "import"].includes(action)) {
         whereClauses.push(sql`l.action = ${action}`);
       }
 
@@ -1500,6 +1511,121 @@ export function registerStudentsRoutes(app: Express): void {
       res.json({ logs: rows.rows, total });
     } catch (err) {
       res.status(500).json({ message: (err as any).message });
+    }
+  });
+
+  app.post("/api/customers/activity-logs/import", customerImportFileUpload.single("file"), async (req, res) => {
+    let storageKey: string | null = null;
+    try {
+      const crmPerms = await getCrmPermissions(req);
+      if (!crmPerms.canCreate) {
+        return res.status(403).json({ message: "Bạn không có quyền nhập khách hàng." });
+      }
+      const file = req.file;
+      if (!file) return res.status(400).json({ message: "Thiếu file Excel cần lưu nhật ký." });
+      if (!/\.xlsx$/i.test(file.originalname)) {
+        return res.status(400).json({ message: "Chỉ hỗ trợ lưu file Excel .xlsx." });
+      }
+
+      let summary: Record<string, any> = {};
+      try {
+        summary = JSON.parse(String(req.body.summary || "{}"));
+      } catch {
+        return res.status(400).json({ message: "Thông tin kết quả nhập không hợp lệ." });
+      }
+
+      const locationId = summary.locationId ? String(summary.locationId) : "";
+      if (locationId && !req.isSuperAdmin && !req.allowedLocationIds.includes(locationId)) {
+        return res.status(403).json({ message: "Bạn không có quyền ghi nhật ký cho cơ sở này." });
+      }
+
+      const batchId = randomUUID();
+      storageKey = await uploadPrivateCustomerImport(
+        Buffer.from(encrypt(file.buffer.toString("base64")), "utf8"),
+        batchId,
+      );
+
+      const userId = String((req.user as any)?.id || "");
+      if (!userId) throw new Error("Không xác định được người thực hiện nhập file.");
+      const userName = await getActorName(userId);
+      const fileName = Buffer.from(file.originalname, "latin1").toString("utf8");
+      const newData = {
+        __kind: "excel_import_batch",
+        __text: "Import Excel tạo mới khách hàng",
+        fileName,
+        storageKey,
+        locationId: locationId || null,
+        locationName: String(summary.locationName || ""),
+        successCount: Math.max(0, Number(summary.successCount) || 0),
+        totalRows: Math.max(0, Number(summary.totalRows) || 0),
+        errorCount: Math.max(0, Number(summary.errorCount) || 0),
+        classAssignments: summary.classAssignments || null,
+        options: {
+          allowDuplicatePhone: Boolean(summary.allowDuplicatePhone),
+          allowDuplicateEmail: Boolean(summary.allowDuplicateEmail),
+        },
+      };
+
+      const inserted = await db.execute(sql`
+        INSERT INTO customer_activity_logs (student_id, user_id, user_name, action, old_data, new_data)
+        VALUES (NULL, ${userId}, ${userName}, 'import', NULL, ${JSON.stringify(newData)}::jsonb)
+        RETURNING id
+      `);
+      res.status(201).json({ id: (inserted.rows[0] as any)?.id });
+    } catch (err) {
+      if (storageKey) {
+        await deletePrivateCustomerImport(storageKey).catch((cleanupError) => {
+          console.error("[Customer Import File Cleanup Error]", cleanupError);
+        });
+      }
+      console.error("[Customer Import Activity Log Error]", err);
+      res.status(500).json({ message: (err as any)?.message || "Không thể lưu nhật ký nhập Excel." });
+    }
+  });
+
+  app.get("/api/customers/activity-logs/:id/file", async (req, res) => {
+    try {
+      const crmPerms = await getCrmPermissions(req);
+      if (!crmPerms.canEdit) {
+        return res.status(403).json({ message: "Bạn không có quyền tải file import có thông tin tài khoản." });
+      }
+
+      const actorScope = req.isSuperAdmin
+        ? sql`TRUE`
+        : sql`EXISTS (
+            SELECT 1
+            FROM staff actor_staff
+            JOIN staff_assignments actor_assignment ON actor_assignment.staff_id = actor_staff.id
+            WHERE actor_staff.user_id = l.user_id
+              AND actor_assignment.location_id = ANY(ARRAY[${sql.join(
+                req.allowedLocationIds.map((id: string) => sql`${id}::uuid`),
+                sql`, `,
+              )}]::uuid[])
+          )`;
+      const result = await db.execute(sql`
+        SELECT l.new_data
+        FROM customer_activity_logs l
+        WHERE l.id = ${req.params.id}::uuid
+          AND l.student_id IS NULL
+          AND l.action = 'import'
+          AND ${actorScope}
+        LIMIT 1
+      `);
+      const newData = (result.rows[0] as any)?.new_data;
+      if (newData?.__kind !== "excel_import_batch" || !newData.storageKey) {
+        return res.status(404).json({ message: "Không tìm thấy file import." });
+      }
+
+      const encryptedFile = await downloadPrivateCustomerImport(String(newData.storageKey));
+      const file = Buffer.from(decrypt(encryptedFile.toString("utf8")), "base64");
+      const fileName = String(newData.fileName || "customer-import.xlsx").replace(/[\r\n"]/g, "_");
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+      res.setHeader("Content-Length", String(file.length));
+      res.send(file);
+    } catch (err) {
+      console.error("[Customer Import File Download Error]", err);
+      res.status(500).json({ message: "Không thể tải file import." });
     }
   });
 

@@ -67,7 +67,8 @@ function buildPortalUploadKey(filename: string, timestamp: number): string {
 async function putObjectRaw(
   key: string,
   body: Buffer,
-  contentType: string
+  contentType: string,
+  acl: "public-read" | "private" = "public-read"
 ): Promise<void> {
   const endpointUrl = new URL(endpoint);
   const host = endpointUrl.hostname;
@@ -84,7 +85,7 @@ async function putObjectRaw(
     "host": host,
     "x-amz-date": amzDate,
     "x-amz-content-sha256": payloadHash,
-    "x-amz-acl": "public-read",
+    "x-amz-acl": acl,
     "content-type": contentType,
     "content-length": String(body.length),
   };
@@ -181,6 +182,65 @@ export async function uploadFileToS3(
 
   const fileUrl = `${protocol}://${aliasHost}/${bucket}/${key}`;
   return fileUrl;
+}
+
+function customerImportPrefix(): string {
+  return `${portalUploadFolder}/private/customer-imports/`;
+}
+
+function customerImportKey(batchId: string): string {
+  const safeBatchId = batchId.replace(/[^a-zA-Z0-9._-]/g, "");
+  if (!safeBatchId) throw new Error("Mã đợt import không hợp lệ.");
+  return `${customerImportPrefix()}${safeBatchId}.enc`;
+}
+
+export async function uploadPrivateCustomerImport(
+  encryptedFile: Buffer,
+  batchId: string,
+): Promise<string> {
+  const missing = [
+    ["S3_ENDPOINT", endpoint],
+    ["S3_REGION", region],
+    ["S3_BUCKET", bucket],
+    ["AWS_ACCESS_KEY_ID", accessKeyId],
+    ["AWS_SECRET_ACCESS_KEY", secretAccessKey],
+  ].filter(([, value]) => !value).map(([name]) => name);
+  if (missing.length > 0) {
+    throw new Error(`Thiếu cấu hình lưu file nhật ký import: ${missing.join(", ")}`);
+  }
+
+  const key = customerImportKey(batchId);
+  try {
+    await putObjectRaw(key, encryptedFile, "application/octet-stream", "private");
+    return key;
+  } catch (err) {
+    console.error("[Customer Import File Upload Error]", err);
+    throw new Error("Không thể lưu file Excel nhập khách hàng.");
+  }
+}
+
+export async function downloadPrivateCustomerImport(storageKey: string): Promise<Buffer> {
+  const key = storageKey.trim();
+  if (!key.startsWith(customerImportPrefix())) {
+    throw new Error("Storage key không thuộc thư mục file import hợp lệ.");
+  }
+
+  try {
+    const response = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    if (!response.Body) throw new Error("S3 không trả về nội dung file.");
+    return await streamToBuffer(response.Body as Readable);
+  } catch (err) {
+    console.error("[Customer Import File Download Error]", err);
+    throw new Error("Không thể tải file Excel import.");
+  }
+}
+
+export async function deletePrivateCustomerImport(storageKey: string): Promise<void> {
+  const key = storageKey.trim();
+  if (!key.startsWith(customerImportPrefix())) {
+    throw new Error("Storage key không thuộc thư mục file import hợp lệ.");
+  }
+  await s3Client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 }
 
 /**
