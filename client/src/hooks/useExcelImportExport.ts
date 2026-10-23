@@ -2,6 +2,12 @@ import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { getAuthHeaders } from "@/lib/queryClient";
+import {
+  mapStudentImportRows,
+  resolveStudentImportCredentials,
+  STUDENT_EXPORT_HEADERS,
+  STUDENT_UPLOAD_HEADERS,
+} from "@/lib/student-import-columns";
 
 interface ExcelOptions {
   students: any[];
@@ -39,13 +45,6 @@ export interface ImportOptions {
   allowDuplicateEmail: boolean;
 }
 
-const STUDENT_IMPORT_HEADERS = [
-  "Mã số", "Họ và tên (*)", "Cơ sở", "Phân loại (*)", "SĐT", "Ngày sinh", "Email",
-  "PH 1", "SĐT PH 1", "PH 2", "SĐT PH 2", "PH 3", "SĐT PH 3",
-  "Mối quan hệ (*)", "Nguồn", "Lý do từ chối", "Sale", "Quản lý", "Giáo viên",
-  "Mã lớp", "Địa chỉ", "Zalo/FB", "Trình độ", "Ghi chú",
-];
-
 export function useExcelImportExport({
   students,
   staff,
@@ -79,7 +78,7 @@ export function useExcelImportExport({
       return;
     }
 
-    const headers = [...STUDENT_IMPORT_HEADERS];
+    const headers = [...STUDENT_EXPORT_HEADERS];
 
     try {
       const ExcelJS = await loadExcelJS();
@@ -160,12 +159,12 @@ export function useExcelImportExport({
     for (let i = startRow; i <= endRow; i++) {
       worksheet.getCell(`C${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${locationNames.map((n) => n.replace(/,/g, " ")).join(",")}"`] };
       worksheet.getCell(`D${i}`).dataValidation = { type: "list", allowBlank: true, formulae: ['"Học viên,Phụ huynh"'] };
-      worksheet.getCell(`N${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${relNames.map((n) => n.replace(/,/g, " ")).join(",")}"`] };
-      worksheet.getCell(`O${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${sourceNames.map((n) => n.replace(/,/g, " ")).join(",")}"`] };
-      worksheet.getCell(`P${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${reasonNames.map((n) => n.replace(/,/g, " ")).join(",")}"`] };
-      if (finalSaleNames.length > 0) worksheet.getCell(`Q${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${finalSaleNames.join(",")}"`] };
-      if (finalManagerNames.length > 0) worksheet.getCell(`R${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${finalManagerNames.join(",")}"`] };
-      if (finalTeacherNames.length > 0) worksheet.getCell(`S${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${finalTeacherNames.join(",")}"`] };
+      worksheet.getCell(`P${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${relNames.map((n) => n.replace(/,/g, " ")).join(",")}"`] };
+      worksheet.getCell(`Q${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${sourceNames.map((n) => n.replace(/,/g, " ")).join(",")}"`] };
+      worksheet.getCell(`R${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${reasonNames.map((n) => n.replace(/,/g, " ")).join(",")}"`] };
+      if (finalSaleNames.length > 0) worksheet.getCell(`S${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${finalSaleNames.join(",")}"`] };
+      if (finalManagerNames.length > 0) worksheet.getCell(`T${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${finalManagerNames.join(",")}"`] };
+      if (finalTeacherNames.length > 0) worksheet.getCell(`U${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${finalTeacherNames.join(",")}"`] };
     }
   };
 
@@ -175,7 +174,7 @@ export function useExcelImportExport({
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet("Mau_Nhap_Hoc_Vien");
 
-      const headers = [...STUDENT_IMPORT_HEADERS];
+      const headers = [...STUDENT_UPLOAD_HEADERS];
 
       const headerRow = worksheet.addRow(headers);
       headerRow.height = 25;
@@ -190,7 +189,7 @@ export function useExcelImportExport({
         };
       });
 
-      [2, 4, 14].forEach((index) => {
+      [2, 4, 16].forEach((index) => {
         const cell = headerRow.getCell(index);
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFF00" } };
         cell.font = { bold: true, color: { argb: "FF000000" } };
@@ -225,7 +224,7 @@ export function useExcelImportExport({
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet("Danh_Sach_Loi");
 
-      const headers = [...STUDENT_IMPORT_HEADERS, "Lý do lỗi"];
+      const headers = [...STUDENT_UPLOAD_HEADERS, "Lý do lỗi"];
 
       const headerRow = worksheet.addRow(headers);
       headerRow.height = 25;
@@ -249,34 +248,18 @@ export function useExcelImportExport({
 
       errorRows.forEach((errRow) => {
         const rawData = errRow.rawData || [];
-        const errorCols = new Set(errRow.errorColumns || []);
-        const rowValues = [
-          rawData[0] ?? "",
-          rawData[1] ?? "",
-          rawData[2] ?? "",
-          rawData[3] ?? "",
-          rawData[4] ?? "",
-          rawData[5] ?? "",
-          rawData[6] ?? "",
-          rawData[7] ?? "",
-          rawData[8] ?? "",
-          rawData[9] ?? "",
-          rawData[10] ?? "",
-          rawData[11] ?? "",
-          rawData[12] ?? "",
-          rawData[13] ?? "",
-          rawData[14] ?? "",
-          rawData[15] ?? "",
-          rawData[16] ?? "",
-          rawData[17] ?? "",
-          rawData[18] ?? "",
-          rawData[19] ?? "",
-          rawData[20] ?? "",
-          rawData[21] ?? "",
-          rawData[22] ?? "",
-          rawData[23] ?? "",
-          errRow.reason,
+        const errorCols = new Set((errRow.errorColumns || []).map((index) => {
+          if (index === 24) return 4;
+          if (index === 25) return 5;
+          return index >= 4 && index < 24 ? index + 2 : index;
+        }));
+        const uploadRow = [
+          ...rawData.slice(0, 4),
+          rawData[24] ?? "",
+          rawData[25] ?? "",
+          ...rawData.slice(4, 24),
         ];
+        const rowValues = [...uploadRow, errRow.reason];
         const dataRow = worksheet.addRow(rowValues);
         dataRow.eachCell({ includeEmpty: true }, (cell: any, colNumber: number) => {
           const dataColIndex = colNumber - 1;
@@ -363,16 +346,7 @@ export function useExcelImportExport({
         rows.push(processedRow);
       });
 
-      const sourceColumnIndexes = new Map(
-        (rows[0] || []).map((header, index) => [String(header ?? "").trim().toLocaleLowerCase(), index])
-      );
-      const dataRows = rows.slice(1).map((sourceRow) =>
-        STUDENT_IMPORT_HEADERS.map((header, index) => {
-          const mappedIndex = sourceColumnIndexes.get(header.toLocaleLowerCase());
-          // Older templates had a "Tên lớp" column between "Mã lớp" and "Địa chỉ".
-          return sourceRow[mappedIndex ?? (index >= 20 ? index + 1 : index)];
-        })
-      );
+      const dataRows = mapStudentImportRows(rows);
       setUploadProgress(20);
 
       const classAssignments: { studentId: string; classCode: string; locationId: string }[] = [];
@@ -461,6 +435,9 @@ export function useExcelImportExport({
           continue;
         }
 
+        const { username: importedUsername, password: importedPassword } =
+          resolveStudentImportCredentials(row[0], row[24], row[25]);
+
         const studentData: any = {
           fullName: String(row[1] || ""),
           type: rawType === "Phụ huynh" ? "Phụ huynh" : "Học viên",
@@ -481,8 +458,10 @@ export function useExcelImportExport({
           socialLink: row[21] ? String(row[21]) : undefined,
           academicLevel: row[22] ? String(row[22]) : undefined,
           note: row[23] ? String(row[23]) : undefined,
-          password: "123456",
+          password: importedPassword,
         };
+
+        if (importedUsername) studentData.username = importedUsername;
 
         const saleNamesRow = row[16] ? String(row[16]).split(";").map((s: string) => s.trim()) : [];
         const managerNamesRow = row[17] ? String(row[17]).split(";").map((s: string) => s.trim()) : [];
@@ -494,7 +473,7 @@ export function useExcelImportExport({
 
         if (row[5]) {
           try {
-            const dob = new Date(row[5]);
+            const dob = new Date(row[5] as any);
             if (!isNaN(dob.getTime())) studentData.dateOfBirth = dob.toISOString().split("T")[0];
           } catch (e) {}
         }
@@ -502,7 +481,7 @@ export function useExcelImportExport({
         if (row[0]) {
           const codeStr = String(row[0]).trim();
           studentData.code = codeStr;
-          studentData.username = codeStr;
+          studentData.username = importedUsername || codeStr;
         }
 
         const classCodes = [...new Set(
@@ -536,7 +515,9 @@ export function useExcelImportExport({
           } catch (_) {}
 
           const reasonLower = reason.toLowerCase();
-          if (reasonLower.includes("mã học viên") || reasonLower.includes("code") || reasonLower.includes("username") || reasonLower.includes("tài khoản")) {
+          if (reasonLower.includes("username") || reasonLower.includes("tài khoản")) {
+            apiErrorCols.push(importedUsername && importedUsername !== String(row[0] ?? "").trim() ? 24 : 0);
+          } else if (reasonLower.includes("mã học viên") || reasonLower.includes("code")) {
             apiErrorCols.push(0);
           }
           if (reasonLower.includes("phone") || reasonLower.includes("số điện thoại") || reasonLower.includes("sdt")) {
