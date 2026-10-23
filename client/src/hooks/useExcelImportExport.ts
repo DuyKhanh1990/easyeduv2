@@ -217,6 +217,81 @@ export function useExcelImportExport({
     }
   };
 
+  const downloadSupplementSample = async () => {
+    try {
+      const ExcelJS = await loadExcelJS();
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Bo_Sung_Hoc_Vien");
+      const headers = [
+        "Mã",
+        "Họ và tên",
+        "Tài khoản",
+        "Mật khẩu",
+        "SĐT",
+        "Ngày sinh",
+        "Địa chỉ",
+        "Nguồn",
+        "Lý do từ chối",
+        "Trình độ",
+        "Ghi chú",
+      ];
+      const headerRow = worksheet.addRow(headers);
+      headerRow.height = 25;
+      headerRow.eachCell((cell: any) => {
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4F81BD" } };
+        cell.alignment = { vertical: "middle", horizontal: "center" };
+        cell.border = {
+          top: { style: "thin" }, left: { style: "thin" },
+          bottom: { style: "thin" }, right: { style: "thin" },
+        };
+      });
+      worksheet.columns = headers.map((header, index) => ({
+        header,
+        key: header,
+        width: index === 1 || index === 6 ? 28 : index === 10 ? 32 : 20,
+      }));
+      [1, 3, 4, 5].forEach((columnIndex) => {
+        worksheet.getColumn(columnIndex).numFmt = "@";
+      });
+      worksheet.getColumn(6).numFmt = "dd/mm/yyyy";
+      worksheet.views = [{ state: "frozen", ySplit: 1 }];
+      worksheet.autoFilter = { from: "A1", to: "K1" };
+
+      const sourceNames = crmSources?.map((source: any) => source.name).filter(Boolean) || [];
+      const reasonNames = crmReasons?.map((reason: any) => reason.reason).filter(Boolean) || [];
+      const makeListFormula = (values: string[], fallback: string) =>
+        `"${(values.length ? values : [fallback]).map((value) => String(value).replace(/,/g, " ")).join(",")}"`;
+
+      for (let row = 2; row <= 101; row++) {
+        worksheet.getCell(`H${row}`).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [makeListFormula(sourceNames, "Facebook,Google")],
+        };
+        worksheet.getCell(`I${row}`).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [makeListFormula(reasonNames, "Không có nhu cầu")],
+        };
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "file_mau_bo_sung_thong_tin_hoc_vien.xlsx";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast({ title: "Thành công", description: "Đã tải xuống file mẫu bổ sung." });
+    } catch {
+      toast({ title: "Lỗi", description: "Không thể tạo file mẫu bổ sung. Vui lòng thử lại.", variant: "destructive" });
+    }
+  };
+
   const downloadErrorFile = async (errorRows: ImportErrorRow[]) => {
     if (errorRows.length === 0) return;
     try {
@@ -637,5 +712,5 @@ export function useExcelImportExport({
     }
   };
 
-  return { exportToExcel, downloadSample, handleImport, isImporting, uploadProgress, downloadErrorFile };
+  return { exportToExcel, downloadSample, downloadSupplementSample, handleImport, isImporting, uploadProgress, downloadErrorFile };
 }

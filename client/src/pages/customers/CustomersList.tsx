@@ -1905,6 +1905,7 @@ export function CustomersList() {
         uploadProgress={excel.uploadProgress}
         onImport={excel.handleImport}
         onDownloadSample={excel.downloadSample}
+        onDownloadSupplementSample={excel.downloadSupplementSample}
         onDownloadErrors={excel.downloadErrorFile}
       />
 
