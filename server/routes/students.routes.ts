@@ -1587,10 +1587,19 @@ export function registerStudentsRoutes(app: Express): void {
             if (!existing || String(existing.code || "").trim().toLowerCase() !== row.code.trim().toLowerCase()) {
               throw new Error("Mã học viên không khớp hoặc bạn không có quyền truy cập.");
             }
-            if (Object.keys(row.updates).length) {
+            const updates = { ...row.updates };
+            if (updates.password && !updates.username) {
+              const [linkedAccount] = await db
+                .select({ userId: students.userId })
+                .from(students)
+                .where(eq(students.id, row.studentId))
+                .limit(1);
+              if (!linkedAccount?.userId) updates.username = row.code;
+            }
+            if (Object.keys(updates).length) {
               await storage.updateStudent(
                 row.studentId,
-                { ...row.updates, updatedBy: userId },
+                { ...updates, updatedBy: userId },
                 req.allowedLocationIds,
                 req.isSuperAdmin,
               );

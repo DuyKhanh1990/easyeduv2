@@ -262,19 +262,6 @@ export function useExcelImportExport({
       const makeListFormula = (values: string[], fallback: string) =>
         `"${(values.length ? values : [fallback]).map((value) => String(value).replace(/,/g, " ")).join(",")}"`;
 
-      for (let row = 2; row <= 101; row++) {
-        worksheet.getCell(`H${row}`).dataValidation = {
-          type: "list",
-          allowBlank: true,
-          formulae: [makeListFormula(sourceNames, "Facebook,Google")],
-        };
-        worksheet.getCell(`I${row}`).dataValidation = {
-          type: "list",
-          allowBlank: true,
-          formulae: [makeListFormula(reasonNames, "Không có nhu cầu")],
-        };
-      }
-
       const pageSize = 500;
       const firstPageResponse = await fetch(`/api/students?limit=${pageSize}&offset=0`, {
         credentials: "include",
@@ -303,6 +290,19 @@ export function useExcelImportExport({
         row.getCell(1).protection = { locked: true };
         row.getCell(2).protection = { locked: true };
       });
+      const validationLastRow = allStudents.length + 1;
+      for (let row = 2; row <= validationLastRow; row++) {
+        worksheet.getCell(`H${row}`).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [makeListFormula(sourceNames, "Facebook,Google")],
+        };
+        worksheet.getCell(`I${row}`).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [makeListFormula(reasonNames, "Không có nhu cầu")],
+        };
+      }
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
