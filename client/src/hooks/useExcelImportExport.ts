@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { getAuthHeaders } from "@/lib/queryClient";
+import { api, buildUrl } from "@shared/routes";
 import {
   mapStudentImportRows,
   resolveStudentImportCredentials,
@@ -256,7 +257,6 @@ export function useExcelImportExport({
       });
       worksheet.getColumn(6).numFmt = "dd/mm/yyyy";
       worksheet.views = [{ state: "frozen", ySplit: 1 }];
-      worksheet.autoFilter = { from: "A1", to: "K1" };
 
       const sourceNames = crmSources?.map((source: any) => source.name).filter(Boolean) || [];
       const reasonNames = crmReasons?.map((reason: any) => reason.reason).filter(Boolean) || [];
@@ -275,6 +275,35 @@ export function useExcelImportExport({
           formulae: [makeListFormula(reasonNames, "Không có nhu cầu")],
         };
       }
+
+      const pageSize = 500;
+      const firstPageResponse = await fetch(`/api/students?limit=${pageSize}&offset=0`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (!firstPageResponse.ok) throw new Error("Không tải được danh sách học viên.");
+      const firstPage = await firstPageResponse.json();
+      const existingStudents = [...(firstPage.students || [])];
+      const total = Number(firstPage.total) || existingStudents.length;
+      if (total > 50000) throw new Error("Danh sách vượt quá 50.000 học viên.");
+      const offsets = [];
+      for (let offset = pageSize; offset < total; offset += pageSize) offsets.push(offset);
+      const remainingPages = await Promise.all(offsets.map(async (offset) => {
+        const response = await fetch(`/api/students?limit=${pageSize}&offset=${offset}`, {
+          credentials: "include",
+          headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error("Không tải đủ danh sách học viên.");
+        const page = await response.json();
+        return page.students || [];
+      }));
+      const allStudents = existingStudents.concat(...remainingPages);
+      allStudents.forEach((student: any) => {
+        const row = worksheet.addRow([student.code || "", student.fullName || ""]);
+        row.getCell(1).numFmt = "@";
+        row.getCell(1).protection = { locked: true };
+        row.getCell(2).protection = { locked: true };
+      });
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -420,6 +449,146 @@ export function useExcelImportExport({
         });
         rows.push(processedRow);
       });
+
+      const supplementHeaders = [
+        "Mã", "Họ và tên", "Tài khoản", "Mật khẩu", "SĐT", "Ngày sinh",
+        "Địa chỉ", "Nguồn", "Lý do từ chối", "Trình độ", "Ghi chú",
+      ];
+      if (supplementHeaders.every((header, index) => String(rows[0]?.[index] || "").trim() === header)) {
+        const studentPages = await fetch("/api/students?limit=500&offset=0", {
+          credentials: "include",
+          headers: getAuthHeaders(),
+        });
+        if (!studentPages.ok) throw new Error("Không tải được danh sách học viên để đối chiếu.");
+        const firstPage = await studentPages.json();
+        const allStudents = [...(firstPage.students || [])];
+        const totalStudents = Number(firstPage.total) || allStudents.length;
+        if (totalStudents > 50000) throw new Error("Danh sách vượt quá 50.000 học viên.");
+        const offsets: number[] = [];
+        for (let offset = 500; offset < totalStudents; offset += 500) offsets.push(offset);
+        const otherPages = await Promise.all(offsets.map(async (offset) => {
+          const response = await fetch(`/api/students?limit=500&offset=${offset}`, {
+            credentials: "include",
+            headers: getAuthHeaders(),
+          });
+          if (!response.ok) throw new Error("Không tải đủ danh sách học viên để đối chiếu.");
+          return (await response.json()).students || [];
+        }));
+        allStudents.push(...otherPages.flat());
+        const byCode = new Map<string, any[]>();
+        for (const student of allStudents) {
+          const code = String(student.code || "").trim().toLowerCase();
+          if (code) byCode.set(code, [...(byCode.get(code) || []), student]);
+        }
+
+        const supplementRows = rows.slice(1).map((row, index) => ({ row, index }))
+          .filter(({ row }) => row.some((value) => value !== null && value !== undefined && String(value).trim() !== ""));
+        const errorRows: ImportErrorRow[] = [];
+        const processedCodes = new Set<string>();
+        let successCount = 0;
+        let cursor = 0;
+        const readText = (value: any) => value === null || value === undefined ? "" : String(value).trim();
+        const readDate = (value: any): string => {
+          if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+          if (typeof value === "number" && Number.isFinite(value)) {
+            const excelDate = new Date(Math.round((value - 25569) * 86400 * 1000));
+            if (!Number.isNaN(excelDate.getTime())) return excelDate.toISOString().slice(0, 10);
+          }
+          const text = readText(value);
+          const localDate = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+          if (localDate) return `${localDate[3]}-${localDate[2].padStart(2, "0")}-${localDate[1].padStart(2, "0")}`;
+          const parsed = new Date(text);
+          if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+          throw new Error("Ngày sinh không đúng định dạng.");
+        };
+        const worker = async () => {
+          while (cursor < supplementRows.length) {
+            const position = cursor++;
+            const { row, index } = supplementRows[position];
+            const code = readText(row[0]);
+            const name = readText(row[1]);
+            try {
+              if (!code) throw new Error("Thiếu mã học viên để đối chiếu.");
+              if (processedCodes.has(code.toLowerCase())) throw new Error("Mã học viên bị lặp trong file.");
+              processedCodes.add(code.toLowerCase());
+              const matches = byCode.get(code.toLowerCase()) || [];
+              if (matches.length !== 1) throw new Error(matches.length ? "Mã học viên bị trùng." : "Không tìm thấy mã học viên trên hệ thống.");
+
+              const updates: Record<string, any> = {};
+              const addText = (cellIndex: number, field: string) => {
+                const value = readText(row[cellIndex]);
+                if (value) updates[field] = value;
+              };
+              addText(2, "username");
+              addText(3, "password");
+              addText(4, "phone");
+              if (readText(row[5])) updates.dateOfBirth = readDate(row[5]);
+              addText(6, "address");
+              addText(7, "source");
+              addText(8, "rejectReason");
+              addText(9, "academicLevel");
+              addText(10, "note");
+              if (updates.source && crmSources?.length && !crmSources.some((source: any) => source.name === updates.source)) {
+                throw new Error(`Nguồn "${updates.source}" không có trong danh sách.`);
+              }
+              if (updates.rejectReason && crmReasons?.length && !crmReasons.some((reason: any) => reason.reason === updates.rejectReason)) {
+                throw new Error(`Lý do từ chối "${updates.rejectReason}" không có trong danh sách.`);
+              }
+              if (Object.keys(updates).length) {
+                const response = await fetch(buildUrl(api.students.update.path, { id: matches[0].id }), {
+                  method: "PUT",
+                  credentials: "include",
+                  headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+                  body: JSON.stringify({ ...updates, __activityLogSource: "excel_supplement_import" }),
+                });
+                if (!response.ok) {
+                  const payload = await response.json().catch(() => null);
+                  throw new Error(payload?.message || "Không thể cập nhật học viên.");
+                }
+              }
+              successCount++;
+            } catch (error: any) {
+              errorRows.push({
+                row: index + 2,
+                name,
+                reason: error?.message || "Không thể cập nhật học viên.",
+                rawData: row,
+                errorColumns: [],
+              });
+            }
+            setUploadProgress(Math.round(((position + 1) / Math.max(1, supplementRows.length)) * 90 + 10));
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(5, supplementRows.length) }, () => worker()));
+        const totalRows = supplementRows.length;
+        await queryClient.invalidateQueries({ queryKey: ["/api/students"] });
+        setUploadProgress(100);
+        try {
+          const auditForm = new FormData();
+          auditForm.append("file", importFile, importFile.name);
+          auditForm.append("summary", JSON.stringify({
+            importType: "supplement",
+            successCount,
+            totalRows,
+            errorCount: errorRows.length,
+          }));
+          const auditResponse = await fetch("/api/customers/activity-logs/import", {
+            method: "POST",
+            credentials: "include",
+            headers: getAuthHeaders(),
+            body: auditForm,
+          });
+          if (!auditResponse.ok) throw new Error("Không lưu được nhật ký file bổ sung.");
+          await queryClient.invalidateQueries({ queryKey: ["/api/customers/activity-logs"] });
+        } catch (auditError: any) {
+          toast({
+            title: "Đã cập nhật nhưng chưa lưu được nhật ký file gốc",
+            description: auditError?.message || "Không thể lưu nhật ký.",
+            variant: "destructive",
+          });
+        }
+        return { successCount, totalRows, errorRows };
+      }
 
       const dataRows = mapStudentImportRows(rows);
       setUploadProgress(20);
