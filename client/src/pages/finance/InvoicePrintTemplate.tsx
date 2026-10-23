@@ -8,7 +8,7 @@ import {
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
   AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
   Eye, EyeOff, Printer, Save, RotateCcw, ChevronDown,
-  Type, Table2, Variable, X, Search, ChevronLeft, ChevronRight,
+  Type, Table2, Variable, X, Search,
   ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Trash2, Merge, SplitSquareHorizontal,
   Grid3x3, Square, Rows2, CircleAlert,
 } from "lucide-react";
@@ -829,8 +829,6 @@ export function InvoicePrintTemplate({
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [previewHtml, setPreviewHtml] = useState("");
   const [sidebarTableOpen, setSidebarTableOpen] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isSidebarHoverOpen, setIsSidebarHoverOpen] = useState(false);
   const [toolbarTableOpen, setToolbarTableOpen] = useState(false);
   const [tableCtx, setTableCtx] = useState<TableCtx | null>(null);
   const [selectedCells, setSelectedCells] = useState<HTMLTableCellElement[]>([]);
@@ -1590,7 +1588,6 @@ export function InvoicePrintTemplate({
   }, [pageSize, orientation]);
 
   const ps = PAGE_SIZES[pageSize];
-  const isSidebarExpanded = !isSidebarCollapsed || isSidebarHoverOpen;
 
   return (
     <div className="flex flex-col h-full gap-0 overflow-hidden">
@@ -1665,35 +1662,12 @@ export function InvoicePrintTemplate({
 
       <div className="flex flex-1 overflow-hidden">
         {/* ── Sidebar ── */}
-        <div
-          className={`${isSidebarExpanded ? "w-52" : "w-10"} shrink-0 border-r bg-muted/20 flex flex-col overflow-y-auto transition-[width] duration-200`}
-          onMouseEnter={() => {
-            if (isSidebarCollapsed) setIsSidebarHoverOpen(true);
-          }}
-          onMouseLeave={() => {
-            if (isSidebarCollapsed) setIsSidebarHoverOpen(false);
-          }}
-        >
-          {isSidebarExpanded ? (
-            <>
+        <div className="w-52 shrink-0 border-r bg-muted/20 flex flex-col overflow-y-auto">
           {/* Variables */}
           <div className="p-3 border-b">
             <div className="flex items-center gap-1.5 mb-2">
               <Variable className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex-1">Biến dữ liệu</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSidebarCollapsed(true);
-                  setIsSidebarHoverOpen(false);
-                }}
-                className="p-1 rounded hover:bg-muted text-muted-foreground"
-                title="Thu gọn thanh bên"
-                aria-label="Thu gọn thanh Biến dữ liệu"
-                data-testid="button-collapse-template-sidebar"
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </button>
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Biến dữ liệu</span>
             </div>
             {/* Search */}
             <div className="relative mb-2">
@@ -1786,24 +1760,6 @@ export function InvoicePrintTemplate({
               </PopoverContent>
             </Popover>
           </div>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setIsSidebarCollapsed(false);
-                setIsSidebarHoverOpen(false);
-              }}
-              className="flex flex-col items-center gap-2 p-2 text-muted-foreground hover:text-primary hover:bg-primary/5"
-              title="Biến dữ liệu"
-              aria-label="Mở thanh Biến dữ liệu"
-              aria-expanded={false}
-              data-testid="button-expand-template-sidebar"
-            >
-              <Variable className="h-4 w-4" />
-              <ChevronRight className="h-3 w-3" />
-            </button>
-          )}
         </div>
 
         {/* ── Editor Area ── */}

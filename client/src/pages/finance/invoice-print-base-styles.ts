@@ -30,18 +30,10 @@ export const INVOICE_PRINT_BASE_STYLES = `
   .invoice-print-root th {
     padding: 0;
   }
-  table[data-borderless="true"] {
-    border-color: transparent !important;
-  }
-  table[data-borderless="true"] td,
-  table[data-borderless="true"] th {
-    border: none !important;
-    background: transparent !important;
-  }
-  table[data-borderless="true"] tr > :first-child {
+  .invoice-print-root table[data-borderless="true"] tr > :first-child {
     padding-left: 0 !important;
   }
-  table[data-borderless="true"] tr > :last-child {
+  .invoice-print-root table[data-borderless="true"] tr > :last-child {
     padding-right: 0 !important;
   }
 `;
