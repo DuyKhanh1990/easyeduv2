@@ -439,6 +439,7 @@ export function useExcelImportExport({
           resolveStudentImportCredentials(row[0], row[24], row[25]);
 
         const studentData: any = {
+          __activityLogSource: "excel_import",
           fullName: String(row[1] || ""),
           type: rawType === "Phụ huynh" ? "Phụ huynh" : "Học viên",
           locationIds: [rowLocationId],

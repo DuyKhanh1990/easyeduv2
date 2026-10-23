@@ -110,6 +110,15 @@ function actionConfig(action: string) {
   };
 }
 
+function getImportBatchStatus(batch: Record<string, any>) {
+  return batch.status === "error" ||
+    Number(batch.errorCount) > 0 ||
+    Boolean(batch.classAssignments?.error) ||
+    Number(batch.successCount) <= 0
+    ? "error"
+    : "success";
+}
+
 function formatValue(val: any): string {
   if (val === null || val === undefined) return "—";
   if (Array.isArray(val)) return val.map(formatValue).join(", ") || "—";
@@ -149,6 +158,7 @@ function ActivityDetailDialog({ log, onClose }: { log: ActivityLog | null; onClo
   const importBatch = log.action === "import" && log.new_data?.__kind === "excel_import_batch"
     ? log.new_data
     : null;
+  const importStatus = importBatch ? getImportBatchStatus(importBatch) : null;
   const { changedOldData, changedNewData } =
     log.action === "update"
       ? getChangedUpdateData(log.old_data, log.new_data)
@@ -227,7 +237,12 @@ function ActivityDetailDialog({ log, onClose }: { log: ActivityLog | null; onClo
             <div className="rounded-xl border p-4">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="font-semibold text-slate-700">Kết quả</h3>
-                <span className="text-xs font-medium text-emerald-700">Hoàn tất · 100%</span>
+                <span className={cn(
+                  "rounded-full px-2 py-1 text-xs font-semibold",
+                  importStatus === "error" ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"
+                )}>
+                  {importStatus === "error" ? "Lỗi" : "Thành công"}
+                </span>
               </div>
               <div className="mb-4 h-2.5 overflow-hidden rounded-full bg-slate-100">
                 <div className="h-full w-full rounded-full bg-blue-500" />
@@ -510,6 +525,10 @@ export function CustomerActivityLogDialog({ open, onOpenChange }: Props) {
                         const cfg = actionConfig(log.action);
                         const Icon = cfg.icon;
                         const subject = log.student_name || getStudentLabelFromLogData(log.new_data || log.old_data);
+                        const importBatch = log.action === "import" && log.new_data?.__kind === "excel_import_batch"
+                          ? log.new_data
+                          : null;
+                        const importStatus = importBatch ? getImportBatchStatus(importBatch) : null;
                         return (
                           <div key={log.id} className="rounded-xl bg-white border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all">
                             <div className="grid grid-cols-[minmax(0,1fr)_auto_28px] gap-3 px-3 py-2.5">
@@ -522,6 +541,19 @@ export function CustomerActivityLogDialog({ open, onOpenChange }: Props) {
                                     <span className={cn("inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border", cfg.classes)} data-testid={`status-log-action-${log.id}`}>
                                       {cfg.label}
                                     </span>
+                                    {importBatch && (
+                                      <>
+                                        <span className={cn(
+                                          "inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                                          importStatus === "error" ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"
+                                        )}>
+                                          {importStatus === "error" ? "Lỗi" : "Thành công"}
+                                        </span>
+                                        <span className="text-[10px] text-slate-500">
+                                          Số lượng: {Number(importBatch.totalRows) || 0}
+                                        </span>
+                                      </>
+                                    )}
                                     {log.student_code && <span className="font-mono text-[10px] text-slate-400">{log.student_code}</span>}
                                   </div>
                                   <p className="text-xs font-semibold text-slate-700 truncate mt-1">{subject}</p>
