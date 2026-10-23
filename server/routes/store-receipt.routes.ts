@@ -466,7 +466,7 @@ export async function registerStoreReceiptRoutes(app: Express) {
       const hasPagination = query.limit !== undefined || query.offset !== undefined || query.exportAll === "true";
       const filters = [sql`TRUE`];
       if (!isSuperAdmin && allowedLocationIds?.length) {
-        filters.push(sql`r.location_id = ANY(${allowedLocationIds}::uuid[])`);
+        filters.push(sql`r.location_id IN (${sql.join(allowedLocationIds.map((id: string) => sql`${id}::uuid`), sql`, `)})`);
       }
       if (query.search?.trim()) {
         const pattern = `%${query.search.trim()}%`;
@@ -499,14 +499,14 @@ export async function registerStoreReceiptRoutes(app: Express) {
         EXISTS (
           SELECT 1 FROM store_receipt_items filter_item
           WHERE filter_item.receipt_id = r.id
-            AND filter_item.product_code::text = ANY(${productCodes}::text[])
+            AND filter_item.product_code::text IN (${sql.join(productCodes.map(code => sql`${code}`), sql`, `)})
         )
       `);
       if (productNames.length) filters.push(sql`
         EXISTS (
           SELECT 1 FROM store_receipt_items filter_item
           WHERE filter_item.receipt_id = r.id
-            AND filter_item.product_name::text = ANY(${productNames}::text[])
+            AND filter_item.product_name::text IN (${sql.join(productNames.map(name => sql`${name}`), sql`, `)})
         )
       `);
 
@@ -605,7 +605,7 @@ export async function registerStoreReceiptRoutes(app: Express) {
     if (!req.user) return res.status(401).json({ message: "Unauthorized" });
     const { allowedLocationIds, isSuperAdmin } = req;
     const locationFilter = !isSuperAdmin && allowedLocationIds?.length
-      ? sql`AND r.location_id = ANY(${allowedLocationIds}::uuid[])`
+      ? sql`AND r.location_id IN (${sql.join(allowedLocationIds.map((id: string) => sql`${id}::uuid`), sql`, `)})`
       : sql``;
     try {
       const [locations, warehouses, suppliers, products] = await Promise.all([
@@ -616,7 +616,7 @@ export async function registerStoreReceiptRoutes(app: Express) {
           SELECT DISTINCT i.product_code::text AS code, i.product_name::text AS name
           FROM store_receipt_items i JOIN store_receipts r ON r.id = i.receipt_id
           WHERE TRUE ${locationFilter}
-          ORDER BY i.product_code, i.product_name
+          ORDER BY code, name
         `),
       ]);
       res.json({

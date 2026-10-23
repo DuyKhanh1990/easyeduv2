@@ -258,7 +258,7 @@ export async function registerStoreInventoryRoutes(app: Express) {
       }
       if (warehouseId && warehouseId !== "all") filters.push(sql`sw.id = ${warehouseId}::uuid`);
       if (!req.isSuperAdmin && req.allowedLocationIds?.length) {
-        filters.push(sql`sw.location_id = ANY(${req.allowedLocationIds}::uuid[])`);
+        filters.push(sql`sw.location_id IN (${sql.join(req.allowedLocationIds.map((id: string) => sql`${id}::uuid`), sql`, `)})`);
       }
       if (dateFrom?.trim()) filters.push(sql`si.updated_at >= ${dateFrom.trim()}::date`);
       if (dateTo?.trim()) filters.push(sql`si.updated_at < (${dateTo.trim()}::date + 1)`);
