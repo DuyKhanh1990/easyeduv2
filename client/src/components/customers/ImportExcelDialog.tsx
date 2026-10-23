@@ -263,6 +263,32 @@ export function ImportExcelDialog({
 
                 {/* RIGHT COLUMN */}
                 <div className="flex flex-col gap-4">
+                  <button
+                    type="button"
+                    disabled
+                    aria-disabled="true"
+                    title={t("import.templateSupplementUnavailable")}
+                    className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-left cursor-not-allowed opacity-80"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-slate-400 flex items-center justify-center flex-shrink-0">
+                      <FileDown className="w-4 h-4 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-slate-600">{t("import.templateSupplement")}</p>
+                      <p className="text-[11px] text-slate-500">{t("import.templateSupplementSub")}</p>
+                    </div>
+                  </button>
+
+                  <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl min-h-[132px]">
+                    <p className="text-xs font-bold text-amber-800 flex items-center gap-1.5 mb-2">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                      {t("import.supplementNotice")}
+                    </p>
+                    <p className="text-xs leading-relaxed text-amber-700/90">
+                      {t("import.supplementNoticeBody")}
+                    </p>
+                  </div>
+
                   <div className="space-y-1.5 flex-1">
                     <Label className="text-xs font-medium text-slate-600">
                       {t("import.fileLabel")} <span className="text-rose-500">*</span>
