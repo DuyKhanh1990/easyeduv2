@@ -461,11 +461,56 @@ export async function registerStoreReceiptRoutes(app: Express) {
   app.get("/api/store/receipts", async (req, res) => {
     if (!req.user) return res.status(401).json({ message: "Unauthorized" });
     const { allowedLocationIds, isSuperAdmin } = req;
-    const locationFilter = (!isSuperAdmin && allowedLocationIds?.length)
-      ? sql`AND r.location_id = ANY(ARRAY[${sql.raw(allowedLocationIds.map((id: string) => `'${id}'`).join(','))}]::uuid[])`
-      : sql``;
     try {
-      const rows = await db.execute(sql`
+      const query = req.query as Record<string, string | undefined>;
+      const hasPagination = query.limit !== undefined || query.offset !== undefined || query.exportAll === "true";
+      const filters = [sql`TRUE`];
+      if (!isSuperAdmin && allowedLocationIds?.length) {
+        filters.push(sql`r.location_id = ANY(${allowedLocationIds}::uuid[])`);
+      }
+      if (query.search?.trim()) {
+        const pattern = `%${query.search.trim()}%`;
+        filters.push(sql`(
+          r.code ILIKE ${pattern} OR r.name ILIKE ${pattern}
+          OR COALESCE(s.name, '') ILIKE ${pattern}
+          OR COALESCE(w.name, '') ILIKE ${pattern}
+          OR COALESCE(l.name, '') ILIKE ${pattern}
+          OR COALESCE(r.created_by_name, '') ILIKE ${pattern}
+        )`);
+      }
+      if (query.dateFrom) filters.push(sql`r.created_at >= ${query.dateFrom}::timestamptz`);
+      if (query.dateTo) filters.push(sql`r.created_at <= ${query.dateTo}::timestamptz`);
+      if (query.locationId && query.locationId !== "all") filters.push(sql`r.location_id = ${query.locationId}::uuid`);
+      if (query.warehouseId && query.warehouseId !== "all") filters.push(sql`r.warehouse_id = ${query.warehouseId}::uuid`);
+      if (query.supplierId && query.supplierId !== "all") filters.push(sql`r.supplier_id = ${query.supplierId}::uuid`);
+      if (query.status && query.status !== "all") filters.push(sql`r.status = ${query.status}`);
+
+      const parseList = (value?: string) => {
+        try {
+          const parsed = JSON.parse(value || "[]");
+          return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
+        } catch {
+          return [];
+        }
+      };
+      const productCodes = parseList(query.productCodes);
+      const productNames = parseList(query.productNames);
+      if (productCodes.length) filters.push(sql`
+        EXISTS (
+          SELECT 1 FROM store_receipt_items filter_item
+          WHERE filter_item.receipt_id = r.id
+            AND filter_item.product_code::text = ANY(${productCodes}::text[])
+        )
+      `);
+      if (productNames.length) filters.push(sql`
+        EXISTS (
+          SELECT 1 FROM store_receipt_items filter_item
+          WHERE filter_item.receipt_id = r.id
+            AND filter_item.product_name::text = ANY(${productNames}::text[])
+        )
+      `);
+
+      const filteredReceipts = sql`
         SELECT
           r.id, r.code, r.name, r.date, r.status,
           r.has_invoice, r.total_amount, r.note,
@@ -474,30 +519,115 @@ export async function registerStoreReceiptRoutes(app: Express) {
           r.location_id, r.warehouse_id, r.supplier_id,
           l.name AS location_name,
           w.name AS warehouse_name,
-          s.name AS supplier_name,
-          COUNT(DISTINCT i.id)::int AS item_count,
-          COALESCE(SUM(i.quantity), 0)::int AS total_quantity,
-          COALESCE(
-            ARRAY_AGG(DISTINCT i.product_code::text) FILTER (WHERE i.product_code IS NOT NULL),
-            ARRAY[]::text[]
-          ) AS product_codes,
-          COALESCE(
-            ARRAY_AGG(DISTINCT i.product_name::text) FILTER (WHERE i.product_name IS NOT NULL),
-            ARRAY[]::text[]
-          ) AS product_names
+          s.name AS supplier_name
         FROM store_receipts r
         LEFT JOIN locations l ON l.id = r.location_id
         LEFT JOIN store_warehouses w ON w.id = r.warehouse_id
         LEFT JOIN store_suppliers s ON s.id = r.supplier_id
-        LEFT JOIN store_receipt_items i ON i.receipt_id = r.id
-        WHERE TRUE ${locationFilter}
-        GROUP BY r.id, l.name, w.name, s.name
-        ORDER BY r.created_at DESC
-      `);
-      res.json(rows.rows);
+        WHERE ${sql.join(filters, sql` AND `)}
+      `;
+      if (!hasPagination) {
+        const rows = await db.execute(sql`
+          SELECT filtered.*,
+            COALESCE(items.item_count, 0)::int AS item_count,
+            COALESCE(items.total_quantity, 0)::int AS total_quantity,
+            COALESCE(items.product_codes, ARRAY[]::text[]) AS product_codes,
+            COALESCE(items.product_names, ARRAY[]::text[]) AS product_names
+          FROM (${filteredReceipts}) filtered
+          LEFT JOIN LATERAL (
+            SELECT COUNT(*)::int AS item_count,
+              COALESCE(SUM(i.quantity), 0)::int AS total_quantity,
+              COALESCE(ARRAY_AGG(DISTINCT i.product_code::text) FILTER (WHERE i.product_code IS NOT NULL), ARRAY[]::text[]) AS product_codes,
+              COALESCE(ARRAY_AGG(DISTINCT i.product_name::text) FILTER (WHERE i.product_name IS NOT NULL), ARRAY[]::text[]) AS product_names
+            FROM store_receipt_items i
+            WHERE i.receipt_id = filtered.id
+          ) items ON TRUE
+          ORDER BY filtered.created_at DESC, filtered.id DESC
+        `);
+        return res.json(rows.rows);
+      }
+
+      const exportAll = query.exportAll === "true";
+      const limit = Math.min(500, Math.max(1, Number.parseInt(query.limit || "20", 10) || 20));
+      const offset = Math.max(0, Number.parseInt(query.offset || "0", 10) || 0);
+      const pageLimit = exportAll ? sql`` : sql`LIMIT ${limit} OFFSET ${offset}`;
+      const [rows, aggregate] = await Promise.all([
+        db.execute(sql`
+          WITH matching AS (${filteredReceipts}),
+          page_receipts AS (
+            SELECT * FROM matching
+            ORDER BY created_at DESC, id DESC
+            ${pageLimit}
+          )
+          SELECT page_receipts.*,
+            COALESCE(items.item_count, 0)::int AS item_count,
+            COALESCE(items.total_quantity, 0)::int AS total_quantity,
+            COALESCE(items.product_codes, ARRAY[]::text[]) AS product_codes,
+            COALESCE(items.product_names, ARRAY[]::text[]) AS product_names
+          FROM page_receipts
+          LEFT JOIN LATERAL (
+            SELECT COUNT(*)::int AS item_count,
+              COALESCE(SUM(i.quantity), 0)::int AS total_quantity,
+              COALESCE(ARRAY_AGG(DISTINCT i.product_code::text) FILTER (WHERE i.product_code IS NOT NULL), ARRAY[]::text[]) AS product_codes,
+              COALESCE(ARRAY_AGG(DISTINCT i.product_name::text) FILTER (WHERE i.product_name IS NOT NULL), ARRAY[]::text[]) AS product_names
+            FROM store_receipt_items i
+            WHERE i.receipt_id = page_receipts.id
+          ) items ON TRUE
+          ORDER BY page_receipts.created_at DESC, page_receipts.id DESC
+        `),
+        db.execute(sql`
+          WITH matching AS (${filteredReceipts}),
+          receipt_totals AS (
+            SELECT COUNT(*)::int AS total,
+              COALESCE(SUM(total_amount), 0)::numeric AS total_amount
+            FROM matching
+          ),
+          item_totals AS (
+            SELECT COUNT(i.id)::int AS item_count,
+              COALESCE(SUM(i.quantity), 0)::int AS total_quantity
+            FROM matching m
+            LEFT JOIN store_receipt_items i ON i.receipt_id = m.id
+          )
+          SELECT
+            receipt_totals.total, receipt_totals.total_amount,
+            item_totals.item_count, item_totals.total_quantity
+          FROM receipt_totals CROSS JOIN item_totals
+        `),
+      ]);
+      return res.json({ rows: rows.rows, ...(aggregate.rows[0] || {}) });
     } catch (err) {
       console.error("[Receipt] GET list error:", err);
       res.status(500).json({ message: "Lỗi khi lấy danh sách phiếu nhập kho" });
+    }
+  });
+
+  app.get("/api/store/receipts/filter-options", async (req, res) => {
+    if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+    const { allowedLocationIds, isSuperAdmin } = req;
+    const locationFilter = !isSuperAdmin && allowedLocationIds?.length
+      ? sql`AND r.location_id = ANY(${allowedLocationIds}::uuid[])`
+      : sql``;
+    try {
+      const [locations, warehouses, suppliers, products] = await Promise.all([
+        db.execute(sql`SELECT DISTINCT r.location_id AS id, l.name FROM store_receipts r JOIN locations l ON l.id = r.location_id WHERE TRUE ${locationFilter} ORDER BY l.name`),
+        db.execute(sql`SELECT DISTINCT r.warehouse_id AS id, w.name FROM store_receipts r JOIN store_warehouses w ON w.id = r.warehouse_id WHERE TRUE ${locationFilter} ORDER BY w.name`),
+        db.execute(sql`SELECT DISTINCT r.supplier_id AS id, s.name FROM store_receipts r JOIN store_suppliers s ON s.id = r.supplier_id WHERE TRUE ${locationFilter} ORDER BY s.name`),
+        db.execute(sql`
+          SELECT DISTINCT i.product_code::text AS code, i.product_name::text AS name
+          FROM store_receipt_items i JOIN store_receipts r ON r.id = i.receipt_id
+          WHERE TRUE ${locationFilter}
+          ORDER BY i.product_code, i.product_name
+        `),
+      ]);
+      res.json({
+        locations: locations.rows,
+        warehouses: warehouses.rows,
+        suppliers: suppliers.rows,
+        products: products.rows,
+      });
+    } catch (err) {
+      console.error("[Receipt] filter options error:", err);
+      res.status(500).json({ message: "Lỗi khi lấy bộ lọc phiếu nhập kho" });
     }
   });
 

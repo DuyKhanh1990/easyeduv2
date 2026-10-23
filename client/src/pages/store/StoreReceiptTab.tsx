@@ -20,6 +20,7 @@ import { useLocations } from "@/hooks/use-locations";
 import { HistoryDialog } from "@/components/common/HistoryDialog";
 import { StoreReceiptNotes } from "./StoreReceiptNotes";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
+import { buildStoreReceiptListUrl } from "./storeReceiptListApi";
 
 type ReceiptRow = {
   id: string;
@@ -75,6 +76,8 @@ export function StoreReceiptTab() {
   const [invoiceLockedMsg, setInvoiceLockedMsg] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange>({});
   const [filterLocation, setFilterLocation] = useState("all");
   const [filterWarehouse, setFilterWarehouse] = useState("all");
@@ -84,114 +87,72 @@ export function StoreReceiptTab() {
   const [filterProductNames, setFilterProductNames] = useState<string[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
 
-  const { data: receipts = [], isLoading } = useQuery<ReceiptRow[]>({
-    queryKey: ["/api/store/receipts"],
-    queryFn: () => apiRequest("GET", "/api/store/receipts").then(r => r.json()),
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  const listFilters = useMemo(() => ({
+    search: debouncedSearch,
+    dateRange,
+    locationId: filterLocation,
+    warehouseId: filterWarehouse,
+    supplierId: filterSupplier,
+    status: filterStatus,
+    productCodes: filterProductCodes,
+    productNames: filterProductNames,
+  }), [debouncedSearch, dateRange, filterLocation, filterWarehouse, filterSupplier, filterStatus, filterProductCodes, filterProductNames]);
+  const listUrl = useMemo(
+    () => buildStoreReceiptListUrl("/api/store/receipts", listFilters, page, pageSize),
+    [listFilters, page, pageSize],
+  );
+  const { data: receiptPage, isLoading } = useQuery<{
+    rows: ReceiptRow[];
+    total: number;
+    item_count: number;
+    total_quantity: number;
+    total_amount: string;
+  }>({
+    queryKey: ["/api/store/receipts", "paged-list", listFilters, page, pageSize],
+    queryFn: () => apiRequest("GET", listUrl).then(r => r.json()),
   });
-
-  const uniqueLocations = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const r of receipts) {
-      if (r.location_id && r.location_name) seen.set(r.location_id, r.location_name);
-    }
-    return Array.from(seen.entries()).map(([id, name]) => ({ id, name }));
-  }, [receipts]);
-
-  const uniqueWarehouses = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const r of receipts) {
-      if (r.warehouse_id && r.warehouse_name) seen.set(r.warehouse_id, r.warehouse_name);
-    }
-    return Array.from(seen.entries()).map(([id, name]) => ({ id, name }));
-  }, [receipts]);
-
-  const uniqueSuppliers = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const r of receipts) {
-      if (r.supplier_id && r.supplier_name) seen.set(r.supplier_id, r.supplier_name);
-    }
-    return Array.from(seen.entries()).map(([id, name]) => ({ id, name }));
-  }, [receipts]);
-
-  const productCodeOptions = useMemo(() => {
-    const codes = new Set<string>();
-    for (const receipt of receipts) {
-      for (const code of receipt.product_codes ?? []) {
-        if (code) codes.add(code);
-      }
-    }
-    return Array.from(codes).sort((a, b) => a.localeCompare(b, "vi"));
-  }, [receipts]);
-
-  const productNameOptions = useMemo(() => {
-    const names = new Set<string>();
-    for (const receipt of receipts) {
-      for (const name of receipt.product_names ?? []) {
-        if (name) names.add(name);
-      }
-    }
-    return Array.from(names).sort((a, b) => a.localeCompare(b, "vi"));
-  }, [receipts]);
-
-  const filtered = useMemo(() => {
-    let result = receipts;
-
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter(r =>
-        r.code.toLowerCase().includes(q) ||
-        r.name.toLowerCase().includes(q) ||
-        (r.supplier_name?.toLowerCase().includes(q)) ||
-        (r.warehouse_name?.toLowerCase().includes(q)) ||
-        (r.location_name?.toLowerCase().includes(q)) ||
-        (r.created_by_name?.toLowerCase().includes(q))
-      );
-    }
-
-    if (dateRange.from) {
-      const from = new Date(dateRange.from);
-      from.setHours(0, 0, 0, 0);
-      result = result.filter(r => new Date(r.created_at) >= from);
-    }
-    if (dateRange.to) {
-      const to = new Date(dateRange.to);
-      to.setHours(23, 59, 59, 999);
-      result = result.filter(r => new Date(r.created_at) <= to);
-    }
-
-    if (filterLocation !== "all") result = result.filter(r => r.location_id === filterLocation);
-    if (filterWarehouse !== "all") result = result.filter(r => r.warehouse_id === filterWarehouse);
-    if (filterSupplier !== "all") result = result.filter(r => r.supplier_id === filterSupplier);
-    if (filterStatus !== "all") result = result.filter(r => r.status === filterStatus);
-    if (filterProductCodes.length > 0) {
-      result = result.filter(r =>
-        filterProductCodes.some(code => (r.product_codes ?? []).includes(code))
-      );
-    }
-    if (filterProductNames.length > 0) {
-      result = result.filter(r =>
-        filterProductNames.some(name => (r.product_names ?? []).includes(name))
-      );
-    }
-
-    return result;
-  }, [receipts, search, dateRange, filterLocation, filterWarehouse, filterSupplier, filterStatus, filterProductCodes, filterProductNames]);
+  const { data: filterOptions } = useQuery<{
+    locations: { id: string; name: string }[];
+    warehouses: { id: string; name: string }[];
+    suppliers: { id: string; name: string }[];
+    products: { code: string | null; name: string | null }[];
+  }>({
+    queryKey: ["/api/store/receipts/filter-options"],
+    queryFn: () => apiRequest("GET", "/api/store/receipts/filter-options").then(r => r.json()),
+    staleTime: 5 * 60_000,
+  });
+  const paginatedReceipts = receiptPage?.rows ?? [];
+  const uniqueLocations = filterOptions?.locations ?? [];
+  const uniqueWarehouses = filterOptions?.warehouses ?? [];
+  const uniqueSuppliers = filterOptions?.suppliers ?? [];
+  const productCodeOptions = useMemo(
+    () => Array.from(new Set((filterOptions?.products ?? []).map(product => product.code).filter((code): code is string => !!code))).sort((a, b) => a.localeCompare(b, "vi")),
+    [filterOptions],
+  );
+  const productNameOptions = useMemo(
+    () => Array.from(new Set((filterOptions?.products ?? []).map(product => product.name).filter((name): name is string => !!name))).sort((a, b) => a.localeCompare(b, "vi")),
+    [filterOptions],
+  );
 
   useEffect(() => { setPage(1); }, [search, dateRange, filterLocation, filterWarehouse, filterSupplier, filterStatus, filterProductCodes, filterProductNames]);
 
-  const totalItems = filtered.length;
+  const totalItems = Number(receiptPage?.total) || 0;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-  const startIdx = (page - 1) * pageSize;
-  const endIdx = Math.min(startIdx + pageSize, totalItems);
-  const paginatedReceipts = filtered.slice(startIdx, endIdx);
-  const summaryTotals = useMemo(() => filtered.reduce(
-    (totals, receipt) => ({
-      itemCount: totals.itemCount + (Number(receipt.item_count) || 0),
-      quantity: totals.quantity + (Number(receipt.total_quantity) || 0),
-      amount: totals.amount + (Number.parseFloat(String(receipt.total_amount ?? 0)) || 0),
-    }),
-    { itemCount: 0, quantity: 0, amount: 0 },
-  ), [filtered]);
+  const startIdx = totalItems ? (page - 1) * pageSize : 0;
+  const endIdx = Math.min(startIdx + paginatedReceipts.length, totalItems);
+  const summaryTotals = {
+    itemCount: Number(receiptPage?.item_count) || 0,
+    quantity: Number(receiptPage?.total_quantity) || 0,
+    amount: Number.parseFloat(String(receiptPage?.total_amount ?? 0)) || 0,
+  };
+  useEffect(() => {
+    if (!isLoading && page > totalPages) setPage(totalPages);
+  }, [isLoading, page, totalPages]);
 
   const activeFilterCount = [filterLocation, filterWarehouse, filterSupplier, filterStatus].filter(v => v !== "all").length
     + filterProductCodes.length + filterProductNames.length;
@@ -208,7 +169,23 @@ export function StoreReceiptTab() {
     setFilterProductNames([]);
   }
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["/api/store/receipts"] });
+  const invalidate = () => Promise.all([
+    qc.invalidateQueries({ queryKey: ["/api/store/receipts"] }),
+    qc.invalidateQueries({ queryKey: ["/api/store/receipts/filter-options"] }),
+  ]);
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const url = buildStoreReceiptListUrl("/api/store/receipts", listFilters, undefined, undefined, true);
+      const response = await apiRequest("GET", url).then(r => r.json());
+      await exportNhapKho(response.rows ?? [], toast);
+    } catch {
+      toast({ title: "Lỗi", description: "Không thể tải danh sách phiếu nhập kho để xuất Excel.", variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   function showError(e: any, fallback = "Lỗi") {
     if (e?.invoiceLocked) {
@@ -515,9 +492,10 @@ export function StoreReceiptTab() {
               variant="outline"
               size="sm"
               className="flex items-center gap-1.5 h-9 text-xs"
-              onClick={() => exportNhapKho(filtered, toast)}
+              onClick={handleExport}
+              disabled={isExporting}
             >
-              <FileDown className="w-3.5 h-3.5" /> Tải xuống
+              <FileDown className="w-3.5 h-3.5" /> {isExporting ? "Đang tải..." : "Tải xuống"}
             </Button>
             <Button
               size="sm"
@@ -571,7 +549,7 @@ export function StoreReceiptTab() {
                   </div>
                 </td>
               </tr>
-            ) : filtered.length === 0 ? (
+            ) : paginatedReceipts.length === 0 ? (
               <tr>
                 <td colSpan={13} className="text-center py-12 text-muted-foreground text-sm">
                   {hasActiveFilter
