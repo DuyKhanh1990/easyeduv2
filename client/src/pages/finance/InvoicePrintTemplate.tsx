@@ -490,6 +490,15 @@ const PAGE_SIZES: Record<PageSize, { width: string; minHeight: string; label: st
   A5:  { width: "148mm", minHeight: "210mm", label: "A5 (148 × 210mm)",  cssSize: "A5" },
   K80: { width: "80mm",  minHeight: "120mm", label: "K80 (80mm – Bill nhiệt)", cssSize: "80mm auto" },
 };
+const PAGE_CONTENT_INSET = "10mm";
+
+function getPageDimensions(pageSize: PageSize, orientation: Orientation) {
+  const page = PAGE_SIZES[pageSize];
+  if (orientation === "landscape" && pageSize !== "K80") {
+    return { width: page.minHeight, height: page.width };
+  }
+  return { width: page.width, height: page.minHeight };
+}
 
 /* ─────────────────── DEFAULT TEMPLATE ─────────────────── */
 const DEFAULT_TEMPLATE = `<div style="font-family: Arial, sans-serif; font-size: 13px;">
@@ -1560,6 +1569,8 @@ export function InvoicePrintTemplate({
     const html = editorRef.current?.innerHTML || "";
     const rendered = renderTemplate(html, SAMPLE_DATA, mainLogoUrl);
     const ps = PAGE_SIZES[pageSize];
+    const page = getPageDimensions(pageSize, orientation);
+    const printPageSize = pageSize === "K80" ? ps.cssSize : `${ps.cssSize} ${orientation}`;
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
     printWindow.document.write(`<!DOCTYPE html>
@@ -1569,9 +1580,16 @@ export function InvoicePrintTemplate({
   <title>Hoá đơn</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    @page { size: ${ps.cssSize} ${orientation}; margin: 10mm; }
-    body { font-family: Arial, sans-serif; font-size: 13px; }
-    .page { width: ${ps.width}; min-height: ${ps.minHeight}; }
+    @page { size: ${printPageSize}; margin: 0; }
+    html, body { margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 13px; line-height: 1.5; }
+    table { border-collapse: collapse; border-spacing: 0; }
+    .page {
+      width: ${page.width};
+      min-height: ${page.height};
+      padding: ${PAGE_CONTENT_INSET};
+      box-sizing: border-box;
+    }
     /* Borderless tables behave as invisible Word-style layout grids */
     table[data-borderless="true"] { border-color: transparent !important; }
     table[data-borderless="true"] td,
@@ -1587,9 +1605,10 @@ export function InvoicePrintTemplate({
 </body>
 </html>`);
     printWindow.document.close();
-  }, [pageSize, orientation]);
+  }, [pageSize, orientation, mainLogoUrl]);
 
   const ps = PAGE_SIZES[pageSize];
+  const page = getPageDimensions(pageSize, orientation);
   const isSidebarExpanded = !isSidebarCollapsed || isSidebarHoverOpen;
 
   return (
@@ -2032,11 +2051,12 @@ export function InvoicePrintTemplate({
                   <div
                     ref={paperRef}
                     style={{
-                      width: ps.width,
-                      minHeight: ps.minHeight,
+                      width: page.width,
+                      minHeight: page.height,
                       background: "white",
                       boxShadow: "0 2px 16px rgba(0,0,0,0.12)",
-                      padding: "10mm",
+                      padding: PAGE_CONTENT_INSET,
+                      boxSizing: "border-box",
                       position: "relative",
                     }}
                   >
@@ -2132,11 +2152,12 @@ export function InvoicePrintTemplate({
                 </div>
                 <div
                   style={{
-                    width: ps.width,
-                    minHeight: ps.minHeight,
+                    width: page.width,
+                    minHeight: page.height,
                     background: "white",
                     boxShadow: "0 2px 16px rgba(0,0,0,0.12)",
-                    padding: "10mm",
+                    padding: PAGE_CONTENT_INSET,
+                    boxSizing: "border-box",
                   }}
                 >
                   <div
