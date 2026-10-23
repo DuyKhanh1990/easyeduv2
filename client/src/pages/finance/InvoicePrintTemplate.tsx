@@ -839,6 +839,7 @@ export function InvoicePrintTemplate({
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [previewHtml, setPreviewHtml] = useState("");
   const [previewScale, setPreviewScale] = useState(1);
+  const [isA4SplitGuideVisible, setIsA4SplitGuideVisible] = useState(false);
   const [sidebarTableOpen, setSidebarTableOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSidebarHoverOpen, setIsSidebarHoverOpen] = useState(false);
@@ -1656,7 +1657,10 @@ export function InvoicePrintTemplate({
               </span>
             </label>
           </div>
-          <Select value={pageSize} onValueChange={(v) => setPageSize(v as PageSize)}>
+          <Select value={pageSize} onValueChange={(v) => {
+            setPageSize(v as PageSize);
+            if (v !== "A4") setIsA4SplitGuideVisible(false);
+          }}>
             <SelectTrigger className="h-8 text-xs w-48" data-testid="select-page-size">
               <SelectValue />
             </SelectTrigger>
@@ -1666,7 +1670,10 @@ export function InvoicePrintTemplate({
               ))}
             </SelectContent>
           </Select>
-          <Select value={orientation} onValueChange={(v) => setOrientation(v as Orientation)}>
+          <Select value={orientation} onValueChange={(v) => {
+            setOrientation(v as Orientation);
+            if (v !== "portrait") setIsA4SplitGuideVisible(false);
+          }}>
             <SelectTrigger className="h-8 text-xs w-36" data-testid="select-orientation">
               <SelectValue />
             </SelectTrigger>
@@ -2064,8 +2071,25 @@ export function InvoicePrintTemplate({
             {!isPreview && (
               <div className="flex-[3] min-w-0 overflow-auto p-6 flex justify-center bg-muted/10 border-r">
                 <div className="flex flex-col items-center gap-2">
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">
-                    Trình thiết kế (chỉnh sửa)
+                  <div className="relative w-full text-center text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">
+                    <span>Trình thiết kế (chỉnh sửa)</span>
+                    {pageSize === "A4" && orientation === "portrait" && (
+                      <button
+                        type="button"
+                        onClick={() => setIsA4SplitGuideVisible(value => !value)}
+                        aria-pressed={isA4SplitGuideVisible}
+                        title={isA4SplitGuideVisible ? "Ẩn đường chia đôi A4" : "Hiện đường chia đôi A4"}
+                        data-testid="button-a4-split-guide"
+                        className={`absolute right-0 top-1/2 -translate-y-1/2 inline-flex items-center gap-1 rounded border px-1.5 py-1 text-[9px] normal-case transition-colors ${
+                          isA4SplitGuideVisible
+                            ? "border-primary/40 bg-primary/10 text-primary"
+                            : "border-border bg-background text-muted-foreground hover:bg-muted"
+                        }`}
+                      >
+                        <Rows2 className="h-3 w-3" />
+                        Chia đôi A4
+                      </button>
+                    )}
                   </div>
                   <div
                     ref={paperRef}
@@ -2101,6 +2125,18 @@ export function InvoicePrintTemplate({
                       data-testid="template-editor"
                       data-placeholder="Nhập nội dung mẫu hoá đơn tại đây..."
                     />
+                    {isA4SplitGuideVisible && pageSize === "A4" && orientation === "portrait" && (
+                      <div
+                        aria-hidden="true"
+                        data-testid="a4-split-guide"
+                        className="absolute left-0 right-0 border-t border-dashed border-slate-400/50"
+                        style={{
+                          top: "148.5mm",
+                          pointerEvents: "none",
+                          zIndex: 20,
+                        }}
+                      />
+                    )}
                     {/* ── Floating ↑/↓ buttons to insert line above/below a table ── */}
                     {tableHoverBtns && (
                       <>
