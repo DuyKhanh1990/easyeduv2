@@ -28,6 +28,7 @@ import { sendUpdateSessionNotification, sendCancelSessionNotification, sendUpdat
 import { notificationService } from "../application/notification/services/NotificationService";
 import { buildClassVisibilityCondition, buildClassVisibilitySql, canViewClass, resolveClassViewAccess, type ClassViewScope } from "../lib/class-access";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
+import { getBusinessDateString } from "../lib/business-date";
 import { getNextLocationCode } from "../storage/finance.storage";
 import { recordFreeClassWalletTransition } from "../storage/free-class-wallet.storage";
 import { buildTeacherTimeAssignments, getShiftScheduleKey } from "@shared/teacher-time-assignments";
@@ -2029,6 +2030,7 @@ export function registerClassesRoutes(app: Express): void {
                   remainingAmount: String(grandTotal),
                   paidAmount: "0",
                   status: "unpaid",
+                  dueDate: getBusinessDateString(),
                   description,
                   createdBy: userId || null,
                 }).returning();

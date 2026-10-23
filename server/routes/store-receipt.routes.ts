@@ -22,6 +22,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import { createStoreReceiptAuditLog } from "../storage/store-receipt-audit-log.storage";
+import { getBusinessDateString } from "../lib/business-date";
 
 function formatInvoiceDate(value: string | Date | null | undefined): string {
   if (!value) return "";
@@ -189,6 +190,7 @@ async function createReceiptInvoice(params: {
   const paid = Math.min(params.paidAmount, grandTotal);
   const remaining = Math.max(0, grandTotal - paid);
   const invStatus = remaining <= 0 ? "paid" : paid > 0 ? "partial" : "unpaid";
+  const today = getBusinessDateString();
 
   const nextCodeRow = await db.execute(sql`
     SELECT MAX(CAST(SUBSTRING(code FROM 3) AS INTEGER)) as max_num
@@ -212,6 +214,7 @@ async function createReceiptInvoice(params: {
     grandTotal: String(grandTotal),
     paidAmount: String(paid),
     remainingAmount: String(remaining),
+    dueDate: today,
     status: invStatus,
     createdBy: params.createdBy ?? null,
     updatedBy: params.createdBy ?? null,
@@ -248,7 +251,7 @@ async function createReceiptInvoice(params: {
         label: "ĐỢT 1",
         code: `${nextCode}-1`,
         amount: String(paid),
-        dueDate: new Date().toISOString().split("T")[0],
+        dueDate: today,
         status: "paid",
         sortOrder: 0,
         paymentMethod: "cash",
@@ -258,7 +261,7 @@ async function createReceiptInvoice(params: {
         label: "ĐỢT 2",
         code: `${nextCode}-2`,
         amount: String(remaining),
-        dueDate: new Date().toISOString().split("T")[0],
+        dueDate: today,
         status: "unpaid",
         sortOrder: 1,
         paymentMethod: "cash",

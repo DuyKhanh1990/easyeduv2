@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { X, Search, Trash2, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getInvoiceBusinessDateKey } from "@/types/invoice-types";
 
 type Location = { id: string; name: string };
 type Warehouse = { id: string; name: string; locationId: string | null };
@@ -76,7 +77,7 @@ function fmtVND(n: number) {
 }
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return getInvoiceBusinessDateKey(new Date());
 }
 
 interface Props {

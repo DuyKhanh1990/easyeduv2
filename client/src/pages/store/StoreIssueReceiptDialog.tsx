@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { calculateInvoiceVatAmount, INVOICE_VAT_RATES } from "@shared/invoice-vat";
 import { calculateInvoicePromotionVat, getUniformInvoicePromotionVatRate } from "@shared/invoice-promotion-vat";
+import { getInvoiceBusinessDateKey } from "@/types/invoice-types";
 
 type Location = { id: string; name: string };
 type Warehouse = { id: string; name: string; locationId: string | null };
@@ -481,7 +482,7 @@ function fmtVND(n: number) {
 }
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  return getInvoiceBusinessDateKey(new Date());
 }
 
 interface Props {

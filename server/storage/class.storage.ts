@@ -21,6 +21,7 @@ import { getNextLocationCode } from "./finance.storage";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
 import { buildClassVisibilityCondition, buildClassVisibilitySql, type ClassViewScope } from "../lib/class-access";
 import { normalizeSearchText, normalizedSearchSql } from "../lib/search-text";
+import { getBusinessDateString } from "../lib/business-date";
 
 import type { Class } from "./base";
 
@@ -2295,6 +2296,7 @@ export async function scheduleClassStudents(classId: string, configs: any[], use
             remainingAmount: grandTotal.toString(),
             paidAmount: "0",
             status: "unpaid",
+            dueDate: getBusinessDateString(),
             description,
             createdBy: userId || null,
           }).returning();

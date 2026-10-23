@@ -19,6 +19,7 @@ import {
 } from "../lib/invoice-notification";
 import { calculateInvoiceVatAmount, isInvoiceVatRate } from "@shared/invoice-vat";
 import { calculateInvoicePromotionVat, getUniformInvoicePromotionVatRate } from "@shared/invoice-promotion-vat";
+import { getBusinessDateString } from "../lib/business-date";
 
 function formatInvoiceDate(value: string | Date | null | undefined): string {
   if (!value) return "";
@@ -401,8 +402,8 @@ async function createIssueInvoice(params: {
       ? "partial"
       : "unpaid";
   const paymentAt = invStatus === "paid" ? new Date() : null;
-  const today = new Date().toISOString().split("T")[0];
-  const dueDate = remaining > 0 ? (params.paymentDueDate?.trim() || today) : null;
+  const today = getBusinessDateString();
+  const dueDate = params.paymentDueDate?.trim() || today;
 
   const paymentSchedule = paid > 0 && remaining > 0
     ? [

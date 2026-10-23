@@ -29,6 +29,7 @@ import {
   studentSessionClassRangeJoinCondition,
 } from "../lib/student-session-schedule-range";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
+import { getBusinessDateString } from "../lib/business-date";
 import { calculateInvoiceVatAmount, isInvoiceVatRate } from "@shared/invoice-vat";
 import {
   buildClassTransferFallbackInvoiceAllocations,
@@ -1554,7 +1555,7 @@ export async function extendStudentSessions(data: {
         const promoAmt = inv?.promotionAmount ?? 0;
         const surchAmt = inv?.surchargeAmount ?? 0;
         const invoiceCode = invoiceCodeMap[studentId] ?? null;
-        const todayStr = new Date().toISOString().split("T")[0];
+        const todayStr = getBusinessDateString();
 
         const pkgId = perStudentMap[studentId] ?? null;
         const pkgInfo = pkgId ? await getFeePackageInfo(pkgId) : null;
