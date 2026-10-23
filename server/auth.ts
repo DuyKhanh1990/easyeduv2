@@ -123,12 +123,10 @@ export function setupAuth(app: Express) {
           return done(null, false, { message: "account_inactive" });
         }
 
-        // Backfill the reversible ciphertext after a successful login. The
-        // existing password hash remains the source of truth for auth, so
-        // rolling this out never forces existing users to change passwords.
-        // This also makes the staff eye button work after the user's next
-        // normal login without requiring an admin reset.
-        if (staffProfile && !user.passwordEncrypted) {
+        // Backfill the reversible ciphertext after a successful login for
+        // staff and students. The existing password hash remains the source
+        // of truth for auth, so this never forces a password reset.
+        if ((staffProfile || studentProfile) && !user.passwordEncrypted) {
           await db
             .update(users)
             .set({ passwordEncrypted: encrypt(password), updatedAt: new Date() })

@@ -23,6 +23,7 @@ import { getStudentLearningStatusSummary, getCustomerLearningStatusSummary, getC
 import { createCrmConfigAuditLog, getCrmConfigAuditLogs } from "../storage/crm-config-audit.storage";
 import { codeStem, nextCodeForStem } from "../lib/role-code";
 import { decrypt, encrypt } from "../lib/encryption";
+import { comparePasswords } from "../auth";
 import {
   deletePrivateCustomerImport,
   downloadPrivateCustomerImport,
@@ -1276,17 +1277,32 @@ export function registerStudentsRoutes(app: Express): void {
         }
       }
 
-      if (!student.userId) return res.json({ password: null });
+      if (!student.userId) return res.json({ password: null, reason: "no_linked_account" });
       const [account] = await db
-        .select({ passwordEncrypted: users.passwordEncrypted })
+        .select({ passwordEncrypted: users.passwordEncrypted, passwordHash: users.passwordHash })
         .from(users)
         .where(eq(users.id, student.userId))
         .limit(1);
-      if (!account?.passwordEncrypted) return res.json({ password: null });
+      let isDefaultPassword = false;
+      try {
+        isDefaultPassword = !!account?.passwordHash && comparePasswords("123456", account.passwordHash);
+      } catch {
+        isDefaultPassword = false;
+      }
+      const recoverDefaultPassword = async () => {
+        const passwordEncrypted = encrypt("123456");
+        await db.update(users).set({ passwordEncrypted, updatedAt: new Date() }).where(eq(users.id, student.userId!));
+        return res.json({ password: "123456" });
+      };
+      if (!account?.passwordEncrypted) {
+        if (isDefaultPassword) return await recoverDefaultPassword();
+        return res.json({ password: null, reason: "legacy_password_not_recoverable" });
+      }
 
       try {
         return res.json({ password: decrypt(account.passwordEncrypted) });
       } catch {
+        if (isDefaultPassword) return await recoverDefaultPassword();
         return res.status(409).json({ message: "Không thể giải mã mật khẩu đã lưu." });
       }
     } catch (err) {
@@ -1575,7 +1591,8 @@ export function registerStudentsRoutes(app: Express): void {
 
       const errorRows: any[] = [...parsed.data.preErrors];
       const seenStudentIds = new Set<string>();
-      let successCount = 0;
+      let updatedCount = 0;
+      let unchangedCount = 0;
       let cursor = 0;
       const worker = async () => {
         while (cursor < parsed.data.rows.length) {
@@ -1603,8 +1620,10 @@ export function registerStudentsRoutes(app: Express): void {
                 req.allowedLocationIds,
                 req.isSuperAdmin,
               );
+              updatedCount++;
+            } else {
+              unchangedCount++;
             }
-            successCount++;
           } catch (error: any) {
             errorRows.push({
               row: row.row,
@@ -1625,12 +1644,13 @@ export function registerStudentsRoutes(app: Express): void {
         __kind: "excel_import_batch",
         __text: "Import Excel bổ sung thông tin khách hàng",
         importType: "supplement",
-        status: errorRows.length > 0 || successCount === 0 ? "error" : "success",
+        status: errorRows.length > 0 ? "error" : "success",
         fileName,
         storageKey,
         locationId: null,
         locationName: "Theo phạm vi quyền truy cập",
-        successCount,
+        successCount: updatedCount,
+        unchangedCount,
         totalRows,
         errorCount: errorRows.length,
       };
@@ -1638,7 +1658,7 @@ export function registerStudentsRoutes(app: Express): void {
         INSERT INTO customer_activity_logs (student_id, user_id, user_name, action, old_data, new_data)
         VALUES (NULL, ${userId}, ${userName}, 'import', NULL, ${JSON.stringify(newData)}::jsonb)
       `);
-      res.status(200).json({ successCount, totalRows, errorRows });
+      res.status(200).json({ successCount: updatedCount, unchangedCount, totalRows, errorRows });
     } catch (error: any) {
       if (storageKey) {
         await deletePrivateCustomerImport(storageKey).catch(() => {});

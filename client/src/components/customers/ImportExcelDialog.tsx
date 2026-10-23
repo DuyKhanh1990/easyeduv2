@@ -93,17 +93,30 @@ export function ImportExcelDialog({
           <div className="flex flex-col flex-1 overflow-hidden">
             <div className="flex-1 overflow-y-auto p-6 space-y-5">
               {/* Summary cards */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className={cn("grid gap-4", typeof result.unchangedCount === "number" ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-2")}>
                 <div className="relative overflow-hidden flex items-center gap-4 p-5 bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl shadow-sm">
                   <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-md shadow-emerald-200 flex-shrink-0">
                     <CheckCircle2 className="w-6 h-6 text-white" />
                   </div>
                   <div>
                     <p className="text-3xl font-bold text-emerald-700">{result.successCount}</p>
-                    <p className="text-xs text-emerald-600 font-medium mt-0.5">{t("import.successCount")}</p>
+                    <p className="text-xs text-emerald-600 font-medium mt-0.5">
+                      {typeof result.unchangedCount === "number" ? "Đã cập nhật" : t("import.successCount")}
+                    </p>
                   </div>
                   <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-emerald-100/60" />
                 </div>
+                {typeof result.unchangedCount === "number" && (
+                  <div className="relative overflow-hidden flex items-center gap-4 p-5 bg-gradient-to-br from-slate-50 to-gray-100 border border-slate-200 rounded-2xl shadow-sm">
+                    <div className="w-12 h-12 rounded-xl bg-slate-500 flex items-center justify-center shadow-md shadow-slate-200 flex-shrink-0">
+                      <FileSpreadsheet className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-3xl font-bold text-slate-700">{result.unchangedCount}</p>
+                      <p className="text-xs text-slate-600 font-medium mt-0.5">Không thay đổi</p>
+                    </div>
+                  </div>
+                )}
                 <div className="relative overflow-hidden flex items-center gap-4 p-5 bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-200 rounded-2xl shadow-sm">
                   <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center shadow-md shadow-rose-200 flex-shrink-0">
                     <XCircle className="w-6 h-6 text-white" />

@@ -344,7 +344,10 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
     defaultValues: getFormDefaults(initialData),
   });
   const storedPasswordRef = useRef<string | null>(null);
-  const { data: storedPassword, error: storedPasswordError } = useQuery<{ password: string | null }>({
+  const { data: storedPassword, error: storedPasswordError } = useQuery<{
+    password: string | null;
+    reason?: "no_linked_account" | "legacy_password_not_recoverable";
+  }>({
     queryKey: ["/api/students", initialData?.id, "password"],
     queryFn: async () => {
       const res = await fetch(`/api/students/${encodeURIComponent(initialData!.id)}/password`, {
@@ -717,6 +720,12 @@ export function CustomerForm({ initialData, onSubmit, isPending }: CustomerFormP
                   </div>
                   <FieldError k="password" />
                   {storedPasswordError && initialData && <p className="text-xs text-rose-500">{storedPasswordError.message}</p>}
+                  {initialData && storedPassword?.reason === "legacy_password_not_recoverable" && (
+                    <p className="text-xs text-amber-700">Mật khẩu cũ không thể khôi phục để hiển thị. Nhập mật khẩu mới nếu bạn muốn đổi.</p>
+                  )}
+                  {initialData && storedPassword?.reason === "no_linked_account" && (
+                    <p className="text-xs text-amber-700">Học viên chưa có tài khoản đăng nhập liên kết.</p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <label className={FL}>{t("customerForm.dob")} <RequiredMark k="dateOfBirth" /></label>

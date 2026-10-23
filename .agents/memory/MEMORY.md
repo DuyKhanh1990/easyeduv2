@@ -55,7 +55,7 @@
 - [Transferred session accounting](transferred-session-counts.md) — chuyển tín dụng theo tổng giá trị từng buổi nguồn; buổi đích giữ đơn giá riêng, khoản thu chênh lệch thuộc lớp mới.
 - [Web Push tenant scope](web-push-tenant-scope.md) — dùng chung VAPID keys, nhưng subscription luôn scope theo centerConfig.id + userId và phải push schema từng database.
 - [Harbor npm lockfile URLs](harbor-npm-lockfile-urls.md) — Docker build ngoài Replit phải đổi cả package-firewall.replit.local và .internal về npmjs.org trước npm ci.
-- [Staff password display](staff-password-display.md) — giữ hash đăng nhập và ciphertext riêng để dialog staff có thể hiển thị mật khẩu khi được phép.
+- [Password display](staff-password-display.md) — giữ hash đăng nhập và ciphertext riêng; chỉ tự khôi phục mật khẩu cũ nếu hash xác nhận mặc định.
 - [HRM account cap on Excel import](staff-account-limit-import.md) — reject an active-staff import batch before creating records if it exceeds remaining account capacity.
 - [Student self-service leave](student-self-leave-request.md) — luồng học viên/phụ huynh tự gửi đơn phải tự suy ra học viên/cơ sở và tách bản ghi theo từng cơ sở.
 - [Staff leave notification routing](staff-leave-notification-routing.md) — đơn nghỉ phép nhân sự dùng deeplink quản lý riêng; đơn nghỉ học dùng deeplink learning overview.

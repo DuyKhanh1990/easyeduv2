@@ -111,10 +111,11 @@ function actionConfig(action: string) {
 }
 
 function getImportBatchStatus(batch: Record<string, any>) {
+  const successfulRows = Number(batch.successCount || 0) + Number(batch.unchangedCount || 0);
   return batch.status === "error" ||
     Number(batch.errorCount) > 0 ||
     Boolean(batch.classAssignments?.error) ||
-    Number(batch.successCount) <= 0
+    successfulRows <= 0
     ? "error"
     : "success";
 }
@@ -249,7 +250,14 @@ function ActivityDetailDialog({ log, onClose }: { log: ActivityLog | null; onClo
               </div>
               <div className="grid gap-3 sm:grid-cols-3 text-xs">
                 <div><span className="text-slate-500">Số dòng:</span> {Number(importBatch.totalRows) || 0}</div>
-                <div><span className="text-slate-500">Đã tạo:</span> {Number(importBatch.successCount) || 0}</div>
+                {importBatch.importType === "supplement" ? (
+                  <>
+                    <div><span className="text-slate-500">Đã cập nhật:</span> {Number(importBatch.successCount) || 0}</div>
+                    <div><span className="text-slate-500">Không thay đổi:</span> {Number(importBatch.unchangedCount) || 0}</div>
+                  </>
+                ) : (
+                  <div><span className="text-slate-500">Đã tạo:</span> {Number(importBatch.successCount) || 0}</div>
+                )}
                 <div><span className="text-slate-500">Có lỗi:</span> {Number(importBatch.errorCount) || 0}</div>
               </div>
               {importBatch.classAssignments?.error && (

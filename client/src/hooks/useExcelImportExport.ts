@@ -29,6 +29,7 @@ export interface ImportErrorRow {
 
 export interface ImportResult {
   successCount: number;
+  unchangedCount?: number;
   totalRows: number;
   errorRows: ImportErrorRow[];
   classAssignmentSummary?: {
@@ -551,7 +552,12 @@ export function useExcelImportExport({
         await queryClient.invalidateQueries({ queryKey: ["/api/students"] });
         await queryClient.invalidateQueries({ queryKey: ["/api/customers/activity-logs"] });
         setUploadProgress(100);
-        return { successCount: Number(result?.successCount) || 0, totalRows, errorRows };
+        return {
+          successCount: Number(result?.successCount) || 0,
+          unchangedCount: Number(result?.unchangedCount) || 0,
+          totalRows,
+          errorRows,
+        };
       }
 
       const dataRows = mapStudentImportRows(rows);
