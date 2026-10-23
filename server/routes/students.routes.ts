@@ -31,7 +31,7 @@ import {
 
 const customerImportFileUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 },
+  limits: { fileSize: 25 * 1024 * 1024, fieldSize: 10 * 1024 * 1024 },
 });
 
 const CRM_RESOURCE = "/customers";
@@ -1514,6 +1514,128 @@ export function registerStudentsRoutes(app: Express): void {
       res.json({ logs: rows.rows, total });
     } catch (err) {
       res.status(500).json({ message: (err as any).message });
+    }
+  });
+
+  app.post("/api/students/import-supplement", customerImportFileUpload.single("file"), async (req, res) => {
+    let storageKey: string | null = null;
+    try {
+      const file = req.file;
+      if (!file || !/\.xlsx$/i.test(file.originalname)) {
+        return res.status(400).json({ message: "Chọn file Excel .xlsx hợp lệ." });
+      }
+      const crmPerms = await getCrmPermissions(req);
+      if (!crmPerms.canEdit) return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa khách hàng." });
+
+      const updateSchema = z.object({
+        username: z.string().max(500).optional(),
+        password: z.string().max(500).optional(),
+        phone: z.string().max(100).optional(),
+        dateOfBirth: z.string().max(30).optional(),
+        address: z.string().max(5000).optional(),
+        source: z.string().max(500).optional(),
+        rejectReason: z.string().max(500).optional(),
+        academicLevel: z.string().max(500).optional(),
+        note: z.string().max(5000).optional(),
+      }).strict();
+      const rowSchema = z.object({
+        row: z.number().int().min(2),
+        studentId: z.string().uuid(),
+        code: z.string().trim().min(1).max(150),
+        name: z.string().optional(),
+        updates: updateSchema,
+        rawData: z.array(z.any()).optional(),
+      });
+      let payload: any;
+      try {
+        payload = JSON.parse(String(req.body.payload || "{}"));
+      } catch {
+        return res.status(400).json({ message: "Dữ liệu file bổ sung không hợp lệ." });
+      }
+      const parsed = z.object({
+        rows: z.array(rowSchema).max(10000),
+        totalRows: z.number().int().min(0).max(10000),
+        preErrors: z.array(z.object({
+          row: z.number().int().min(2),
+          name: z.string().optional(),
+          reason: z.string().max(1000),
+          rawData: z.array(z.any()).optional(),
+          errorColumns: z.array(z.number().int()).optional(),
+        })).max(10000).default([]),
+      }).safeParse(payload);
+      if (!parsed.success) return res.status(400).json({ message: "Cấu trúc file bổ sung không hợp lệ." });
+
+      const userId = String((req.user as any)?.id || "");
+      if (!userId) return res.status(401).json({ message: "Phiên đăng nhập không hợp lệ." });
+      const batchId = randomUUID();
+      storageKey = await uploadPrivateCustomerImport(
+        Buffer.from(encrypt(file.buffer.toString("base64")), "utf8"),
+        batchId,
+      );
+
+      const errorRows: any[] = [...parsed.data.preErrors];
+      const seenStudentIds = new Set<string>();
+      let successCount = 0;
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < parsed.data.rows.length) {
+          const row = parsed.data.rows[cursor++];
+          try {
+            if (seenStudentIds.has(row.studentId)) throw new Error("Học viên bị lặp trong file.");
+            seenStudentIds.add(row.studentId);
+            const existing = await storage.getStudent(row.studentId, req.allowedLocationIds, req.isSuperAdmin);
+            if (!existing || String(existing.code || "").trim().toLowerCase() !== row.code.trim().toLowerCase()) {
+              throw new Error("Mã học viên không khớp hoặc bạn không có quyền truy cập.");
+            }
+            if (Object.keys(row.updates).length) {
+              await storage.updateStudent(
+                row.studentId,
+                { ...row.updates, updatedBy: userId },
+                req.allowedLocationIds,
+                req.isSuperAdmin,
+              );
+            }
+            successCount++;
+          } catch (error: any) {
+            errorRows.push({
+              row: row.row,
+              name: row.name || "",
+              reason: error?.message || "Không thể cập nhật học viên.",
+              rawData: row.rawData || [],
+              errorColumns: [],
+            });
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(5, parsed.data.rows.length) }, () => worker()));
+
+      const userName = await getActorName(userId);
+      const fileName = Buffer.from(file.originalname, "latin1").toString("utf8");
+      const totalRows = parsed.data.totalRows;
+      const newData = {
+        __kind: "excel_import_batch",
+        __text: "Import Excel bổ sung thông tin khách hàng",
+        importType: "supplement",
+        status: errorRows.length > 0 || successCount === 0 ? "error" : "success",
+        fileName,
+        storageKey,
+        locationId: null,
+        locationName: "Theo phạm vi quyền truy cập",
+        successCount,
+        totalRows,
+        errorCount: errorRows.length,
+      };
+      await db.execute(sql`
+        INSERT INTO customer_activity_logs (student_id, user_id, user_name, action, old_data, new_data)
+        VALUES (NULL, ${userId}, ${userName}, 'import', NULL, ${JSON.stringify(newData)}::jsonb)
+      `);
+      res.status(200).json({ successCount, totalRows, errorRows });
+    } catch (error: any) {
+      if (storageKey) {
+        await deletePrivateCustomerImport(storageKey).catch(() => {});
+      }
+      console.error("[Customer Supplement Import Error]", error);
+      res.status(500).json({ message: error?.message || "Không thể nhập file bổ sung." });
     }
   });
 
