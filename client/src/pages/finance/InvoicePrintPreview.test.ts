@@ -111,5 +111,8 @@ describe("invoice print layout styles", () => {
     expect(INVOICE_PRINT_BASE_STYLES).toContain("border-spacing: 0;");
     expect(INVOICE_PRINT_BASE_STYLES).toContain("padding-left: 0 !important;");
     expect(INVOICE_PRINT_BASE_STYLES).toContain("padding-right: 0 !important;");
+    expect(INVOICE_PRINT_BASE_STYLES).toContain('table[data-borderless="true"] td');
+    expect(INVOICE_PRINT_BASE_STYLES).toContain("border: none !important;");
+    expect(INVOICE_PRINT_BASE_STYLES).toContain("background: transparent !important;");
   });
 });
