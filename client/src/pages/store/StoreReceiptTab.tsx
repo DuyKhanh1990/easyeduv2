@@ -184,6 +184,14 @@ export function StoreReceiptTab() {
   const startIdx = (page - 1) * pageSize;
   const endIdx = Math.min(startIdx + pageSize, totalItems);
   const paginatedReceipts = filtered.slice(startIdx, endIdx);
+  const summaryTotals = useMemo(() => filtered.reduce(
+    (totals, receipt) => ({
+      itemCount: totals.itemCount + (Number(receipt.item_count) || 0),
+      quantity: totals.quantity + (Number(receipt.total_quantity) || 0),
+      amount: totals.amount + (Number.parseFloat(String(receipt.total_amount ?? 0)) || 0),
+    }),
+    { itemCount: 0, quantity: 0, amount: 0 },
+  ), [filtered]);
 
   const activeFilterCount = [filterLocation, filterWarehouse, filterSupplier, filterStatus].filter(v => v !== "all").length
     + filterProductCodes.length + filterProductNames.length;
@@ -544,6 +552,16 @@ export function StoreReceiptTab() {
             </tr>
           </thead>
           <tbody>
+            {!isLoading && (
+              <tr className="bg-slate-50 font-semibold text-slate-700 border-b border-border">
+                <td colSpan={6} className="px-4 py-2.5">Tổng</td>
+                <td className="px-4 py-2.5 text-center tabular-nums">{summaryTotals.itemCount.toLocaleString("vi-VN")}</td>
+                <td className="px-4 py-2.5 text-center tabular-nums">{summaryTotals.quantity.toLocaleString("vi-VN")}</td>
+                <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">{fmtVND(summaryTotals.amount)}</td>
+                <td colSpan={3} />
+                <td className="sticky right-0 z-10 bg-slate-50 border-l border-border" />
+              </tr>
+            )}
             {isLoading ? (
               <tr>
                 <td colSpan={13} className="text-center py-12">
