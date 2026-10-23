@@ -988,12 +988,19 @@ export function InvoicePrintTemplate({
     }
 
     const editor = editorRef.current;
-    if (!editor || !clipboardTypes.includes("text/plain")) return;
+    if (!editor) return;
 
-    // Rich clipboard HTML often contains fixed alignment and nested formatting
-    // that prevents the editor's alignment controls from taking effect.
+    const clipboardHtml = clipboardTypes.includes("text/html")
+      ? clipboard.getData("text/html")
+      : "";
     const text = clipboard.getData("text/plain").replace(/\r\n?/g, "\n");
-    if (!text) return;
+    const safeHtml = clipboardHtml
+      ? DOMPurify.sanitize(clipboardHtml, {
+          ADD_ATTR: ["style", "data-borderless"],
+        })
+      : "";
+    if (!safeHtml && !text) return;
+
     const selection = window.getSelection();
     if (!selection) return;
 
@@ -1007,12 +1014,18 @@ export function InvoicePrintTemplate({
     }
 
     range.deleteContents();
-    const fragment = document.createDocumentFragment();
-    const lines = text.split("\n");
-    lines.forEach((line, index) => {
-      if (index > 0) fragment.appendChild(document.createElement("br"));
-      if (line) fragment.appendChild(document.createTextNode(line));
-    });
+    let fragment: DocumentFragment;
+    if (safeHtml) {
+      const template = document.createElement("template");
+      template.innerHTML = safeHtml;
+      fragment = template.content;
+    } else {
+      fragment = document.createDocumentFragment();
+      text.split("\n").forEach((line, index) => {
+        if (index > 0) fragment.appendChild(document.createElement("br"));
+        if (line) fragment.appendChild(document.createTextNode(line));
+      });
+    }
     const lastInsertedNode = fragment.lastChild;
     range.insertNode(fragment);
     if (lastInsertedNode) range.setStartAfter(lastInsertedNode);
