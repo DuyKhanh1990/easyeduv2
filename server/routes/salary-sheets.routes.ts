@@ -27,7 +27,7 @@ import {
   getTeacherSalarySessionPackages,
 } from "../storage/teacher-salary.storage";
 import { getCommissionBoardRows } from "../services/commission-board.service";
-import { calculateHrBasePay } from "../lib/hr-salary-calculation";
+import { calculateHrBasePay, calculateHrPayrollBasePay } from "../lib/hr-salary-calculation";
 
 // ─── Salary calculation helpers (mirrors client-side logic) ──────────────────
 function findRangeSalary(value: number, ranges: any[]): number {
@@ -737,24 +737,26 @@ export function registerSalarySheetRoutes(app: Express): void {
           legacyAdjustmentsApplied.add(a.staffId);
           const luongDL = Math.round(luongDungLopMap[a.staffId] ?? 0);
           const staffConfigs = hrConfigsByStaff[a.staffId] ?? [];
-          // Keep the legacy first-config behavior for fixed-pay records.
-          // Prefer an explicit hourly config for the assigned role (or an
-          // all-role config) so hourly mode is selected per staff/location/role.
-          const hourlyConfig =
-            staffConfigs.find(c => c.payType === "hourly" && c.locationId === locationId && c.roleName === a.roleName) ??
-            staffConfigs.find(c => c.payType === "hourly" && c.locationId === locationId && !c.roleName) ??
-            staffConfigs.find(c => c.payType === "hourly" && c.locationId == null && c.roleName === a.roleName) ??
-            staffConfigs.find(c => c.payType === "hourly" && c.locationId == null && !c.roleName);
-          const cfg = hourlyConfig ?? hrConfigMap[a.staffId];
-          const payType = cfg?.payType === "hourly" ? "hourly" : "fixed";
-
-          // Read from staff HR config if available
-          const luongCBVal = cfg ? Math.round(parseFloat(String(cfg.luongCB ?? 0))) : 0;
-
           // Resolve soCong / congThuc early — needed for per_day phuCap
           const soCong   = soCongMap[a.staffId] ?? 0;
-          const congThuc = congThucMap[a.staffId] ?? 0;
-          const workedHours = workedHoursMap[a.staffId] ?? 0;
+          const payrollBase = calculateHrPayrollBasePay({
+            configs: staffConfigs.length > 0 ? staffConfigs : (hrConfigMap[a.staffId] ? [hrConfigMap[a.staffId]] : []),
+            attendance: [{
+              staffId: a.staffId,
+              locationId,
+              workedHours: workedHoursMap[a.staffId] ?? 0,
+              actualUnits: congThucMap[a.staffId] ?? 0,
+            }],
+            staffId: a.staffId,
+            locationId,
+            roleName: a.roleName ?? null,
+            scheduledUnits: soCong,
+          });
+          const cfg = payrollBase.config;
+          const payType = payrollBase.payType;
+          const luongCBVal = payrollBase.rate;
+          const congThuc = payrollBase.actualUnits;
+          const workedHours = payrollBase.workedHours;
 
           // phuCap: fixed_month → full amount; per_day → amount / soCong * congThuc
           const phuCapArr = cfg && Array.isArray(cfg.phuCap)
@@ -783,13 +785,7 @@ export function registerSalarySheetRoutes(app: Express): void {
           // BHTN: uses same base as BHXH (bhxhBase), percent from config
           const bhtnPct  = cfg ? parseFloat(String(cfg.bhtnPercent ?? 1)) : 1;
           const bhtnVal  = Math.round(bhxhBase2 * bhtnPct / 100);
-          const luongTheoCong = calculateHrBasePay({
-            payType,
-            rate: luongCBVal,
-            workedHours,
-            scheduledUnits: soCong,
-            actualUnits: congThuc,
-          });
+          const luongTheoCong = payrollBase.basePay;
           const thuongVal = (thuongMap[a.staffId] ?? 0) +
             (includeLegacyAdjustments ? legacyThuongMap[a.staffId] ?? 0 : 0);
           const phatVal = (phatMap[a.staffId] ?? 0) +
