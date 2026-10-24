@@ -150,7 +150,14 @@ function formatScore(value: number | null | undefined) {
 }
 
 function createEmptyValues(): ScoreSheetAssessmentAttemptValues {
-  return { partScores: {}, skillScores: {}, notes: {}, evaluationResponses: {} };
+  return {
+    partScores: {},
+    skillScores: {},
+    notes: {},
+    evaluationResponses: {},
+    gradeBandOverrideId: null,
+    passStatusOverride: null,
+  };
 }
 
 function skillIdFor(
@@ -538,7 +545,9 @@ function hasEnteredValue(values: ScoreSheetAssessmentAttemptValues) {
     || Object.values(values.evaluationResponses).some((response) =>
       typeof response === "boolean"
       || (typeof response === "string" && response.trim().length > 0),
-    );
+    )
+    || values.gradeBandOverrideId !== null
+    || values.passStatusOverride !== null;
 }
 
 function displayMethod(method: "sum" | "average" | "custom") {
@@ -642,6 +651,8 @@ export function StaffScoreSheetAssessmentScoreDialog({
       skillScores: selectedAttempt.skillScores,
       notes: selectedAttempt.notes,
       evaluationResponses: selectedAttempt.evaluationResponses,
+      gradeBandOverrideId: selectedAttempt.result.gradeBandOverrideId,
+      passStatusOverride: selectedAttempt.result.passStatusOverride,
     })
     : createEmptyValues(), [selectedAttempt]);
   const currentValues = selectedAttemptNumber == null
@@ -661,6 +672,7 @@ export function StaffScoreSheetAssessmentScoreDialog({
       return null;
     }
   }, [template, conversionTemplate, currentValues]);
+  const gradeBands = template?.gradeBands ?? conversionTemplate?.overallRule.gradeBands ?? [];
   const hasPublishableScore = Boolean(preview && (
     preview.overallConvertedScore !== null
     || preview.skills.some((skill) => skill.convertedScore !== null)
@@ -1073,6 +1085,49 @@ export function StaffScoreSheetAssessmentScoreDialog({
                   </div>
                 </div>
               </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {gradeBands.length > 0 && (
+                  <label className="space-y-1 text-xs">
+                    <span className="font-medium text-muted-foreground">Phân loại</span>
+                    <select
+                      aria-label="Phân loại thủ công"
+                      value={currentValues.gradeBandOverrideId ?? ""}
+                      onChange={(event) => updateDraft((current) => ({
+                        ...current,
+                        gradeBandOverrideId: event.target.value || null,
+                      }))}
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="">Tự động theo điểm</option>
+                      {gradeBands.map((band) => (
+                        <option key={band.id} value={band.id}>{band.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label className="space-y-1 text-xs">
+                  <span className="font-medium text-muted-foreground">Ngưỡng</span>
+                  <select
+                    aria-label="Kết quả ngưỡng thủ công"
+                    value={currentValues.passStatusOverride ?? ""}
+                    onChange={(event) => updateDraft((current) => ({
+                      ...current,
+                      passStatusOverride: event.target.value === "passed"
+                        || event.target.value === "failed"
+                        ? event.target.value
+                        : null,
+                    }))}
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="">Tự động theo ngưỡng</option>
+                    <option value="passed">Đạt</option>
+                    <option value="failed">Không đạt</option>
+                  </select>
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Điểm thô và điểm quy đổi vẫn tính tự động; lựa chọn thủ công chỉ ghi đè phân loại hoặc kết quả ngưỡng.
+              </p>
               {conversionTemplate && preview?.inputComplete && !preview.conversionComplete && (
                 <p className="text-xs text-amber-700 dark:text-amber-300">
                   Một số điểm thô chưa có khoảng quy đổi tương ứng trong cấu hình.

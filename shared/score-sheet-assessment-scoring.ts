@@ -31,6 +31,8 @@ export const scoreSheetAssessmentAttemptValuesSchema = z.object({
     z.record(z.string(), z.string().max(1000)),
   ).default({}),
   evaluationResponses: scoreSheetAssessmentEvaluationResponsesSchema,
+  gradeBandOverrideId: z.string().uuid().nullable().default(null),
+  passStatusOverride: z.enum(["passed", "failed"]).nullable().default(null),
 }).strict();
 
 export const scoreSheetAssessmentAttemptResultSchema = z.object({
@@ -53,7 +55,9 @@ export const scoreSheetAssessmentAttemptResultSchema = z.object({
     minScore: z.number().finite(),
     maxScore: z.number().finite(),
   }).nullable(),
+  gradeBandOverrideId: z.string().uuid().nullable().default(null),
   passStatus: z.enum(["passed", "failed"]).nullable().default(null),
+  passStatusOverride: z.enum(["passed", "failed"]).nullable().default(null),
   inputComplete: z.boolean(),
   conversionComplete: z.boolean(),
 });
@@ -208,6 +212,14 @@ function validateAttemptValues(
       throw new Error("Ghi chú có phần thi không thuộc kỹ năng này.");
     }
   }
+
+  const gradeBands = template.gradeBands ?? conversionTemplate?.overallRule.gradeBands ?? [];
+  if (
+    values.gradeBandOverrideId
+    && !gradeBands.some((band) => band.id === values.gradeBandOverrideId)
+  ) {
+    throw new Error("Phân loại đã chọn không thuộc bảng điểm mẫu.");
+  }
 }
 
 export function calculateScoreSheetAssessmentAttemptResult(args: {
@@ -309,20 +321,24 @@ export function calculateScoreSheetAssessmentAttemptResult(args: {
 
   const gradeBands = template.gradeBands ?? conversionTemplate?.overallRule.gradeBands ?? [];
   const classificationScore = conversionTemplate ? overallConvertedScore : overallRawScore;
-  const gradeBand = classificationScore !== null
+  const automaticGradeBand = classificationScore !== null
     ? gradeBands.find((band) =>
       classificationScore >= band.minScore && classificationScore <= band.maxScore,
     ) ?? null
     : null;
+  const gradeBand = values.gradeBandOverrideId
+    ? gradeBands.find((band) => band.id === values.gradeBandOverrideId) ?? null
+    : automaticGradeBand;
   const passThreshold = template.passThreshold ?? conversionTemplate?.overallRule.passThreshold;
   const passScore = passThreshold?.scoreSource === "overallRawScore"
     ? overallRawScore
     : overallConvertedScore;
-  const passStatus = passThreshold?.enabled && passScore !== null
+  const automaticPassStatus = passThreshold?.enabled && passScore !== null
     ? passScore >= passThreshold.minScore
       ? "passed"
       : "failed"
     : null;
+  const passStatus = values.passStatusOverride ?? automaticPassStatus;
   const inputComplete = skillResults.length > 0
     && skillResults.every((result) => result.rawScore !== null);
   const conversionComplete = !conversionTemplate
@@ -344,7 +360,9 @@ export function calculateScoreSheetAssessmentAttemptResult(args: {
       minScore: gradeBand.minScore,
       maxScore: gradeBand.maxScore,
     } : null,
+    gradeBandOverrideId: values.gradeBandOverrideId,
     passStatus,
+    passStatusOverride: values.passStatusOverride,
     inputComplete,
     conversionComplete,
   });

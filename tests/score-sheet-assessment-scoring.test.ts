@@ -18,6 +18,7 @@ const secondPartId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const lowMappingId = "55555555-5555-4555-8555-555555555555";
 const highMappingId = "66666666-6666-4666-8666-666666666666";
 const gradeBandId = "77777777-7777-4777-8777-777777777777";
+const manualGradeBandId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const exactPointMappingId = "99999999-9999-4999-8999-999999999999";
 
 const conversionTemplate: ScoreConversionTemplate = {
@@ -85,6 +86,9 @@ function values(score: number | null): ScoreSheetAssessmentAttemptValues {
     partScores: { [skillId]: { [partId]: score } },
     skillScores: {},
     notes: {},
+    evaluationResponses: {},
+    gradeBandOverrideId: null,
+    passStatusOverride: null,
   };
 }
 
@@ -136,6 +140,68 @@ describe("score-sheet assessment scoring", () => {
 
     expect(result.gradeBand).toMatchObject({ label: "A2", color: "#DC2626" });
     expect(result.passStatus).toBe("passed");
+  });
+
+  it("lets staff override classification and pass status without changing calculated scores", () => {
+    const scoreSheetTemplate: ScoreSheetTemplate = {
+      ...template,
+      gradeBands: [
+        {
+          id: gradeBandId,
+          label: "B1",
+          color: "#16A34A",
+          minScore: 100,
+          maxScore: 150,
+        },
+        {
+          id: manualGradeBandId,
+          label: "Đậu có điều kiện",
+          color: "#2563EB",
+          minScore: 0,
+          maxScore: 99,
+        },
+      ],
+      passThreshold: {
+        enabled: true,
+        minScore: 100,
+        maxScore: 110,
+        scoreSource: "overallConvertedScore",
+      },
+    };
+    const automaticResult = calculateScoreSheetAssessmentAttemptResult({
+      template: scoreSheetTemplate,
+      conversionTemplate,
+      values: values(4),
+    });
+    const manualResult = calculateScoreSheetAssessmentAttemptResult({
+      template: scoreSheetTemplate,
+      conversionTemplate,
+      values: {
+        ...values(4),
+        gradeBandOverrideId: manualGradeBandId,
+        passStatusOverride: "failed",
+      },
+    });
+
+    expect(automaticResult.gradeBand?.label).toBe("B1");
+    expect(automaticResult.passStatus).toBe("passed");
+    expect(manualResult.overallRawScore).toBe(automaticResult.overallRawScore);
+    expect(manualResult.overallConvertedScore).toBe(automaticResult.overallConvertedScore);
+    expect(manualResult.gradeBand?.label).toBe("Đậu có điều kiện");
+    expect(manualResult.gradeBandOverrideId).toBe(manualGradeBandId);
+    expect(manualResult.passStatus).toBe("failed");
+    expect(manualResult.passStatusOverride).toBe("failed");
+  });
+
+  it("rejects a manual classification that is not configured on the assessment snapshot", () => {
+    expect(() => calculateScoreSheetAssessmentAttemptResult({
+      template,
+      conversionTemplate,
+      values: {
+        ...values(4),
+        gradeBandOverrideId: manualGradeBandId,
+      },
+    })).toThrow("Phân loại đã chọn không thuộc bảng điểm mẫu.");
   });
 
   it("classifies manual score sheets against the raw total", () => {
@@ -375,6 +441,9 @@ describe("score-sheet assessment scoring", () => {
         partScores: { [skillId]: { [partId]: 5, [secondPartId]: 5 } },
         skillScores: {},
         notes: {},
+        evaluationResponses: {},
+        gradeBandOverrideId: null,
+        passStatusOverride: null,
       },
     })).toThrow("không được vượt quá 10");
   });
@@ -401,6 +470,9 @@ describe("score-sheet assessment scoring", () => {
         partScores: {},
         skillScores: { [skillId]: 6 },
         notes: {},
+        evaluationResponses: {},
+        gradeBandOverrideId: null,
+        passStatusOverride: null,
       },
     })).toThrow("không được vượt quá 5");
   });
