@@ -33,7 +33,7 @@
 - [Password change session invalidation](password-change-session-invalidation.md) — đổi mật khẩu thu hồi mọi phiên và đồng bộ mật khẩu mã hóa hiển thị, giữ nguyên luồng sửa hồ sơ.
 - [Commission board rules](commission-board-rules.md) — bảng tính từ cấu hình; ngày nghiệp vụ theo trạng thái, xếp chung các trạng thái và cộng dồn cấu hình trùng.
 - [Customer status card source](customer-status-card-source.md) — các thẻ trạng thái trên /customers lấy từ student_classes; không thay logic báo cáo, bộ lọc hoặc trạng thái từng dòng.
-- [Customers class-view scope](customers-class-view-scope.md) — thay đổi chế độ Theo lớp chỉ được tác động giao diện theo lớp; không đổi nghiệp vụ hoặc các chế độ xem khác.
+- [Customers class-view scope](customers-class-view-scope.md) — bộ lọc lớp phải khớp ghi danh đang hiển thị, giữ nguyên các luồng và chế độ xem khác.
 - [Customer latest score display](customer-latest-score-display.md) — nhãn điểm mới nhất đã công bố đồng bộ giữa Customers và lịch staff, không thêm cổng quyền.
 - [Holiday bulk all-scope rule](holiday-bulk-all-scope.md) — “Tất cả” phải loại trừ mọi buổi trong kỳ nghỉ, không lọc ngày quá khứ hay trạng thái lớp/buổi.
 - [Student renewal shift fallback](student-renewal-shift-fallback.md) — gia hạn phải lấy ca theo lịch hiện có khi lớp cũ/import thiếu shift_template_ids.

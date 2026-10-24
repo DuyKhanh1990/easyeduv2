@@ -26,6 +26,7 @@ import type {
 } from "./base";
 import { studentWalletTransactions } from "@shared/schema";
 import { calculateClassFundedAmounts } from "./class-transfer-accounting";
+import { buildCustomerClassFilterCondition } from "./customer-class-filter";
 
 function buildCustomerLearningStatusCtes(targetStudentsSql: string): string {
   return `
@@ -283,7 +284,10 @@ export async function getStudents(params: {
     whereClause = sql`${whereClause} AND (${combined})`;
   }
   if (classIds && classIds.length > 0) {
-    whereClause = sql`${whereClause} AND ${students.classIds} && array[${classIds.join(',')}]::uuid[]`;
+    const classFilterCondition = buildCustomerClassFilterCondition(classIds);
+    if (classFilterCondition) {
+      whereClause = sql`${whereClause} AND ${classFilterCondition}`;
+    }
   }
   if (schoolIds && schoolIds.length > 0) {
     const schoolIdArray = sql.join(schoolIds.map((id) => sql`${id}::uuid`), sql`, `);
