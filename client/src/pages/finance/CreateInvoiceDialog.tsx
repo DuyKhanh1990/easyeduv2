@@ -1088,7 +1088,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const finalTotal = calculatedFinalTotal;                            // Tổng tiền (sau khấu trừ)
   const grandTotal   = finalTotal;                                   // alias dùng trong submit
   // Always include directPaidAmount in paid total; paid schedule entries add on top
-  const paid = directPaidAmount + paymentSchedule.filter(p => p.status === "paid").reduce((s, p) => s + p.amount, 0);
+  const paid = directPaidAmount + paymentSchedule.filter(p => isInvoicePaidLike(p.status)).reduce((s, p) => s + p.amount, 0);
   const paidPercent  = finalTotal > 0 ? Math.round((paid / finalTotal) * 100) : (subTotal > 0 ? 100 : 0);
   const scheduleAllocated = paymentSchedule.reduce((s, p) => s + p.amount, 0);
 
@@ -1421,23 +1421,23 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   };
   const removePayment = (id: string) => setPaymentSchedule(prev => {
     const removed = prev.find(p => p.id === id);
-    if (!removed || removed.status === "paid") return prev;
+    if (!removed || isInvoicePaidLike(removed.status)) return prev;
     const remaining = prev.filter(p => p.id !== id);
-    const otherUnpaid = remaining.filter(p => p.status !== "paid");
+    const otherUnpaid = remaining.filter(p => !isInvoicePaidLike(p.status));
     if (otherUnpaid.length === 0) return remaining;
     const recipient = otherUnpaid.find(p => p.isAuto) ?? otherUnpaid[otherUnpaid.length - 1];
     return remaining.map(p => p.id === recipient.id ? { ...p, amount: p.amount + removed.amount } : p);
   });
-  const hasLockedPayment = directPaidAmount > 0 || paymentSchedule.some(p => p.status === "paid");
-  const unpaidScheduleCount = paymentSchedule.filter(p => p.status !== "paid").length;
+  const hasLockedPayment = directPaidAmount > 0 || paymentSchedule.some(p => isInvoicePaidLike(p.status));
+  const unpaidScheduleCount = paymentSchedule.filter(p => !isInvoicePaidLike(p.status)).length;
   const canEditPaymentAmount = (entry: PaymentScheduleEntry) =>
-    entry.status !== "paid" && !(hasLockedPayment && unpaidScheduleCount === 1);
+    !isInvoicePaidLike(entry.status) && !(hasLockedPayment && unpaidScheduleCount === 1);
 
   const updatePaymentAmount = (id: string, rawAmount: number) => setPaymentSchedule(prev => {
     const current = prev.find(p => p.id === id);
-    if (!current || current.status === "paid") return prev;
-    const unpaid = prev.filter(p => p.status !== "paid");
-    const lockedPaymentExists = directPaidAmount > 0 || prev.some(p => p.status === "paid");
+    if (!current || isInvoicePaidLike(current.status)) return prev;
+    const unpaid = prev.filter(p => !isInvoicePaidLike(p.status));
+    const lockedPaymentExists = directPaidAmount > 0 || prev.some(p => isInvoicePaidLike(p.status));
     if (lockedPaymentExists && unpaid.length === 1) return prev;
 
     const requestedAmount = Math.max(0, Number(rawAmount) || 0);
@@ -1480,14 +1480,14 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   });
 
   const openSplitPayment = (entry: PaymentScheduleEntry) => {
-    if (entry.status === "paid" || entry.amount <= 0) return;
+    if (isInvoicePaidLike(entry.status) || entry.amount <= 0) return;
     setSplitPaymentId(entry.id);
     setSplitAmount(Math.max(1, Math.floor(entry.amount / 2)));
     setSplitDueDate(format(entry.due ?? new Date(), "yyyy-MM-dd"));
   };
   const confirmSplitPayment = () => {
     const source = paymentSchedule.find(entry => entry.id === splitPaymentId);
-    if (!source || source.status === "paid") return;
+    if (!source || isInvoicePaidLike(source.status)) return;
     const amount = Math.max(0, Number(splitAmount) || 0);
     if (amount <= 0 || amount >= source.amount) {
       toast({
@@ -1521,11 +1521,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   };
   const splitPayment = paymentSchedule.find(entry => entry.id === splitPaymentId);
   const updatePaymentDue = (id: string, due: Date) => {
-    setPaymentSchedule(prev => prev.map(p => p.id === id && p.status !== "paid" ? { ...p, due } : p));
+    setPaymentSchedule(prev => prev.map(p => p.id === id && !isInvoicePaidLike(p.status) ? { ...p, due } : p));
     setOpenDuePicker(null);
   };
   const updatePaymentStatus = (id: string, status: string) => setPaymentSchedule(prev => prev.map(p =>
-    p.id === id && p.status !== "paid" ? { ...p, status } : p
+    p.id === id && !isInvoicePaidLike(p.status) ? { ...p, status } : p
   ));
 
   const handleSelectFeePackage = (productId: string, pkgId: string) => {
@@ -1805,7 +1805,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       : baseSchedule;
 
     const hasSchedule = schedule.length > 0;
-    const effectivePaid = directPaidAmount + (paymentSchedule.filter(s => s.status === "paid").reduce((sum, s) => sum + s.amount, 0));
+    const effectivePaid = directPaidAmount + (paymentSchedule.filter(s => isInvoicePaidLike(s.status)).reduce((sum, s) => sum + s.amount, 0));
     const effectiveRemaining = Math.max(0, grandTotal - effectivePaid);
 
     // Use invoice-level paymentMethod only when paying in full directly (no schedule)
@@ -3600,18 +3600,19 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     const isSchedulePaid = isInvoicePaidLike(p.status);
 
                     return (
-                  <div key={p.id} className={`rounded-lg border bg-card p-3 space-y-2 shadow-sm ${p.status === "paid" ? "border-green-200 bg-green-50/30" : ""}`}>
+                  <div key={p.id} className={`rounded-lg border bg-card p-3 space-y-2 shadow-sm ${isSchedulePaid ? "border-green-200 bg-green-50/30" : ""}`}>
                     {/* Header: label + status + delete */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold">{p.label}</span>
-                        <Select value={p.status} onValueChange={v => updatePaymentStatus(p.id, v)} disabled={p.status === "paid"}>
-                          <SelectTrigger className={`h-6 text-[10px] px-1.5 py-0 rounded font-medium whitespace-nowrap border-0 shadow-none focus:ring-0 w-auto gap-1 ${p.status === "paid" ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"}`}>
+                        <Select value={p.status} onValueChange={v => updatePaymentStatus(p.id, v)} disabled={isSchedulePaid}>
+                          <SelectTrigger className={`h-6 text-[10px] px-1.5 py-0 rounded font-medium whitespace-nowrap border-0 shadow-none focus:ring-0 w-auto gap-1 ${isSchedulePaid ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"}`}>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
                              <SelectItem value="unpaid">{t("finance.create.unpaid")}</SelectItem>
                              <SelectItem value="paid">{t("finance.create.paid")}</SelectItem>
+                             <SelectItem value="confirmed" disabled>{t("finance.tab.confirmed")}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -3621,7 +3622,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           type="button"
                           onClick={() => removePayment(p.id)}
                           disabled={isSchedulePaid}
-                          className={`text-muted-foreground transition-colors ml-1 ${p.status === "paid" ? "opacity-30 cursor-not-allowed" : "hover:text-red-500"}`}
+                          className={`text-muted-foreground transition-colors ml-1 ${isSchedulePaid ? "opacity-30 cursor-not-allowed" : "hover:text-red-500"}`}
                           data-testid={`button-delete-payment-${p.id}`}
                         >
                           <X className="h-3.5 w-3.5" />
@@ -3641,11 +3642,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           title={hasScheduleAdjustment
                              ? t("finance.create.installmentOwnAdjustments")
                             : !canEditPaymentAmount(p)
-                            ? p.status === "paid"
+                              ? isSchedulePaid
                                ? t("finance.create.paidInstallmentLocked")
                                : t("finance.create.singleUnpaidHint")
                              : t("finance.create.reallocateHint")}
-                          className={`h-8 text-xs text-right font-semibold ${(!canEditPaymentAmount(p) || hasScheduleAdjustment) ? "bg-muted/40 cursor-not-allowed" : ""} ${p.status === "paid" ? "bg-green-50 text-green-700" : ""}`}
+                          className={`h-8 text-xs text-right font-semibold ${(!canEditPaymentAmount(p) || hasScheduleAdjustment) ? "bg-muted/40 cursor-not-allowed" : ""} ${isSchedulePaid ? "bg-green-50 text-green-700" : ""}`}
                           data-testid={`input-payment-amount-${p.id}`}
                         />
                       </div>
@@ -3654,7 +3655,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         <Popover open={openDuePicker === p.id} onOpenChange={v => setOpenDuePicker(v ? p.id : null)}>
                           <PopoverTrigger asChild>
                             <button
-                              disabled={p.status === "paid"}
+                              disabled={isSchedulePaid}
                               className="w-full flex items-center gap-1.5 h-8 px-2 rounded-md border bg-background text-xs hover:border-purple-400 transition-colors"
                               data-testid={`button-due-date-${p.id}`}
                             >
@@ -3681,7 +3682,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                          <span className="text-xs text-muted-foreground">{t("finance.create.method")}</span>
                         <Select
                           value={p.paymentMethod}
-                            disabled={p.status === "paid"}
+                            disabled={isSchedulePaid}
                           onValueChange={v => setPaymentSchedule(prev => prev.map(x => x.id === p.id ? { ...x, paymentMethod: v, bank: v !== "transfer" ? "" : x.bank } : x))}
                         >
                           <SelectTrigger className="h-8 text-xs" data-testid={`select-payment-method-${p.id}`}><SelectValue /></SelectTrigger>
@@ -3699,7 +3700,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                            <span className="text-xs text-muted-foreground">{t("finance.bank")}</span>
                           <Select
                             value={p.bank}
-                              disabled={p.status === "paid"}
+                              disabled={isSchedulePaid}
                             onValueChange={v => setPaymentSchedule(prev => prev.map(x => x.id === p.id ? { ...x, bank: v } : x))}
                           >
                              <SelectTrigger className="h-8 text-xs" data-testid={`select-bank-${p.id}`}><SelectValue placeholder={t("finance.create.chooseBank")} /></SelectTrigger>
@@ -3785,7 +3786,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       <DialogTrigger asChild>
                         <button
                           type="button"
-                          disabled={p.status === "paid"}
+                          disabled={isSchedulePaid}
                           className="w-full flex justify-between items-center text-orange-500 hover:bg-orange-50 rounded px-1 -mx-1 py-0.5 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                           data-testid={`button-schedule-surcharge-${p.id}`}
                         >
@@ -3830,7 +3831,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         />
                       </DialogContent>
                     </Dialog>
-                    {p.status !== "paid" && (
+                    {!isSchedulePaid && (
                       <div className="flex justify-end border-t border-dashed pt-2">
                         <Button
                           type="button"

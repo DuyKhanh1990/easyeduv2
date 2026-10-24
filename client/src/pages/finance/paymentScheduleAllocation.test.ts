@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { rebalanceUnpaidInstallments } from "./paymentScheduleAllocation";
+import { isInvoicePaidLike } from "@/types/invoice-types";
+
+describe("invoice paid-like status", () => {
+  it("treats confirmed installments as paid for edit locking", () => {
+    expect(isInvoicePaidLike("paid")).toBe(true);
+    expect(isInvoicePaidLike("confirmed")).toBe(true);
+    expect(isInvoicePaidLike("unpaid")).toBe(false);
+  });
+});
 
 describe("rebalanceUnpaidInstallments", () => {
   it("reduces the unpaid installment when the invoice total decreases", () => {
