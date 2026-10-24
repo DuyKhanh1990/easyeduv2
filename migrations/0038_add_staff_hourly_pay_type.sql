@@ -1,0 +1,6 @@
+ALTER TABLE staff_hr_salary_configs
+  ADD COLUMN IF NOT EXISTS pay_type VARCHAR(20) NOT NULL DEFAULT 'fixed';
+
+ALTER TABLE salary_sheet_employees
+  ADD COLUMN IF NOT EXISTS pay_type VARCHAR(20) NOT NULL DEFAULT 'fixed',
+  ADD COLUMN IF NOT EXISTS worked_hours NUMERIC NOT NULL DEFAULT 0;

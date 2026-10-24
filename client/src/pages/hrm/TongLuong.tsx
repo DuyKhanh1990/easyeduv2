@@ -99,6 +99,8 @@ interface EmployeeRow {
   coSo: string;
   vaiTro: string;
   soCong: number;
+  payType: "fixed" | "hourly";
+  workedHours: number;
   luongCB: number;
   congThuc: number;
   luongTheoCong: number;
@@ -128,6 +130,8 @@ function mapEmployee(e: any, idx: number): EmployeeRow {
     coSo: e.locationName ?? "",
     vaiTro: e.roleName ?? "Nhân viên",
     soCong: Number(e.soCong ?? 0),
+    payType: e.payType === "hourly" ? "hourly" : "fixed",
+    workedHours: Number(e.workedHours ?? 0),
     luongCB: parseFloat(e.luongCB ?? "0"),
     congThuc: Number(e.congThuc ?? 0),
     luongTheoCong: parseFloat(e.luongTheoCong ?? "0"),
@@ -548,10 +552,10 @@ function SalarySheetDetailDialog({ open, onOpenChange, sheet }: DetailProps) {
                     { label: "Họ và tên", w: "min-w-[140px]" },
                     { label: "Cơ sở", w: "min-w-[100px]" },
                     { label: "Vai trò", w: "min-w-[110px]" },
-                    { label: "Số công", w: "min-w-[75px] text-center" },
-                    { label: "Lương CB", w: "min-w-[110px] text-right" },
-                    { label: "Công thực", w: "min-w-[80px] text-center" },
-                    { label: "Lương theo công", w: "min-w-[130px] text-right" },
+                    { label: "Công/giờ chuẩn", w: "min-w-[85px] text-center" },
+                    { label: "Lương CB/đơn giá giờ", w: "min-w-[140px] text-right" },
+                    { label: "Công/giờ thực", w: "min-w-[90px] text-center" },
+                    { label: "Lương theo công/giờ", w: "min-w-[145px] text-right" },
                     { label: "Phụ cấp", w: "min-w-[90px] text-right" },
                     { label: "Thưởng", w: "min-w-[90px] text-right" },
                     { label: "Phạt", w: "min-w-[90px] text-right" },
@@ -608,9 +612,15 @@ function SalarySheetDetailDialog({ open, onOpenChange, sheet }: DetailProps) {
                         {row.vaiTro}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-center border-r border-slate-100">{parseFloat(String(row.soCong ?? 0)) % 1 === 0 ? Number(row.soCong) : parseFloat(Number(row.soCong).toFixed(2))}</td>
-                    <td className="px-3 py-2 text-right whitespace-nowrap border-r border-slate-100 tabular-nums">{fmtMoney(row.luongCB)}</td>
-                    <td className="px-3 py-2 text-center border-r border-slate-100 font-medium">{row.congThuc}</td>
+                    <td className="px-3 py-2 text-center border-r border-slate-100">
+                      {row.payType === "hourly"
+                        ? `${parseFloat(Number(row.soCong).toFixed(2)).toString()} giờ`
+                        : parseFloat(String(row.soCong ?? 0)) % 1 === 0 ? Number(row.soCong) : parseFloat(Number(row.soCong).toFixed(2))}
+                    </td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap border-r border-slate-100 tabular-nums">{fmtMoney(row.luongCB)}{row.payType === "hourly" ? "/giờ" : ""}</td>
+                    <td className="px-3 py-2 text-center border-r border-slate-100 font-medium">
+                      {row.payType === "hourly" ? `${parseFloat(row.workedHours.toFixed(2)).toString()} giờ` : row.congThuc}
+                    </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap border-r border-slate-100 tabular-nums">{fmtMoney(row.luongTheoCong)}</td>
                     <td className="px-3 py-2 text-right whitespace-nowrap border-r border-slate-100 tabular-nums text-slate-600">
                       {row.phuCap > 0 ? <span className="text-green-600">+{fmtMoney(row.phuCap)}</span> : <span className="text-muted-foreground">0đ</span>}
@@ -691,7 +701,7 @@ function SalarySheetDetailDialog({ open, onOpenChange, sheet }: DetailProps) {
                   <tr className="bg-slate-100 border-t-2 border-slate-300 font-semibold">
                     <td colSpan={5} className="px-3 py-2.5 text-sm text-slate-700 border-r border-slate-200">Tổng cộng</td>
                     <td className="px-3 py-2.5 text-center border-r border-slate-200">—</td>
-                    <td className="px-3 py-2.5 text-right border-r border-slate-200 tabular-nums">{fmtMoney(rows.reduce((s, r) => s + r.luongCB, 0))}</td>
+                    <td className="px-3 py-2.5 text-right border-r border-slate-200 tabular-nums">{rows.some(r => r.payType === "hourly") ? "—" : fmtMoney(rows.reduce((s, r) => s + r.luongCB, 0))}</td>
                     <td className="px-3 py-2.5 text-center border-r border-slate-200">—</td>
                     <td className="px-3 py-2.5 text-right border-r border-slate-200 tabular-nums">{fmtMoney(rows.reduce((s, r) => s + r.luongTheoCong, 0))}</td>
                     <td className="px-3 py-2.5 text-right text-green-600 border-r border-slate-200 tabular-nums">+{fmtMoney(rows.reduce((s, r) => s + r.phuCap, 0))}</td>
@@ -1048,6 +1058,7 @@ interface HrConfig {
   locationId: string | null;
   locationName: string | null;
   roleName: string | null;
+  payType: "fixed" | "hourly";
   luongCB: string;
   phuCap: PhuCapItem[];
   bhxhBase: string;
@@ -1059,10 +1070,10 @@ interface HrConfig {
   thueTNCNAmount: string; // when mode=fixed: stores number of dependents (integer string)
 }
 interface StaffItem { id: string; code: string; fullName: string; configCount: number; assignmentPairs: AssignmentPair[]; }
-interface SalaryRow { locationIds: string[]; roleNames: string[]; luongCB: string; }
+interface SalaryRow { locationIds: string[]; roleNames: string[]; payType: "fixed" | "hourly"; luongCB: string; }
 interface AssignmentPair { locationId: string; locationName: string; roleName: string; }
 
-const DEFAULT_SALARY_ROW: SalaryRow = { locationIds: [], roleNames: [], luongCB: "" };
+const DEFAULT_SALARY_ROW: SalaryRow = { locationIds: [], roleNames: [], payType: "fixed", luongCB: "" };
 
 const DEFAULT_FORM = {
   salaryRows: [{ ...DEFAULT_SALARY_ROW }] as SalaryRow[],
@@ -1140,6 +1151,7 @@ function HrConfigModal({
         salaryRows: [{
           locationIds: config.locationId ? [config.locationId] : [],
           roleNames: config.roleName ? [config.roleName] : [],
+          payType: config.payType ?? "fixed",
           luongCB: config.luongCB ?? "",
         }],
         phuCap: Array.isArray(config.phuCap) ? config.phuCap : [],
@@ -1162,12 +1174,12 @@ function HrConfigModal({
         bhxhPercent: defBhxh,
         bhytPercent: defBhyt,
         bhtnPercent: defBhtn,
-        salaryRows: [{ locationIds: prefillLocationIds, roleNames: prefillRoleNames, luongCB: "" }],
+        salaryRows: [{ locationIds: prefillLocationIds, roleNames: prefillRoleNames, payType: "fixed", luongCB: "" }],
       });
     }
   }, [open, config?.id, staffId, defBhxh, defBhyt, defBhtn]);
 
-  const updateRowField = (index: number, field: "luongCB", value: string) => {
+  const updateRowField = (index: number, field: "luongCB" | "payType", value: string) => {
     setForm(f => ({
       ...f,
       salaryRows: f.salaryRows.map((r, i) => i === index ? { ...r, [field]: value } : r),
@@ -1203,6 +1215,7 @@ function HrConfigModal({
           staffId,
           locationId: row.locationIds[0] || null,
           roleName: row.roleNames[0] || null,
+          payType: row.payType,
           luongCB: parseFloat(row.luongCB) || 0,
           ...shared,
         };
@@ -1223,6 +1236,7 @@ function HrConfigModal({
           return locs.map(loc => ({
             locationId: loc,
             roleName,
+            payType: r.payType,
             luongCB: parseFloat(r.luongCB) || 0,
           }));
         });
@@ -1304,7 +1318,7 @@ function HrConfigModal({
             <div className="space-y-3">
               {form.salaryRows.map((row, idx) => (
                 <div key={idx} className="border border-violet-100 rounded-lg p-3 bg-white">
-                  <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-3 items-end">
+                  <div className="grid grid-cols-[1fr_1fr_0.9fr_1fr_auto] gap-3 items-end">
                     {/* Cơ sở */}
                     <div>
                       <p className="text-[10px] font-semibold text-slate-900 uppercase tracking-wide mb-1 flex items-center gap-1">
@@ -1346,16 +1360,30 @@ function HrConfigModal({
                       )}
                     </div>
 
-                    {/* Lương cơ bản */}
+                    {/* Hình thức lương */}
                     <div>
                       <p className="text-[10px] font-semibold text-slate-900 uppercase tracking-wide mb-1 flex items-center gap-1">
-                        <DollarSign className="h-3 w-3" /> Lương cơ bản (VNĐ)
+                        <DollarSign className="h-3 w-3" /> Hình thức
+                      </p>
+                      <Select value={row.payType} onValueChange={value => updateRowField(idx, "payType", value as "fixed" | "hourly")}>
+                        <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="fixed">Lương cố định</SelectItem>
+                          <SelectItem value="hourly">Lương theo giờ</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Lương cơ bản / đơn giá giờ */}
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-900 uppercase tracking-wide mb-1 flex items-center gap-1">
+                        <DollarSign className="h-3 w-3" /> {row.payType === "hourly" ? "Đơn giá/giờ (VNĐ)" : "Lương cơ bản (VNĐ)"}
                       </p>
                       <div className="relative">
                         <Input
                           type="number"
                           className="h-9 text-sm pr-10"
-                          placeholder="VD: 10000000"
+                          placeholder={row.payType === "hourly" ? "VD: 50000" : "VD: 10000000"}
                           value={row.luongCB}
                           onChange={e => updateRowField(idx, "luongCB", e.target.value)}
                         />
@@ -1363,7 +1391,7 @@ function HrConfigModal({
                       </div>
                       {row.luongCB && !isNaN(parseFloat(row.luongCB)) && (
                         <p className="text-xs text-violet-600 font-medium mt-0.5">
-                          ≈ {parseFloat(row.luongCB).toLocaleString("vi-VN")}đ
+                          {parseFloat(row.luongCB).toLocaleString("vi-VN")}đ{row.payType === "hourly" ? "/giờ" : ""}
                         </p>
                       )}
                     </div>
@@ -1745,6 +1773,7 @@ function StaffSalaryConfigTab() {
         ...c,
         phuCap: Array.isArray(c.phu_cap ?? c.phuCap) ? (c.phu_cap ?? c.phuCap) : [],
         luongCB: String(c.luong_cb ?? c.luongCB ?? 0),
+        payType: c.pay_type === "hourly" || c.payType === "hourly" ? "hourly" : "fixed",
         bhxhBase: String(c.bhxh_base ?? c.bhxhBase ?? 0),
         bhxhPercent: String(c.bhxh_percent ?? c.bhxhPercent ?? 8),
         bhytBase: String(c.bhyt_base ?? c.bhytBase ?? 0),
@@ -1958,7 +1987,7 @@ function StaffSalaryConfigTab() {
                             )}
                           </td>
                           <td className="px-4 py-3 font-semibold text-xs tabular-nums text-slate-800">
-                            {parseFloat(c.luongCB).toLocaleString("vi-VN")}đ
+                            {parseFloat(c.luongCB).toLocaleString("vi-VN")}đ{c.payType === "hourly" ? "/giờ" : ""}
                           </td>
                           <td className="px-4 py-3">
                             {phuCap > 0 ? (

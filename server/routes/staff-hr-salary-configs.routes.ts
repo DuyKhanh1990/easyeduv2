@@ -160,11 +160,11 @@ export function registerStaffHrSalaryConfigRoutes(app: Express): void {
       if (!requireAuth(req, res)) return;
       const { staffId, rows, shared } = req.body as {
         staffId: string;
-        rows: { locationId?: string; roleName?: string; luongCB?: number }[];
+        rows: { locationId?: string; roleName?: string; payType?: string; luongCB?: number }[];
         shared: {
           phuCap: any[];
           bhxhBase: number; bhxhPercent: number;
-          bhytBase: number; bhytPercent: number;
+          bhytBase: number; bhytPercent: number; bhtnPercent?: number;
           thueTNCNMode: string; thueTNCNAmount: number;
         };
       };
@@ -182,6 +182,7 @@ export function registerStaffHrSalaryConfigRoutes(app: Express): void {
             staffId,
             locationId: row.locationId || null,
             roleName: row.roleName || null,
+            payType: row.payType === "hourly" ? "hourly" : "fixed",
             luongCB: String(row.luongCB ?? 0),
             phuCap: shared.phuCap ?? [],
             bhxhBase: String(shared.bhxhBase ?? 0),
@@ -208,7 +209,7 @@ export function registerStaffHrSalaryConfigRoutes(app: Express): void {
       if (!requireAuth(req, res)) return;
       const {
         staffId, locationId, roleName,
-        luongCB, phuCap,
+        payType, luongCB, phuCap,
         bhxhBase, bhxhPercent,
         bhytBase, bhytPercent,
         bhtnPercent,
@@ -227,6 +228,7 @@ export function registerStaffHrSalaryConfigRoutes(app: Express): void {
           staffId,
           locationId: locationId || null,
           roleName: roleName || null,
+          payType: payType === "hourly" ? "hourly" : "fixed",
           luongCB: String(luongCB ?? 0),
           phuCap: phuCap ?? [],
           bhxhBase: String(bhxhBase ?? 0),
@@ -251,7 +253,7 @@ export function registerStaffHrSalaryConfigRoutes(app: Express): void {
       if (!isValidUUID(req.params.id)) return res.status(400).json({ message: "Invalid config id" });
       const {
         locationId, roleName,
-        luongCB, phuCap,
+        payType, luongCB, phuCap,
         bhxhBase, bhxhPercent,
         bhytBase, bhytPercent,
         thueTNCNMode, thueTNCNAmount,
@@ -260,6 +262,7 @@ export function registerStaffHrSalaryConfigRoutes(app: Express): void {
       const updates: Record<string, any> = { updatedAt: new Date() };
       if (locationId !== undefined) updates.locationId = locationId || null;
       if (roleName !== undefined)   updates.roleName = roleName;
+      if (payType !== undefined)    updates.payType = payType === "hourly" ? "hourly" : "fixed";
       if (luongCB !== undefined)    updates.luongCB = String(luongCB);
       if (phuCap !== undefined)     updates.phuCap = phuCap;
       if (bhxhBase !== undefined)   updates.bhxhBase = String(bhxhBase);

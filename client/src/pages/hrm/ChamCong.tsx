@@ -117,6 +117,7 @@ type AttendanceEntry = {
   timeOut: string;
   shiftId: string;
   tongCong: number; // computed on save
+  workedHours: number;
 };
 type DialogCell = {
   staff: any;
@@ -139,9 +140,13 @@ const STATUS_META: Record<string, { label: string; icon: any; cls: string; bg: s
 };
 
 // ─── Cell content ───────────────────────────────────────────────────────────
-function CellContent({ status, tongCong, leaveType, otHours }: {
-  status: AttStatus; tongCong: number; leaveType?: string; otHours?: number
+function CellContent({ status, tongCong, displayValue, displayUnit, leaveType, otHours }: {
+  status: AttStatus; tongCong: number; displayValue?: number; displayUnit?: "hour"; leaveType?: string; otHours?: number
 }) {
+  const shownValue = displayValue ?? tongCong;
+  const formattedValue = displayUnit === "hour"
+    ? `${parseFloat(shownValue.toFixed(2)).toString()}h`
+    : shownValue % 1 === 0 ? shownValue.toFixed(0) : parseFloat(shownValue.toFixed(4)).toString();
   // Đơn nghỉ phép → P (không tính công)
   if (leaveType === "nghi_phep") {
     return (
@@ -153,9 +158,9 @@ function CellContent({ status, tongCong, leaveType, otHours }: {
     return (
       <>
         <span className="absolute top-0.5 right-0.5 text-[9px] font-bold leading-none px-0.5 rounded text-green-700 bg-green-100">PN</span>
-        {tongCong > 0 && (
+        {shownValue > 0 && (
           <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-green-700 leading-none">
-            {tongCong % 1 === 0 ? tongCong.toFixed(0) : parseFloat(tongCong.toFixed(4)).toString()}
+            {formattedValue}
           </span>
         )}
       </>
@@ -169,7 +174,7 @@ function CellContent({ status, tongCong, leaveType, otHours }: {
   // Tăng ca từ đơn duyệt → ưu tiên hiển thị badge TC với giờ, thay badge overtime
   const otBadge = leaveType === "tang_ca" && (otHours ?? 0) > 0;
   const badge = !otBadge && status && status !== "ok" ? labelMap[status] : null;
-  const showCong = tongCong > 0;
+  const showCong = shownValue > 0;
   return (
     <>
       {otBadge && (
@@ -184,7 +189,7 @@ function CellContent({ status, tongCong, leaveType, otHours }: {
       )}
       {showCong && (
         <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-violet-700 leading-none">
-          {tongCong % 1 === 0 ? tongCong.toFixed(0) : parseFloat(tongCong.toFixed(4)).toString()}
+            {formattedValue}
         </span>
       )}
     </>
@@ -348,6 +353,11 @@ export function ChamCong() {
     queryFn: () => apiFetch(`/api/staff-attendances?month=${month}&year=${year}`),
     retry: false,
   });
+  const { data: attendancePayTypes = [] } = useQuery<any[]>({
+    queryKey: ["/api/staff-attendance-pay-types"],
+    queryFn: () => apiFetch("/api/staff-attendance-pay-types"),
+    retry: false,
+  });
   const { data: approvedLeaves = [] } = useQuery<any[]>({
     queryKey: ["/api/leave-requests", "approved"],
     queryFn: () => apiFetch("/api/leave-requests?status=approved"),
@@ -403,10 +413,24 @@ export function ChamCong() {
         timeOut: row.timeOut ?? "",
         shiftId: row.shiftTemplateId ?? "",
         tongCong: Number(row.tongCong ?? 0),
+        workedHours: Number(row.workedHours ?? 0),
       };
     }
     return map;
   }, [attendanceRows]);
+
+  function getStaffPayType(staffId: string, locationId: string, roleNames: string[] = []): "fixed" | "hourly" {
+    const configs = (attendancePayTypes as any[]).filter(c => c.staffId === staffId);
+    const roleConfig = (roleName: string | null) => configs.find(c =>
+      c.locationId === locationId && (c.roleName ?? null) === roleName
+    );
+    const config =
+      roleNames.map(roleName => roleConfig(roleName)).find(Boolean) ??
+      roleConfig(null) ??
+      configs.find(c => c.locationId == null && roleNames.includes(c.roleName)) ??
+      configs.find(c => c.locationId == null && !c.roleName);
+    return config?.payType === "hourly" ? "hourly" : "fixed";
+  }
 
   // Get total tongCong for a day across all shifts
   function getDayTongCong(staffId: string, ymd: string, shiftIds: string[]): number {
@@ -510,12 +534,13 @@ export function ChamCong() {
           staff: s,
           locationId,
           locationName: locationNameById.get(locationId) || "Chưa rõ cơ sở",
+          payType: getStaffPayType(s.id, locationId, s.roleNames ?? []),
           perDay,
           hasAny: perDay.some(ids => ids.length > 0),
         };
       });
     }).filter(row => row.hasAny),
-    [filteredStaff, days, shiftAssignments, locationIds, locationNameById]);
+    [filteredStaff, days, shiftAssignments, locationIds, locationNameById, attendancePayTypes]);
 
   const totalRows = allRows.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
@@ -698,7 +723,7 @@ export function ChamCong() {
 
   // ── Row totals from saved attendance ─────────────────────────────────────
   function rowSummary(s: any, perDay: string[][]) {
-    let tongCong = 0, nghi = 0, muon = 0, tangCa = 0;
+    let tongCong = 0, workedHours = 0, nghi = 0, muon = 0, tangCa = 0;
     perDay.forEach((ids, i) => {
       const d = days[i];
       const key = attKey(s.id, d.ymd);
@@ -712,9 +737,11 @@ export function ChamCong() {
         if (leaveEntry.type === "nghi_phep") {
           nghi++;
         } else if (leaveEntry.type === "nghi_co_luong") {
-          const tpl = ids.length > 0 ? getTpl(ids[0]) : null;
-          const soCong = tpl?.workUnits != null ? Number(tpl.workUnits) : 1;
-          tongCong += soCong;
+          for (const id of ids) {
+            const tpl = getTpl(id);
+            tongCong += tpl?.workUnits != null ? Number(tpl.workUnits) : 1;
+            workedHours += getShiftTotalHours(tpl);
+          }
         }
         return;
       }
@@ -727,13 +754,14 @@ export function ChamCong() {
         if (!saved) continue;
         dayHasSaved = true;
         tongCong += parseFloat(saved.tongCong.toFixed(4));
+        workedHours += saved.workedHours;
         const tpl = getTpl(shiftId);
         const soCong = tpl?.workUnits != null ? Number(tpl.workUnits) : 1;
         const st = computeStatus(saved.tongCong, soCong);
         if (st === "late") muon++;
       }
     });
-    return { tongCong, nghi, muon, tangCa };
+    return { tongCong, workedHours, nghi, muon, tangCa };
   }
 
   // ── Cell classes ─────────────────────────────────────────────────────────
@@ -1051,7 +1079,7 @@ export function ChamCong() {
                       <div>{d.day}</div>
                     </th>
                   ))}
-                  <th className={cn(thBase, "sticky z-30 bg-gray-50 text-center text-violet-700")} style={{ right: COL_NGHI + COL_MUON + COL_TANG, width: COL_TONG, minWidth: COL_TONG, boxShadow: "-2px 0 4px -1px rgba(0,0,0,0.08)" }}>Tổng<br />công</th>
+                  <th className={cn(thBase, "sticky z-30 bg-gray-50 text-center text-violet-700")} style={{ right: COL_NGHI + COL_MUON + COL_TANG, width: COL_TONG, minWidth: COL_TONG, boxShadow: "-2px 0 4px -1px rgba(0,0,0,0.08)" }}>Tổng<br />công/giờ</th>
                   <th className={cn(thBase, "sticky z-30 bg-gray-50 text-center")} style={{ right: COL_MUON + COL_TANG, width: COL_NGHI, minWidth: COL_NGHI }}>Nghỉ</th>
                   <th className={cn(thBase, "sticky z-30 bg-gray-50 text-center")} style={{ right: COL_TANG, width: COL_MUON, minWidth: COL_MUON }}>Muộn</th>
                   <th className={cn(thBase, "sticky z-30 bg-gray-50 text-center border-r-0")} style={{ right: 0, width: COL_TANG, minWidth: COL_TANG }}>Tăng ca</th>
@@ -1071,6 +1099,7 @@ export function ChamCong() {
                   rows.map((r, idx) => {
                     const roleName = Array.isArray(r.staff.roleNames) && r.staff.roleNames.length > 0 ? r.staff.roleNames[0] : "—";
                     const sum = rowSummary(r.staff, r.perDay);
+                    const isHourly = r.payType === "hourly";
                     const rowKey = attendanceRowKey(r.staff.id, r.locationId);
                     const isSelected = selectedIds.has(rowKey);
                     return (
@@ -1105,6 +1134,7 @@ export function ChamCong() {
                           // Multi-shift: aggregate all shifts for this day
                           const dayEntries = ids.map(id => attendanceMap[`${r.staff.id}__${d.ymd}__${id}`]).filter(Boolean);
                           const totalTongCong = dayEntries.reduce((s, e) => s + e!.tongCong, 0);
+                           const totalWorkedHours = dayEntries.reduce((s, e) => s + e!.workedHours, 0);
                           const totalSoCong = ids.reduce((s, id) => {
                             const t = getTpl(id); return s + (t?.workUnits != null ? Number(t.workUnits) : 1);
                           }, 0);
@@ -1115,6 +1145,9 @@ export function ChamCong() {
 
                           // Công hiển thị trong cell nghỉ phép năm = tổng soCong các ca
                           const leavePNTongCong = leaveEntry?.type === "nghi_co_luong" && hasShift ? totalSoCong : 0;
+                           const leavePNHours = leaveEntry?.type === "nghi_co_luong" && hasShift
+                             ? ids.reduce((sum, id) => sum + getShiftTotalHours(getTpl(id)), 0)
+                             : 0;
 
                           const isTangCa = leaveEntry?.type === "tang_ca";
                           const isLeaveBlock = !!leaveEntry && !isTangCa;
@@ -1148,6 +1181,8 @@ export function ChamCong() {
                               <CellContent
                                 status={status}
                                 tongCong={isLeaveBlock ? leavePNTongCong : (saved?.tongCong ?? 0)}
+                                displayValue={isHourly ? (leaveEntry?.type === "nghi_co_luong" ? leavePNHours : totalWorkedHours) : undefined}
+                                displayUnit={isHourly ? "hour" : undefined}
                                 leaveType={leaveEntry?.type}
                                 otHours={leaveEntry?.otHours}
                               />
@@ -1155,7 +1190,9 @@ export function ChamCong() {
                           );
                         })}
                         <td className={cn(tdBase, "sticky z-20 bg-white text-center font-semibold", sum.tongCong > 0 ? "text-violet-700" : "text-muted-foreground")} style={{ right: COL_NGHI + COL_MUON + COL_TANG, width: COL_TONG, boxShadow: "-2px 0 4px -1px rgba(0,0,0,0.08)" }}>
-                          {sum.tongCong > 0 ? parseFloat(sum.tongCong.toFixed(4)).toString() : "0"}
+                          {isHourly
+                            ? `${parseFloat(sum.workedHours.toFixed(2)).toString()}h`
+                            : sum.tongCong > 0 ? parseFloat(sum.tongCong.toFixed(4)).toString() : "0"}
                         </td>
                         <td className={cn(tdBase, "sticky z-20 bg-white text-center text-muted-foreground")} style={{ right: COL_MUON + COL_TANG, width: COL_NGHI }}>{sum.nghi || 0}</td>
                         <td className={cn(tdBase, "sticky z-20 bg-white text-center", sum.muon > 0 ? "text-amber-600 font-medium" : "text-muted-foreground")} style={{ right: COL_TANG, width: COL_MUON }}>{sum.muon || 0}</td>

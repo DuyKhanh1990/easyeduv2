@@ -3261,6 +3261,8 @@ export const salarySheetEmployees = pgTable("salary_sheet_employees", {
   staffName: varchar("staff_name", { length: 255 }),
   locationName: varchar("location_name", { length: 255 }),
   roleName: varchar("role_name", { length: 255 }),
+  payType: varchar("pay_type", { length: 20 }).notNull().default("fixed"),
+  workedHours: numeric("worked_hours").notNull().default("0"),
   soCong: numeric("so_cong").notNull().default("0"),
   luongCB: numeric("luong_cb", { precision: 15, scale: 2 }).notNull().default("0"),
   congThuc: numeric("cong_thuc").notNull().default("0"),
@@ -3292,6 +3294,7 @@ export const staffHrSalaryConfigs = pgTable("staff_hr_salary_configs", {
   staffId: uuid("staff_id").notNull().references(() => staff.id, { onDelete: "cascade" }),
   locationId: uuid("location_id").references(() => locations.id, { onDelete: "set null" }),
   roleName: varchar("role_name", { length: 255 }),
+  payType: varchar("pay_type", { length: 20 }).notNull().default("fixed"),
   luongCB: numeric("luong_cb", { precision: 15, scale: 2 }).notNull().default("0"),
   phuCap: jsonb("phu_cap").notNull().default([]),          // [{name: string, amount: number}]
   bhxhBase: numeric("bhxh_base", { precision: 15, scale: 2 }).notNull().default("0"),

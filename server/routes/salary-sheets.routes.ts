@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { db } from "../db";
-import { eq, desc, sql, and, inArray } from "drizzle-orm";
+import { eq, desc, sql, and, inArray, or, isNull } from "drizzle-orm";
 import { z } from "zod";
 import {
   salarySheets,
@@ -27,6 +27,7 @@ import {
   getTeacherSalarySessionPackages,
 } from "../storage/teacher-salary.storage";
 import { getCommissionBoardRows } from "../services/commission-board.service";
+import { calculateHrBasePay } from "../lib/hr-salary-calculation";
 
 // ─── Salary calculation helpers (mirrors client-side logic) ──────────────────
 function findRangeSalary(value: number, ranges: any[]): number {
@@ -495,9 +496,11 @@ export function registerSalarySheetRoutes(app: Express): void {
       }
 
       const soCongMap: Record<string, number> = {};
+      const scheduledHoursMap: Record<string, number> = {};
       const staffWithAssignedShifts = new Set<string>();
       for (const emp of unique) {
         let total = 0;
+        let totalHours = 0;
         const myAssignments = assignmentsByStaff[emp.staffId];
         for (const { ymd, dow } of periodDays) {
           const ids: string[] = [];
@@ -512,9 +515,26 @@ export function registerSalarySheetRoutes(app: Express): void {
             }
           }
           if (ids.length > 0) staffWithAssignedShifts.add(emp.staffId);
-          for (const id of ids) total += getShiftWorkUnits(templateMap[id]);
+          for (const id of ids) {
+            const template = templateMap[id];
+            total += getShiftWorkUnits(template);
+            if (template?.start_time && template?.end_time) {
+              const toMinutes = (time: string) => {
+                const [h, m] = String(time).slice(0, 5).split(":").map(Number);
+                return (h || 0) * 60 + (m || 0);
+              };
+              const shiftMinutes = Math.max(
+                0,
+                toMinutes(template.end_time) -
+                  toMinutes(template.start_time) -
+                  Number(template.lunch_break_minutes || 0)
+              );
+              totalHours += shiftMinutes / 60;
+            }
+          }
         }
         soCongMap[emp.staffId] = Math.round(total * 100) / 100;
+        scheduledHoursMap[emp.staffId] = Math.round(totalHours * 100) / 100;
       }
       // Match the monthly shift board and /cham-cong: a salary row exists only
       // for each staff/facility pair with at least one assigned work shift.
@@ -523,7 +543,10 @@ export function registerSalarySheetRoutes(app: Express): void {
 
       // ── 2. Công thực: SUM(tong_cong) từ bảng chấm công (/cham-cong) ────────
       const attendanceRes = await db.execute(sql`
-        SELECT sa.staff_id, COALESCE(SUM(ROUND(sa.tong_cong::NUMERIC, 2)), 0) AS total_cong
+        SELECT
+          sa.staff_id,
+          COALESCE(SUM(ROUND(sa.tong_cong::NUMERIC, 2)), 0) AS total_cong,
+          COALESCE(SUM(COALESCE(sa.worked_hours, 0)::NUMERIC), 0) AS total_worked_hours
         FROM staff_attendances sa
         LEFT JOIN shift_templates st ON st.id = sa.shift_template_id
         WHERE sa.work_date >= ${fromDate}::date
@@ -532,8 +555,10 @@ export function registerSalarySheetRoutes(app: Express): void {
         GROUP BY sa.staff_id
       `);
       const congThucMap: Record<string, number> = {};
+      const workedHoursMap: Record<string, number> = {};
       for (const r of attendanceRes.rows as any[]) {
         congThucMap[r.staff_id] = parseFloat(r.total_cong ?? "0");
+        workedHoursMap[r.staff_id] = parseFloat(r.total_worked_hours ?? "0");
       }
 
       // ── 3. Lương đứng lớp: from overlapping teacher salary tables ──────────
@@ -613,14 +638,20 @@ export function registerSalarySheetRoutes(app: Express): void {
             .from(staffHrSalaryConfigs)
             .where(and(
               inArray(staffHrSalaryConfigs.staffId, staffIds),
-              eq(staffHrSalaryConfigs.locationId, locationId)
+              or(
+                eq(staffHrSalaryConfigs.locationId, locationId),
+                isNull(staffHrSalaryConfigs.locationId)
+              )
             ))
         : [];
 
-      // Map staffId → config (take first config per staff if multiple)
+      // Keep location-specific fixed configs as the legacy fallback. Hourly
+      // configs may be scoped to this location or configured for all locations.
       const hrConfigMap: Record<string, typeof hrConfigs[0]> = {};
+      const hrConfigsByStaff: Record<string, typeof hrConfigs> = {};
       for (const c of hrConfigs) {
-        if (!hrConfigMap[c.staffId]) hrConfigMap[c.staffId] = c;
+        if (c.locationId === locationId && !hrConfigMap[c.staffId]) hrConfigMap[c.staffId] = c;
+        (hrConfigsByStaff[c.staffId] ??= []).push(c);
       }
 
       // ── 5. Fetch salary default config (tax brackets & deductions) ──────────
@@ -705,7 +736,17 @@ export function registerSalarySheetRoutes(app: Express): void {
           const includeLegacyAdjustments = !legacyAdjustmentsApplied.has(a.staffId);
           legacyAdjustmentsApplied.add(a.staffId);
           const luongDL = Math.round(luongDungLopMap[a.staffId] ?? 0);
-          const cfg = hrConfigMap[a.staffId];
+          const staffConfigs = hrConfigsByStaff[a.staffId] ?? [];
+          // Keep the legacy first-config behavior for fixed-pay records.
+          // Prefer an explicit hourly config for the assigned role (or an
+          // all-role config) so hourly mode is selected per staff/location/role.
+          const hourlyConfig =
+            staffConfigs.find(c => c.payType === "hourly" && c.locationId === locationId && c.roleName === a.roleName) ??
+            staffConfigs.find(c => c.payType === "hourly" && c.locationId === locationId && !c.roleName) ??
+            staffConfigs.find(c => c.payType === "hourly" && c.locationId == null && c.roleName === a.roleName) ??
+            staffConfigs.find(c => c.payType === "hourly" && c.locationId == null && !c.roleName);
+          const cfg = hourlyConfig ?? hrConfigMap[a.staffId];
+          const payType = cfg?.payType === "hourly" ? "hourly" : "fixed";
 
           // Read from staff HR config if available
           const luongCBVal = cfg ? Math.round(parseFloat(String(cfg.luongCB ?? 0))) : 0;
@@ -713,6 +754,7 @@ export function registerSalarySheetRoutes(app: Express): void {
           // Resolve soCong / congThuc early — needed for per_day phuCap
           const soCong   = soCongMap[a.staffId] ?? 0;
           const congThuc = congThucMap[a.staffId] ?? 0;
+          const workedHours = workedHoursMap[a.staffId] ?? 0;
 
           // phuCap: fixed_month → full amount; per_day → amount / soCong * congThuc
           const phuCapArr = cfg && Array.isArray(cfg.phuCap)
@@ -729,19 +771,25 @@ export function registerSalarySheetRoutes(app: Express): void {
           // BHXH: base * percent / 100; base defaults to luongCB if not set
           const bhxhBase = cfg ? parseFloat(String(cfg.bhxhBase ?? 0)) : 0;
           const bhxhPct  = cfg ? parseFloat(String(cfg.bhxhPercent ?? 8)) : 8;
-          const bhxhBase2 = bhxhBase > 0 ? bhxhBase : luongCBVal;
+          const bhxhBase2 = bhxhBase > 0 ? bhxhBase : (payType === "hourly" ? Math.round(luongCBVal * workedHours) : luongCBVal);
           const bhxhVal  = Math.round(bhxhBase2 * bhxhPct / 100);
 
           // BHYT: base * percent / 100; base defaults to luongCB if not set
           const bhytBase = cfg ? parseFloat(String(cfg.bhytBase ?? 0)) : 0;
           const bhytPct  = cfg ? parseFloat(String(cfg.bhytPercent ?? 1.5)) : 1.5;
-          const bhytBase2 = bhytBase > 0 ? bhytBase : luongCBVal;
+          const bhytBase2 = bhytBase > 0 ? bhytBase : (payType === "hourly" ? Math.round(luongCBVal * workedHours) : luongCBVal);
           const bhytVal  = Math.round(bhytBase2 * bhytPct / 100);
 
           // BHTN: uses same base as BHXH (bhxhBase), percent from config
           const bhtnPct  = cfg ? parseFloat(String(cfg.bhtnPercent ?? 1)) : 1;
           const bhtnVal  = Math.round(bhxhBase2 * bhtnPct / 100);
-          const luongTheoCong = soCong > 0 ? Math.round((luongCBVal / soCong) * congThuc) : 0;
+          const luongTheoCong = calculateHrBasePay({
+            payType,
+            rate: luongCBVal,
+            workedHours,
+            scheduledUnits: soCong,
+            actualUnits: congThuc,
+          });
           const thuongVal = (thuongMap[a.staffId] ?? 0) +
             (includeLegacyAdjustments ? legacyThuongMap[a.staffId] ?? 0 : 0);
           const phatVal = (phatMap[a.staffId] ?? 0) +
@@ -771,7 +819,9 @@ export function registerSalarySheetRoutes(app: Express): void {
             staffName: a.staffName,
             locationName,
             roleName: a.roleName ?? "Nhân viên",
-            soCong: String(soCong),
+            payType,
+            workedHours: String(workedHours),
+            soCong: String(payType === "hourly" ? (scheduledHoursMap[a.staffId] ?? 0) : soCong),
             luongCB: String(luongCBVal),
             congThuc,
             luongTheoCong: String(luongTheoCong),
@@ -821,7 +871,7 @@ export function registerSalarySheetRoutes(app: Express): void {
       if (!current) return res.status(404).json({ message: "Không tìm thấy dòng lương" });
 
       const inputFields = [
-        "soCong","luongCB","congThuc","phuCap","thuong","phat","hoaHong",
+        "soCong","luongCB","congThuc","workedHours","payType","phuCap","thuong","phat","hoaHong",
         "luongDungLop","bhxh","bhyt","bhtn","thueTNCN","tamUng","daChi",
         "roleName","staffName","staffCode",
       ] as const;
@@ -847,7 +897,14 @@ export function registerSalarySheetRoutes(app: Express): void {
       const tamUng    = parseFloat(String(merged.tamUng    ?? 0));
 
       // Lương theo công = (Lương CB / Số công) × Công thực  (0 if soCong=0)
-      const luongTheoCong = soCong > 0 ? Math.round((luongCB / soCong) * congThuc) : 0;
+      const workedHours = Number(merged.workedHours ?? 0);
+      const luongTheoCong = calculateHrBasePay({
+        payType: merged.payType === "hourly" ? "hourly" : "fixed",
+        rate: luongCB,
+        workedHours,
+        scheduledUnits: soCong,
+        actualUnits: congThuc,
+      });
       // Tổng lương = Lương theo công + Phụ cấp + Thưởng - Phạt + Hoa hồng + Lương đứng lớp
       const tongLuong     = Math.round(luongTheoCong + phuCap + thuong - phat + hoaHong + luongDL);
       // Thực nhận = Tổng lương - BHXH - BHYT - BHTN - Thuế TNCN - Tạm ứng

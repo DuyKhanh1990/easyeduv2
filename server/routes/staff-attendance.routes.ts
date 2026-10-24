@@ -1,9 +1,39 @@
 import type { Express } from "express";
 import { db } from "../db";
 import { staffAttendances, staffAssignments } from "@shared/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, isNull, or } from "drizzle-orm";
+import { staffHrSalaryConfigs } from "@shared/schema";
 
 export function registerStaffAttendanceRoutes(app: Express): void {
+  // Return only the pay-type metadata needed to label attendance values.
+  // Salary amounts are deliberately not exposed on the attendance screen.
+  app.get("/api/staff-attendance-pay-types", async (req, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+      const isSuperAdmin = (req as any).isSuperAdmin ?? false;
+      const allowedLocationIds: string[] = (req as any).allowedLocationIds ?? [];
+      if (!isSuperAdmin && allowedLocationIds.length === 0) return res.json([]);
+
+      const visibleLocations = isSuperAdmin
+        ? undefined
+        : inArray(staffHrSalaryConfigs.locationId, allowedLocationIds);
+      const where = visibleLocations
+        ? or(visibleLocations, isNull(staffHrSalaryConfigs.locationId))
+        : undefined;
+      const rows = await db.select({
+        staffId: staffHrSalaryConfigs.staffId,
+        locationId: staffHrSalaryConfigs.locationId,
+        roleName: staffHrSalaryConfigs.roleName,
+        payType: staffHrSalaryConfigs.payType,
+      }).from(staffHrSalaryConfigs).where(where);
+
+      res.json(rows);
+    } catch (err: any) {
+      console.error("[StaffAttendance] pay type lookup error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // GET /api/staff-attendances?staffId=&month=&year=
   app.get("/api/staff-attendances", async (req, res) => {
     try {
@@ -178,8 +208,7 @@ export function registerStaffAttendanceRoutes(app: Express): void {
 
             if (tpl) {
               let shiftHours = 0;
-              if (tpl.totalHours != null) shiftHours = Number(tpl.totalHours);
-              else if (tpl.startTime && tpl.endTime) {
+              if (tpl.startTime && tpl.endTime) {
                 const sm = Math.max(0, parseMin(tpl.endTime) - parseMin(tpl.startTime) - lunchBreak);
                 shiftHours = sm / 60;
               }
