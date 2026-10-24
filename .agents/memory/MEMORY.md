@@ -132,6 +132,7 @@
 - [Class session rich-text note](class-session-rich-note.md) — each scheduled session has its own rich-formatted “Ghi chú buổi học” field, separate from class-wide notes and ordinary content.
 - [My Space student calendar curriculum visibility](my-space-student-calendar-curriculum.md) — hide Giáo trình/curriculum content for students and parents without changing staff calendar visibility.
 - [Invoice line VAT](invoice-line-vat.md) — per-line VAT is 0/5/8/10%, displayed as a tax amount, added to invoice total; legacy lines stay at 0%.
+- [Invoice-wide surcharge display](invoice-wide-surcharge-display.md) — show invoice-level surcharge as a display-only product-list row; keep the charge stored at invoice level to avoid double counting.
 - [Invoice item category groups](invoice-item-category-groups.md) — category headers group rows; require item names and default them from categories that have no selectable product.
 - [Invoice-wide promotion VAT](invoice-global-promotion-vat.md) — keep invoice-wide discounts VAT-aware: one discount tax line per rate group; never assign one arbitrary rate across mixed-rate items.
 - [Automatic schedule invoice VAT](schedule-invoice-vat.md) — one student-row VAT rate applies to tuition after promotion plus surcharge; keep existing adjustment logic and 0% default.

@@ -1073,6 +1073,11 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     : 0;
   const totalVat = Math.max(0, itemVatTotal - invoicePromotionVatAmount);
   const invoiceSurchargeAmt = invoiceSurchargeResult.adjustmentAmount;
+  const invoiceSurchargeDisplayName = Array.from(new Set(
+    invoiceSurchargeRows
+      .map(row => surchargeOptions.find((option: any) => option.id === row.optionKey || option.code === row.optionKey)?.name)
+      .filter(Boolean),
+  )).join(", ") || t("finance.surcharge");
   const scheduleAdjustments = summarizeSchedulePromotions(paymentSchedule);
   const { hasPromotion: hasSchedulePromotion, promotionTotal: schedulePromotionTotal, surchargeTotal: scheduleSurchargeTotal } = scheduleAdjustments;
   const totalPromo = itemPromo + invoicePromoAmt + schedulePromotionTotal;
@@ -1663,9 +1668,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     }
     if (!locationId) { toast({ title: t("finance.create.branchRequiredError"), variant: "destructive" }); return; }
     if (products.some(p => !p.categoryId)) { toast({ title: t("finance.create.categoryRequiredError"), variant: "destructive" }); return; }
-    if (!studentId && !subjectName.trim()) { toast({ title: t("finance.create.nameRequiredError"), variant: "destructive" }); return; }
+    if (!studentId && !subjectName.trim()) { toast({ title: t("finance.create.recipientRequiredError"), variant: "destructive" }); return; }
     if (products.some(product => !product.name.trim())) {
-      toast({ title: t("finance.create.nameRequiredError"), variant: "destructive" });
+      toast({ title: t("finance.create.productNameRequiredError"), variant: "destructive" });
       return;
     }
     const incompleteSurcharge = products.some(product =>
@@ -1673,7 +1678,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       (product.name.trim() || product.unitPrice !== 0) &&
       (!product.name.trim() || product.unitPrice <= 0),
     );
-    if (incompleteSurcharge) { toast({ title: t("finance.create.nameRequiredError"), variant: "destructive" }); return; }
+    if (incompleteSurcharge) { toast({ title: t("finance.create.surchargeDetailsRequiredError"), variant: "destructive" }); return; }
     const originalInvoicePromotionAmount = parseFloat(editData?.invoicePromotionAmount ?? "0") || 0;
     const isAddingUnnamedInvoicePromotion = invoicePromoAmt > originalInvoicePromotionAmount + 0.01
       && !resolvedInvoicePromotionName.trim();
@@ -3088,7 +3093,25 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         ))}
                       </Fragment>
                     )}
-                  </tbody>
+                    {invoiceSurchargeAmt > 0 && (
+                      <tr className="border-b bg-orange-50/40 dark:bg-orange-950/10" data-testid="row-invoice-wide-surcharge">
+                        <td className="p-2">
+                          <span className="text-xs font-medium">{invoiceSurchargeDisplayName}</span>
+                          <p className="mt-0.5 text-[10px] text-muted-foreground">{t("finance.create.invoiceWideSurcharge")}</p>
+                        </td>
+                        <td className="p-2 text-right">{fmtMoney(invoiceSurchargeAmt)}</td>
+                        <td className="p-2 text-center">1</td>
+                        <td className="p-2 text-right text-muted-foreground">—</td>
+                        <td className="p-2 text-right font-semibold">{fmtMoney(invoiceSurchargeAmt)}</td>
+                        <td className="p-2 text-center">
+                          0%
+                          <p className="mt-0.5 whitespace-nowrap text-[9px] text-muted-foreground">{t("finance.taxAmount")}: {fmtMoney(0)}</p>
+                        </td>
+                        <td className="p-2 text-right font-semibold">{fmtMoney(invoiceSurchargeAmt)}</td>
+                        <td className="p-1 text-center" />
+                      </tr>
+                    )}
+                   </tbody>
                 </table>
               </div>
             </div>
