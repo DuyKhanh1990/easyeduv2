@@ -59,6 +59,7 @@ export class ZbsTemplateManagementError extends Error {
     public readonly status: number,
     public readonly code: string,
     message: string,
+    public readonly providerCode?: string | number,
   ) {
     super(message);
     this.name = "ZbsTemplateManagementError";

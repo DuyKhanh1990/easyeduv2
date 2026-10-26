@@ -286,7 +286,11 @@ function parsePagination(req: Request) {
 
 function sendError(res: Response, error: unknown) {
   if (error instanceof ZbsTemplateManagementError) {
-    return res.status(error.status).json({ code: error.code, message: error.message });
+    return res.status(error.status).json({
+      code: error.code,
+      message: error.message,
+      ...(error.providerCode !== undefined ? { providerCode: error.providerCode } : {}),
+    });
   }
   console.error("[ZBSTemplate] request failed:", error);
   return res.status(500).json({ code: "INTERNAL_ERROR", message: "Không thể xử lý cấu hình template ZBS." });
@@ -418,7 +422,8 @@ export function registerZbsTemplateRoutes(app: Express) {
         throw new ZbsTemplateManagementError(
           isPermissionError ? 424 : 502,
           isPermissionError ? "ZBS_SEND_PERMISSION_DENIED" : "ZBS_SEND_FAILED",
-          `Zalo chưa gửi được tin: ${detail}`,
+          `Zalo chưa gửi được tin${result?.error !== undefined ? ` (mã lỗi Zalo: ${result.error})` : ""}: ${detail}`,
+          result?.error,
         );
       }
       return res.json({

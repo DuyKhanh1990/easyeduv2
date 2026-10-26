@@ -306,5 +306,7 @@ describe("ZBS template management", () => {
   it("exposes typed errors for route status mapping", () => {
     expect(new ZbsTemplateManagementError(401, "TOKEN", "expired"))
       .toMatchObject({ status: 401, code: "TOKEN" });
+    expect(new ZbsTemplateManagementError(424, "ZBS_SEND_PERMISSION_DENIED", "denied", -224))
+      .toMatchObject({ status: 424, code: "ZBS_SEND_PERMISSION_DENIED", providerCode: -224 });
   });
 });
