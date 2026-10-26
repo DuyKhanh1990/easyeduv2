@@ -403,6 +403,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     | null
   >(null);
   const [paymentSchedule, setPaymentSchedule] = useState<PaymentScheduleEntry[]>([]);
+  const [persistedScheduleIds, setPersistedScheduleIds] = useState<string[]>([]);
+  const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
+  const [scheduleSyncError, setScheduleSyncError] = useState(false);
   const [openDuePicker, setOpenDuePicker] = useState<string | null>(null);
   const [splitPaymentId, setSplitPaymentId] = useState<string | null>(null);
   const [splitAmount, setSplitAmount] = useState<number>(0);
@@ -430,6 +433,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     queryKey: ["/api/finance/invoices", invoiceId],
     enabled: open && Boolean(invoiceId),
   });
+  const canDeleteInvoice = Boolean(
+    myPerms?.isSuperAdmin || myPerms?.permissions["/invoices"]?.canDelete
+  );
   const isPaidInvoiceLocked = isEdit && Boolean(editData && isInvoicePaidLike(editData.status));
   const originalNote = String(editData?.note ?? editData?.description ?? "");
   const isPaidNoteDirty = isPaidInvoiceLocked && note !== originalNote;
@@ -459,6 +465,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         setInvoicePromotionRows([]);
         setInvoiceSurchargeRows([]);
         setPaymentSchedule([]);
+        setPersistedScheduleIds([]);
+        setScheduleSyncError(false);
         setOpenSchedulePromo(null);
         setOpenScheduleSurcharge(null);
         setOpenSchedulePromoPicker(null);
@@ -481,6 +489,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     }
 
     const inv = editData;
+    setScheduleSyncError(false);
     setInvoiceType(inv.type === "Thu" ? "income" : "expense");
     setLocationId(inv.locationId ?? "");
     setAccount(inv.account ?? "111");
@@ -633,6 +642,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     }
 
     if (Array.isArray(inv.paymentSchedule) && inv.paymentSchedule.length > 0) {
+      setPersistedScheduleIds(inv.paymentSchedule.map((schedule: any) => schedule.id).filter(Boolean));
       setPaymentSchedule(inv.paymentSchedule.map((s: any, i: number) => {
         const status = s.status ?? "unpaid";
         const baseAmount = s.baseAmount === null || s.baseAmount === undefined
@@ -670,6 +680,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         };
       }));
     } else {
+      setPersistedScheduleIds([]);
       setPaymentSchedule([]);
     }
     setSplitPaymentId(null);
@@ -1424,17 +1435,139 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       return [...prev, { id: Date.now().toString(), label: t("finance.installmentLabel", { number: nextNum }), code: `PT-${Date.now()}`, amount: remaining, due: getTodayVietnamDate(), status: "unpaid", paymentMethod: "cash", bank: "" }];
     });
   };
-  const removePayment = (id: string) => setPaymentSchedule(prev => {
-    const removed = prev.find(p => p.id === id);
-    if (!removed || isInvoicePaidLike(removed.status)) return prev;
-    const remaining = prev.filter(p => p.id !== id);
-    const otherUnpaid = remaining.filter(p => !isInvoicePaidLike(p.status));
-    if (otherUnpaid.length === 0) return remaining;
-    const recipient = otherUnpaid.find(p => p.isAuto) ?? otherUnpaid[otherUnpaid.length - 1];
-    return remaining.map(p => p.id === recipient.id ? { ...p, amount: p.amount + removed.amount } : p);
-  });
+  const removePayment = async (id: string) => {
+    const removed = paymentSchedule.find(p => p.id === id);
+    if (!removed || isInvoicePaidLike(removed.status) || deletingPaymentId) return;
+
+    const isPersisted = isEdit && Boolean(invoiceId) && persistedScheduleIds.includes(id);
+    if (!isPersisted) {
+      setPaymentSchedule(prev => {
+        const remaining = prev.filter(p => p.id !== id);
+        const otherUnpaid = remaining.filter(p => !isInvoicePaidLike(p.status));
+        if (otherUnpaid.length === 0) return remaining;
+        const recipient = otherUnpaid.find(p => p.isAuto) ?? otherUnpaid[otherUnpaid.length - 1];
+        return remaining.map(p => p.id === recipient.id ? { ...p, amount: p.amount + removed.amount } : p);
+      });
+      return;
+    }
+
+    if (!canDeleteInvoice) {
+      toast({ title: t("finance.deleteInvoiceError"), variant: "destructive" });
+      return;
+    }
+
+    const savedScheduleCount = persistedScheduleIds.length;
+    const savedUnpaidCount = paymentSchedule.filter(
+      schedule => persistedScheduleIds.includes(schedule.id) && !isInvoicePaidLike(schedule.status)
+    ).length;
+    if (savedScheduleCount > 1 && savedUnpaidCount < 2) {
+      toast({
+        title: t("finance.deleteError"),
+        description: "Cần có ít nhất hai đợt chưa thanh toán để xóa và dồn tiền.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const confirmation = [
+      t("finance.confirmDeleteScheduleQuestion", { label: removed.label }),
+      savedScheduleCount === 1
+        ? `${t("finance.deleteLastScheduleDeletesInvoice")}\n${t("finance.deleteIrreversible")}`
+        : t("finance.deleteScheduleReallocation", { amount: fmtMoney(removed.amount) }),
+    ].join("\n\n");
+    if (!window.confirm(confirmation)) return;
+
+    setDeletingPaymentId(id);
+    let deletionCommitted = false;
+    try {
+      if (savedScheduleCount === 1) {
+        await apiRequest("DELETE", `/api/finance/invoices/${invoiceId}`);
+        deletionCommitted = true;
+        queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"], exact: true });
+        queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices", invoiceId], exact: true });
+        toast({ title: t("finance.deleteInvoiceSuccess") });
+        onClose();
+        return;
+      }
+
+      await apiRequest("DELETE", `/api/finance/invoice-schedules/${id}`);
+      deletionCommitted = true;
+      setScheduleSyncError(true);
+      const refreshedSchedules = await apiRequest(
+        "GET",
+        `/api/finance/invoices/${invoiceId}/payment-schedules`,
+      ).then(response => response.json());
+      const refreshedEntries: PaymentScheduleEntry[] = (Array.isArray(refreshedSchedules) ? refreshedSchedules : []).map((schedule: any, index: number) => {
+        const status = schedule.status ?? "unpaid";
+        const baseAmount = schedule.baseAmount === null || schedule.baseAmount === undefined
+          ? null
+          : parseFloat(schedule.baseAmount) || 0;
+        const promotionAmount = parseFloat(schedule.promotionAmount) || 0;
+        const surchargeAmount = parseFloat(schedule.surchargeAmount) || 0;
+        const amount = !isInvoicePaidLike(status) && baseAmount !== null && promotionAmount > 0
+          ? Math.max(0, baseAmount - promotionAmount + surchargeAmount)
+          : parseFloat(schedule.amount) || 0;
+        return {
+          id: schedule.id,
+          label: schedule.label ?? t("finance.installmentLabel", { number: index + 1 }),
+          code: schedule.code ?? "",
+          amount,
+          baseAmount,
+          promotionKeys: Array.isArray(schedule.promotionKeys) ? schedule.promotionKeys : [],
+          surchargeKeys: Array.isArray(schedule.surchargeKeys) ? schedule.surchargeKeys : [],
+          promotionRows: getInitialAdjustmentRows(
+            Array.isArray(schedule.promotionKeys) ? schedule.promotionKeys : [],
+            promotionAmount,
+            `schedule-promo-${schedule.id}`,
+          ),
+          surchargeRows: getInitialAdjustmentRows(
+            Array.isArray(schedule.surchargeKeys) ? schedule.surchargeKeys : [],
+            surchargeAmount,
+            `schedule-surcharge-${schedule.id}`,
+          ),
+          promotionAmount,
+          surchargeAmount,
+          due: parseDateOnly(schedule.dueDate),
+          status,
+          paymentMethod: schedule.paymentMethod ?? "cash",
+          bank: schedule.appliedBankAccount?.bankAccount ?? schedule.bank ?? "",
+        };
+      });
+      const unsavedEntries = paymentSchedule.filter(schedule => !persistedScheduleIds.includes(schedule.id));
+      setPaymentSchedule([...refreshedEntries, ...unsavedEntries]);
+      setPersistedScheduleIds(refreshedEntries.map(schedule => schedule.id));
+      setScheduleSyncError(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"], exact: true });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/finance/invoices", invoiceId],
+        exact: true,
+        refetchType: "none",
+      });
+      toast({ title: t("finance.deleteScheduleSuccess") });
+    } catch (error: any) {
+      if (deletionCommitted && savedScheduleCount > 1) {
+        setScheduleSyncError(true);
+        queryClient.invalidateQueries({
+          queryKey: ["/api/finance/invoices", invoiceId],
+          exact: true,
+        });
+      }
+      toast({
+        title: t("finance.deleteError"),
+        description: deletionCommitted
+          ? "Đợt đã xóa nhưng chưa đồng bộ được danh sách. Hãy đóng và mở lại hóa đơn trước khi lưu."
+          : error?.message ?? t("finance.deleteInvoiceErrorRetry"),
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingPaymentId(null);
+    }
+  };
   const hasLockedPayment = directPaidAmount > 0 || paymentSchedule.some(p => isInvoicePaidLike(p.status));
   const unpaidScheduleCount = paymentSchedule.filter(p => !isInvoicePaidLike(p.status)).length;
+  const persistedUnpaidScheduleCount = paymentSchedule.filter(
+    p => persistedScheduleIds.includes(p.id) && !isInvoicePaidLike(p.status)
+  ).length;
   const canEditPaymentAmount = (entry: PaymentScheduleEntry) =>
     !isInvoicePaidLike(entry.status) && !(hasLockedPayment && unpaidScheduleCount === 1);
 
@@ -3621,6 +3754,13 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       || promotionAmount > 0
                       || surchargeAmount > 0;
                     const isSchedulePaid = isInvoicePaidLike(p.status);
+                    const isPersistedSchedule = isEdit && persistedScheduleIds.includes(p.id);
+                    const canRemoveSchedule = !scheduleSyncError && !isSchedulePaid && (
+                      !isPersistedSchedule ||
+                      (canDeleteInvoice && (
+                        persistedScheduleIds.length === 1 || persistedUnpaidScheduleCount >= 2
+                      ))
+                    );
 
                     return (
                   <div key={p.id} className={`rounded-lg border bg-card p-3 space-y-2 shadow-sm ${isSchedulePaid ? "border-green-200 bg-green-50/30" : ""}`}>
@@ -3641,15 +3781,18 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-[10px] text-muted-foreground">{t("finance.create.invoiceCodePrefix")} {p.code}</span>
-                        <button
-                          type="button"
-                          onClick={() => removePayment(p.id)}
-                          disabled={isSchedulePaid}
-                          className={`text-muted-foreground transition-colors ml-1 ${isSchedulePaid ? "opacity-30 cursor-not-allowed" : "hover:text-red-500"}`}
-                          data-testid={`button-delete-payment-${p.id}`}
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
+                        {canRemoveSchedule && (
+                          <button
+                            type="button"
+                            onClick={() => removePayment(p.id)}
+                            disabled={deletingPaymentId !== null}
+                            className={`text-muted-foreground transition-colors ml-1 ${deletingPaymentId === p.id ? "opacity-40 cursor-wait" : "hover:text-red-500"}`}
+                            data-testid={`button-delete-payment-${p.id}`}
+                            title={deletingPaymentId === p.id ? t("finance.deleting") : undefined}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
                     {/* Số tiền + Hạn on same row */}
@@ -3898,8 +4041,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             </div>
           )}
           <div className="ml-auto flex items-center justify-end gap-2">
-           <Button variant="outline" onClick={onClose} disabled={saveMutation.isPending} data-testid="button-cancel">{t("finance.cancel")}</Button>
-           <Button className="bg-purple-600 hover:bg-purple-700 gap-1" onClick={handleSave} disabled={saveMutation.isPending || (isPaidInvoiceLocked && !isPaidNoteDirty)} data-testid="button-save-pay">
+           <Button variant="outline" onClick={onClose} disabled={saveMutation.isPending || deletingPaymentId !== null} data-testid="button-cancel">{t("finance.cancel")}</Button>
+           <Button className="bg-purple-600 hover:bg-purple-700 gap-1" onClick={handleSave} disabled={saveMutation.isPending || deletingPaymentId !== null || scheduleSyncError || (isPaidInvoiceLocked && !isPaidNoteDirty)} data-testid="button-save-pay">
               {saveMutation.isPending ? t("finance.create.saving") : isPaidInvoiceLocked ? t("finance.save") : isEdit ? t("finance.create.updateReceipt") : t("finance.save")}
           </Button>
           </div>
