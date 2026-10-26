@@ -38,7 +38,7 @@
 - [Holiday bulk all-scope rule](holiday-bulk-all-scope.md) — “Tất cả” phải loại trừ mọi buổi trong kỳ nghỉ, không lọc ngày quá khứ hay trạng thái lớp/buổi.
 - [Student renewal shift fallback](student-renewal-shift-fallback.md) — gia hạn phải lấy ca theo lịch hiện có khi lớp cũ/import thiếu shift_template_ids.
 - [Drizzle schema push prompt](drizzle-schema-push-prompt.md) — schema push có thể bị chặn bởi prompt data-loss không liên quan; không truncate dữ liệu để áp dụng thay đổi cộng thêm.
-- [Multi-installment parent and child invoices](invoice-installment-allocation.md) — cha chỉ nhóm/liên kết; mỗi hóa đơn con là nguồn chuẩn độc lập cho thanh toán và nghiệp vụ tài chính.
+- [Multi-installment parent and child invoices](invoice-installment-allocation.md) — cha chỉ nhóm; dòng con thao tác riêng, tiền xóa dồn về đợt chưa trả phía trước; chỉ đợt tổng cuối mới xóa cha.
 - [Invoice print amount variables](invoice-print-amount-variables.md) — `total` là tổng sau khấu trừ; `thanh_tien` là sau KM/PT, trước khấu trừ (riêng đợt lấy số đợt).
 - [Invoice print-preview parity](invoice-print-preview-parity.md) — xem trước và bản in thật dùng chung lề, giãn dòng, reset mặc định của đoạn và khoảng cách bảng.
 - [Debt view installment truth](debt-view-installment-truth.md) — trang công nợ phải tính theo các đợt chưa thanh toán, không chỉ invoices.remaining_amount hoặc hạn hóa đơn gốc.
