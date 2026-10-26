@@ -19,6 +19,10 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Search, CreditCard, Plus, ChevronDown, X, CalendarIcon,
@@ -405,6 +409,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const [paymentSchedule, setPaymentSchedule] = useState<PaymentScheduleEntry[]>([]);
   const [persistedScheduleIds, setPersistedScheduleIds] = useState<string[]>([]);
   const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
+  const [pendingDeletePaymentId, setPendingDeletePaymentId] = useState<string | null>(null);
   const [scheduleSyncError, setScheduleSyncError] = useState(false);
   const [openDuePicker, setOpenDuePicker] = useState<string | null>(null);
   const [splitPaymentId, setSplitPaymentId] = useState<string | null>(null);
@@ -1469,14 +1474,39 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
       return;
     }
 
-    const confirmation = [
-      t("finance.confirmDeleteScheduleQuestion", { label: removed.label }),
-      savedScheduleCount === 1
-        ? `${t("finance.deleteLastScheduleDeletesInvoice")}\n${t("finance.deleteIrreversible")}`
-        : t("finance.deleteScheduleReallocation", { amount: fmtMoney(removed.amount) }),
-    ].join("\n\n");
-    if (!window.confirm(confirmation)) return;
+    setPendingDeletePaymentId(id);
+  };
 
+  const confirmRemovePayment = async () => {
+    const id = pendingDeletePaymentId;
+    if (!id || deletingPaymentId) return;
+
+    const removed = paymentSchedule.find(p => p.id === id);
+    if (!removed || isInvoicePaidLike(removed.status)) {
+      setPendingDeletePaymentId(null);
+      return;
+    }
+    if (!canDeleteInvoice) {
+      setPendingDeletePaymentId(null);
+      toast({ title: t("finance.deleteInvoiceError"), variant: "destructive" });
+      return;
+    }
+
+    const savedScheduleCount = persistedScheduleIds.length;
+    const savedUnpaidCount = paymentSchedule.filter(
+      schedule => persistedScheduleIds.includes(schedule.id) && !isInvoicePaidLike(schedule.status)
+    ).length;
+    if (savedScheduleCount > 1 && savedUnpaidCount < 2) {
+      setPendingDeletePaymentId(null);
+      toast({
+        title: t("finance.deleteError"),
+        description: "Cần có ít nhất hai đợt chưa thanh toán để xóa và dồn tiền.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setPendingDeletePaymentId(null);
     setDeletingPaymentId(id);
     let deletionCommitted = false;
     try {
@@ -1568,6 +1598,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   const persistedUnpaidScheduleCount = paymentSchedule.filter(
     p => persistedScheduleIds.includes(p.id) && !isInvoicePaidLike(p.status)
   ).length;
+  const pendingDeletePayment = paymentSchedule.find(p => p.id === pendingDeletePaymentId);
+  const isPendingDeleteLastSchedule = persistedScheduleIds.length === 1;
   const canEditPaymentAmount = (entry: PaymentScheduleEntry) =>
     !isInvoicePaidLike(entry.status) && !(hasLockedPayment && unpaidScheduleCount === 1);
 
@@ -2132,7 +2164,12 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
 
   return (
     <>
-      <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <Dialog open={open} onOpenChange={v => {
+        if (!v) {
+          setPendingDeletePaymentId(null);
+          onClose();
+        }
+      }}>
       <DialogContent className="w-screen h-screen max-w-none max-h-none m-0 rounded-none p-0 gap-0 overflow-hidden flex flex-col">
         <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
           <DialogTitle className="flex items-center gap-2 text-xs font-semibold">
@@ -4049,6 +4086,47 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         </div>
       </DialogContent>
       </Dialog>
+      <AlertDialog
+        open={pendingDeletePaymentId !== null}
+        onOpenChange={nextOpen => {
+          if (!nextOpen && deletingPaymentId === null) setPendingDeletePaymentId(null);
+        }}
+      >
+        <AlertDialogContent overlayClassName="z-[60]" className="z-[61] max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("finance.confirmDeleteScheduleQuestion", {
+                label: pendingDeletePayment?.label ?? "",
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">
+                {isPendingDeleteLastSchedule
+                  ? t("finance.deleteLastScheduleDeletesInvoice")
+                  : t("finance.deleteScheduleReallocation", {
+                    amount: fmtMoney(pendingDeletePayment?.amount ?? 0),
+                  })}
+              </span>
+              {isPendingDeleteLastSchedule && (
+                <span className="block">{t("finance.deleteIrreversible")}</span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingPaymentId !== null}>
+              {t("finance.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => void confirmRemovePayment()}
+              disabled={!pendingDeletePayment || deletingPaymentId !== null}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-payment"
+            >
+              {t("finance.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog
         open={Boolean(splitPaymentId)}
         onOpenChange={nextOpen => {
