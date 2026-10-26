@@ -26,7 +26,7 @@ import {
 import {
   Search, SlidersHorizontal, CalendarIcon, Plus, ChevronUp, ChevronDown,
   Pencil, Trash2, Eye, CreditCard, Settings2, GripVertical, AlertCircle, QrCode, CheckCircle,
-  FileSignature, FileText, Download, Upload, FileSpreadsheet, Loader2, Keyboard, Percent, BookOpen, Merge, TrendingUp, TrendingDown, ArrowUp, ArrowDown, Check, X,
+  FileSignature, FileText, FileCheck2, Download, Upload, FileSpreadsheet, Loader2, Keyboard, Percent, BookOpen, Merge, TrendingUp, TrendingDown, ArrowUp, ArrowDown, Check, X,
 } from "lucide-react";
 import {
   DropdownMenu as ActionMenu,
@@ -62,6 +62,7 @@ import { InvoicePrintPreview } from "./InvoicePrintPreview";
 import { InvoiceQRDialog } from "./components/InvoiceQRDialog";
 import { ScheduleProgressPopover } from "./components/ScheduleProgressPopover";
 import { InvoiceHistoryTab } from "./components/InvoiceHistoryTab";
+import { InvoiceZbsSendDialog } from "./components/InvoiceZbsSendAction";
 import { InvoiceListErrorRow } from "./components/InvoiceListErrorRow";
 import { HistoryDialog } from "@/components/common/HistoryDialog";
 import { useLocations } from "@/hooks/use-locations";
@@ -1663,6 +1664,7 @@ export default function Invoices() {
   const [adjustmentTarget, setAdjustmentTarget] = useState<{ schedule: ScheduleItem; invoiceId: string } | null>(null);
   const [printTemplateOpen, setPrintTemplateOpen] = useState(false);
   const [qrInvoice, setQrInvoice] = useState<InvoiceRow | null>(null);
+  const [zbsSendTarget, setZbsSendTarget] = useState<{ invoiceId: string; scheduleId?: string } | null>(null);
   const [signDialogOpen, setSignDialogOpen] = useState(false);
   const [signConfirmed, setSignConfirmed] = useState(false);
   const [signProgress, setSignProgress] = useState<{ done: number; total: number } | null>(null);
@@ -2793,6 +2795,9 @@ export default function Invoices() {
                   : selectedIds.has(inv.id);
                 const isExpanded = expandedIds.has(inv.id);
                 const rowKey = isScheduleRow ? `schedule-${inv.scheduleId}` : inv.id;
+                const zbsSendAllowed = isScheduleRow
+                  ? schedule?.status === "unpaid"
+                  : ["unpaid", "partial", "debt"].includes(inv.status);
 
                 return [
                   <tr key={rowKey} className={`border-b border-slate-100 transition-colors hover:bg-violet-50/40 ${isSelected ? "bg-violet-50" : idx % 2 === 1 ? "bg-slate-50/60" : "bg-white"}`} data-testid={`row-invoice-${rowKey}`}>
@@ -2863,6 +2868,22 @@ export default function Invoices() {
                                  {t("finance.edit")}
                               </ActionMenuItem>
                             )}
+                            {invPerm.canEdit &&
+                              inv.type === "Thu" &&
+                              !!parentInvoice.studentId &&
+                              zbsSendAllowed && (
+                                <ActionMenuItem
+                                  className="gap-2 cursor-pointer"
+                                  data-testid={`menuitem-zbs-send-${rowKey}`}
+                                  onSelect={() => setZbsSendTarget({
+                                    invoiceId: parentInvoice.id,
+                                    scheduleId: isScheduleRow ? schedule?.id : undefined,
+                                  })}
+                                >
+                                  <FileCheck2 className="h-3.5 w-3.5 text-emerald-600" />
+                                  Gửi Zalo ZBS
+                                </ActionMenuItem>
+                              )}
                             {invPerm.canEdit && isScheduleRow && schedule && !isInvoicePaidLike(schedule.status) && (
                               <ActionMenuItem
                                 className="gap-2 cursor-pointer"
@@ -3649,6 +3670,14 @@ export default function Invoices() {
         open={!!qrInvoice}
         onOpenChange={(open) => { if (!open) setQrInvoice(null); }}
       />
+      {zbsSendTarget && (
+        <InvoiceZbsSendDialog
+          invoiceId={zbsSendTarget.invoiceId}
+          scheduleId={zbsSendTarget.scheduleId}
+          open
+          onOpenChange={(open) => { if (!open) setZbsSendTarget(null); }}
+        />
+      )}
 
       {/* Sign & Send e-invoice confirmation dialog */}
       <Dialog open={signDialogOpen} onOpenChange={setSignDialogOpen}>

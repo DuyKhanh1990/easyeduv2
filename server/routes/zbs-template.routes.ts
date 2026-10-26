@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import {
   centerConfig,
@@ -6,10 +7,12 @@ import {
   invoices,
   locations,
   notificationTemplates,
+  studentNotificationChannels,
   students,
   zaloOaConfigs,
   zbsTemplateMappings,
 } from "@shared/schema";
+import approvedTuitionNotice from "../../shared/zbs-approved-templates/tuition-notice-651693.json";
 import {
   INVOICE_VISIBILITY_PERMISSIONS,
   invoiceStatusMatchesVisibilityPermission,
@@ -115,6 +118,136 @@ function getScope(req: Request) {
   };
 }
 
+async function authorizeInvoiceZbsSend(req: Request, res: Response) {
+  if (req.isStudent) {
+    res.status(403).json({ code: "FORBIDDEN", message: "Học viên không được gửi thông báo hóa đơn." });
+    return false;
+  }
+  if (isPrivileged(req)) return true;
+  const permission = await getEffectivePermissions(req.roleIds ?? [], "/invoices");
+  if (!permission.canEdit) {
+    res.status(403).json({ code: "FORBIDDEN", message: "Bạn không có quyền gửi thông báo từ hóa đơn." });
+    return false;
+  }
+  return true;
+}
+
+function normalizeZaloPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.startsWith("84")) return digits;
+  if (digits.startsWith("0")) return `84${digits.slice(1)}`;
+  return digits;
+}
+
+async function getInvoiceZbsContext(req: Request, invoiceId: string, scheduleId?: string) {
+  const [invoice] = await db
+    .select({
+      id: invoices.id,
+      locationId: invoices.locationId,
+      studentId: invoices.studentId,
+      invoiceCode: invoices.code,
+      type: invoices.type,
+      category: invoices.category,
+      status: invoices.status,
+      remainingAmount: invoices.remainingAmount,
+      note: invoices.note,
+      description: invoices.description,
+      studentName: students.fullName,
+      studentPhone: students.phone,
+      parentPhone: students.parentPhone,
+    })
+    .from(invoices)
+    .leftJoin(students, eq(students.id, invoices.studentId))
+    .where(eq(invoices.id, invoiceId))
+    .limit(1);
+  if (!invoice || !invoice.locationId) {
+    throw new ZbsTemplateManagementError(404, "INVOICE_NOT_FOUND", "Không tìm thấy hóa đơn.");
+  }
+  if (!isPrivileged(req) && !(req.allowedLocationIds ?? []).includes(invoice.locationId)) {
+    throw new ZbsTemplateManagementError(404, "INVOICE_NOT_FOUND", "Không tìm thấy hóa đơn.");
+  }
+  if (invoice.type !== "Thu" || !invoice.studentId || !invoice.studentName) {
+    throw new ZbsTemplateManagementError(422, "INVOICE_NOT_PAYABLE", "Chỉ gửi thông báo học phí cho hóa đơn thu có học viên.");
+  }
+  if (!["unpaid", "partial", "debt"].includes(invoice.status)) {
+    throw new ZbsTemplateManagementError(422, "INVOICE_NOT_PAYABLE", "Chỉ gửi cho hóa đơn còn số dư chưa thanh toán.");
+  }
+
+  let installment: { code: string | null; amount: string; status: string } | null = null;
+  if (scheduleId) {
+    const [row] = await db
+      .select({
+        code: invoicePaymentSchedule.code,
+        amount: invoicePaymentSchedule.amount,
+        status: invoicePaymentSchedule.status,
+      })
+      .from(invoicePaymentSchedule)
+      .where(and(
+        eq(invoicePaymentSchedule.id, scheduleId),
+        eq(invoicePaymentSchedule.invoiceId, invoiceId),
+      ))
+      .limit(1);
+    if (!row || row.status !== "unpaid") {
+      throw new ZbsTemplateManagementError(422, "INSTALLMENT_NOT_PAYABLE", "Chỉ gửi được đợt thanh toán chưa thanh toán.");
+    }
+    installment = row;
+  }
+
+  const [oa] = await db.select({
+    id: zaloOaConfigs.id,
+    locationId: zaloOaConfigs.locationId,
+    accessTokenEncrypted: zaloOaConfigs.accessTokenEncrypted,
+    tokenExpiredAt: zaloOaConfigs.tokenExpiredAt,
+    isConnected: zaloOaConfigs.isConnected,
+  }).from(zaloOaConfigs).where(eq(zaloOaConfigs.locationId, invoice.locationId)).limit(1);
+  if (!oa?.isConnected) {
+    throw new ZbsTemplateManagementError(409, "OA_NOT_CONNECTED", "Cơ sở của hóa đơn chưa kết nối Zalo OA.");
+  }
+  if (!oa.accessTokenEncrypted) {
+    throw new ZbsTemplateManagementError(424, "ZBS_TOKEN_MISSING", "OA chưa có access token.");
+  }
+  if (oa.tokenExpiredAt && oa.tokenExpiredAt.getTime() <= Date.now()) {
+    throw new ZbsTemplateManagementError(424, "ZBS_TOKEN_EXPIRED", "Access token OA đã hết hạn; hãy kết nối lại OA.");
+  }
+
+  const [center] = await db.select({ id: centerConfig.id }).from(centerConfig).limit(1);
+  const [channel] = center
+    ? await db.select({
+        zaloUserId: studentNotificationChannels.zaloUserId,
+        isFollowed: studentNotificationChannels.isFollowed,
+        hasInteracted: studentNotificationChannels.hasInteracted,
+      }).from(studentNotificationChannels).where(and(
+        eq(studentNotificationChannels.studentId, invoice.studentId),
+        eq(studentNotificationChannels.centerId, center.id),
+      )).limit(1)
+    : [];
+  const phoneOptions = [
+    invoice.parentPhone ? { kind: "parent" as const, label: "Phụ huynh", phone: normalizeZaloPhone(invoice.parentPhone) } : null,
+    invoice.studentPhone ? { kind: "student" as const, label: "Học viên", phone: normalizeZaloPhone(invoice.studentPhone) } : null,
+  ].filter((item): item is { kind: "parent" | "student"; label: string; phone: string } => !!item?.phone);
+  const templateData = buildZbsPaymentTemplateData({
+    invoiceCode: invoice.invoiceCode,
+    installmentCode: installment?.code,
+    studentName: invoice.studentName,
+    category: invoice.category,
+    remainingAmount: invoice.remainingAmount,
+    installmentAmount: installment?.amount,
+    note: invoice.note,
+    description: invoice.description,
+  });
+
+  return {
+    invoice,
+    installment,
+    oa,
+    templateId: String(approvedTuitionNotice.template.brandTemplateId),
+    templateName: approvedTuitionNotice.template.name,
+    templateData,
+    phoneOptions,
+    uid: channel?.isFollowed && channel?.hasInteracted ? channel.zaloUserId : null,
+  };
+}
+
 async function canViewInvoiceForPreview(req: Request, type: string, status: string) {
   if (isPrivileged(req)) return true;
   const applicable = INVOICE_VISIBILITY_PERMISSIONS.filter(
@@ -156,6 +289,105 @@ function sendError(res: Response, error: unknown) {
 }
 
 export function registerZbsTemplateRoutes(app: Express) {
+  app.get("/api/notification/zbs/invoices/:invoiceId/preview", async (req, res) => {
+    try {
+      if (!(await authorizeInvoiceZbsSend(req, res))) return;
+      const scheduleId = typeof req.query.scheduleId === "string" ? req.query.scheduleId : undefined;
+      const context = await getInvoiceZbsContext(req, req.params.invoiceId, scheduleId);
+      return res.json({
+        invoice: {
+          id: context.invoice.id,
+          code: context.installment?.code || context.invoice.invoiceCode,
+          studentId: context.invoice.studentId,
+          studentName: context.invoice.studentName,
+          amount: context.templateData.transfer_amount,
+        },
+        template: { id: context.templateId, name: context.templateName, data: context.templateData },
+        recipients: {
+          phones: context.phoneOptions,
+          uid: context.uid,
+        },
+      });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  app.post("/api/notification/zbs/invoices/:invoiceId/send", async (req, res) => {
+    try {
+      if (!(await authorizeInvoiceZbsSend(req, res))) return;
+      const scheduleId = typeof req.body?.scheduleId === "string" ? req.body.scheduleId : undefined;
+      const method = req.body?.method;
+      const context = await getInvoiceZbsContext(req, req.params.invoiceId, scheduleId);
+      if (method !== "phone" && method !== "uid") {
+        return res.status(400).json({ code: "INVALID_RECIPIENT_METHOD", message: "Chọn số điện thoại hoặc UID để gửi." });
+      }
+
+      const recipient: Record<string, string> = {};
+      let recipientLabel = "";
+      if (method === "uid") {
+        if (!context.uid) {
+          return res.status(422).json({ code: "ZALO_UID_NOT_LINKED", message: "Học viên chưa có UID Zalo đã liên kết với OA." });
+        }
+        recipient.user_id = context.uid;
+        recipientLabel = "UID Zalo đã liên kết";
+      } else {
+        const phoneKind = req.body?.phoneKind;
+        const phoneOption = context.phoneOptions.find((item) => item.kind === phoneKind);
+        if (!phoneOption) {
+          return res.status(422).json({ code: "PHONE_NOT_AVAILABLE", message: "Số điện thoại đã chọn không còn hợp lệ cho hóa đơn này." });
+        }
+        recipient.phone = phoneOption.phone;
+        recipientLabel = `${phoneOption.label}: ${phoneOption.phone}`;
+      }
+
+      if (!context.oa.accessTokenEncrypted) {
+        throw new ZbsTemplateManagementError(424, "ZBS_TOKEN_MISSING", "OA chưa có access token.");
+      }
+      let accessToken: string;
+      try {
+        accessToken = decrypt(context.oa.accessTokenEncrypted);
+      } catch {
+        throw new ZbsTemplateManagementError(424, "ZBS_TOKEN_UNREADABLE", "Không giải mã được access token của OA.");
+      }
+      const trackingId = randomUUID().replace(/-/g, "");
+      let response: Awaited<ReturnType<typeof fetch>>;
+      try {
+        response = await fetch("https://business.openapi.zalo.me/message/template", {
+          method: "POST",
+          headers: { access_token: accessToken, "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            ...recipient,
+            template_id: context.templateId,
+            template_data: context.templateData,
+            tracking_id: trackingId,
+          }),
+        });
+      } catch {
+        throw new ZbsTemplateManagementError(502, "ZBS_SEND_UNAVAILABLE", "Không kết nối được dịch vụ gửi tin ZBS của Zalo.");
+      }
+      const result = await response.json().catch(() => null) as any;
+      if (!response.ok || !result || Number(result.error ?? -1) !== 0) {
+        const detail = String(result?.message ?? `HTTP ${response.status}`);
+        const isPermissionError = /token|permission|unauthori[sz]ed/i.test(detail);
+        throw new ZbsTemplateManagementError(
+          isPermissionError ? 424 : 502,
+          isPermissionError ? "ZBS_SEND_PERMISSION_DENIED" : "ZBS_SEND_FAILED",
+          `Zalo chưa gửi được tin: ${detail}`,
+        );
+      }
+      return res.json({
+        success: true,
+        recipientMethod: method,
+        recipientLabel,
+        messageId: result?.data?.msg_id ?? null,
+        sentAt: result?.data?.sent_time ?? null,
+      });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
   app.get("/api/notification/zbs/oa/:oaConfigId/templates", async (req, res) => {
     try {
       if (!(await authorizeZbsSettings(req, res, false))) return;
