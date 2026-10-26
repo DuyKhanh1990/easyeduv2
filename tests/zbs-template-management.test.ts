@@ -239,13 +239,15 @@ describe("ZBS template management", () => {
       isSuperAdmin: true,
       allowedLocationIds: [],
     }, { offset: 0, limit: 10 })).rejects.toMatchObject({
-      status: 401,
+      status: 424,
       code: "ZBS_TOKEN_UNREADABLE",
     });
 
     for (const testCase of [
-      { response: new Response(JSON.stringify({ error: -124, message: "Invalid access token" }), { status: 200 }), code: "ZBS_TOKEN_INVALID" },
-      { response: new Response(JSON.stringify({ message: "Server unavailable" }), { status: 503 }), code: "ZBS_API_ERROR" },
+      { response: new Response(JSON.stringify({ error: -124, message: "Invalid access token" }), { status: 200 }), code: "ZBS_TOKEN_INVALID", status: 424 },
+      { response: new Response(JSON.stringify({ message: "Invalid access token" }), { status: 401 }), code: "ZBS_TOKEN_INVALID", status: 424 },
+      { response: new Response(JSON.stringify({ message: "Permission denied" }), { status: 403 }), code: "ZBS_TOKEN_INVALID", status: 424 },
+      { response: new Response(JSON.stringify({ message: "Server unavailable" }), { status: 503 }), code: "ZBS_API_ERROR", status: 502 },
     ]) {
       const service = new ZbsTemplateManagementService(
         makeRepository().repository,
@@ -260,6 +262,24 @@ describe("ZBS template management", () => {
         allowedLocationIds: [],
       }, { offset: 0, limit: 10 })).rejects.toMatchObject({
         code: testCase.code,
+        status: testCase.status,
+      });
+    }
+  });
+
+  it("returns OA token state as a provider error, not an application login 401", async () => {
+    const cases: Array<{ oa: ZbsOaRecord; code: string }> = [
+      { oa: { ...makeOa("oa-missing"), accessTokenEncrypted: null }, code: "ZBS_TOKEN_MISSING" },
+      { oa: { ...makeOa("oa-expired"), tokenExpiredAt: new Date(0) }, code: "ZBS_TOKEN_EXPIRED" },
+    ];
+    for (const { oa, code } of cases) {
+      const service = new ZbsTemplateManagementService(makeRepository(oa).repository, (value) => value, vi.fn());
+      await expect(service.listTemplates(oa.id, {
+        isSuperAdmin: true,
+        allowedLocationIds: [],
+      }, { offset: 0, limit: 10 })).rejects.toMatchObject({
+        status: 424,
+        code,
       });
     }
   });

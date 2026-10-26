@@ -86,7 +86,7 @@ type DecryptToken = (ciphertext: string) => string;
 
 function throwApiError(response: Response, detail: string): never {
   if (response.status === 401 || response.status === 403) {
-    throw new ZbsTemplateManagementError(401, "ZBS_TOKEN_INVALID", "Token của OA không hợp lệ hoặc thiếu quyền Quản lý Message Template.");
+    throw new ZbsTemplateManagementError(424, "ZBS_TOKEN_INVALID", "Token của OA không hợp lệ hoặc thiếu quyền Quản lý Message Template.");
   }
   throw new ZbsTemplateManagementError(
     502,
@@ -129,7 +129,7 @@ export async function fetchZbsTemplatePage(
   if (Number(body?.error ?? 0) !== 0) {
     const detail = String(body?.message ?? `mã lỗi ${body?.error}`);
     if (/token|access.?token|unauthori[sz]ed|permission/i.test(detail)) {
-      throw new ZbsTemplateManagementError(401, "ZBS_TOKEN_INVALID", `Token OA không hợp lệ hoặc thiếu quyền: ${detail}`);
+      throw new ZbsTemplateManagementError(424, "ZBS_TOKEN_INVALID", `Token OA không hợp lệ hoặc thiếu quyền: ${detail}`);
     }
     throw new ZbsTemplateManagementError(502, "ZBS_API_ERROR", `Zalo báo lỗi khi đọc template: ${detail}`);
   }
@@ -240,10 +240,10 @@ export class ZbsTemplateManagementService {
     }
     if (options.needsToken === false) return { accessToken: "" };
     if (!config.accessTokenEncrypted) {
-      throw new ZbsTemplateManagementError(401, "ZBS_TOKEN_MISSING", "OA chưa có access token.");
+      throw new ZbsTemplateManagementError(424, "ZBS_TOKEN_MISSING", "OA chưa có access token.");
     }
     if (config.tokenExpiredAt && config.tokenExpiredAt.getTime() <= Date.now()) {
-      throw new ZbsTemplateManagementError(401, "ZBS_TOKEN_EXPIRED", "Access token của OA đã hết hạn; hãy kết nối lại OA.");
+      throw new ZbsTemplateManagementError(424, "ZBS_TOKEN_EXPIRED", "Access token của OA đã hết hạn; hãy kết nối lại OA.");
     }
 
     try {
@@ -251,7 +251,7 @@ export class ZbsTemplateManagementService {
       if (!accessToken.trim()) throw new Error("empty token");
       return { accessToken };
     } catch {
-      throw new ZbsTemplateManagementError(401, "ZBS_TOKEN_UNREADABLE", "Không giải mã được access token của OA.");
+      throw new ZbsTemplateManagementError(424, "ZBS_TOKEN_UNREADABLE", "Không giải mã được access token của OA.");
     }
   }
 }
