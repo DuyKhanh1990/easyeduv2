@@ -1165,7 +1165,6 @@ function ListView({
                   <col style={{ width: 150 }} />
                   <col style={{ width: 160 }} />
                   <col style={{ width: 160 }} />
-                  <col style={{ width: 100 }} />
                 </colgroup>
                 <thead>
                   <tr className="border-b text-foreground text-xs bg-muted/10">
@@ -1178,7 +1177,6 @@ function ListView({
                     <th className="text-left px-4 py-2 font-semibold whitespace-nowrap">BTVN</th>
                     <th className="text-left px-4 py-2 font-semibold whitespace-nowrap">Bài kiểm tra</th>
                     <th className="text-left px-4 py-2 font-semibold whitespace-nowrap">Giáo trình</th>
-                    <th className="text-left px-4 py-2 font-semibold whitespace-nowrap">Trạng thái</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1232,9 +1230,6 @@ function ListView({
                       </td>
                       <td className="px-4 py-2.5 text-xs">
                         <ContentLines items={s.curriculums ?? []} />
-                      </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">
-                        <StatusBadge status={s.status} />
                       </td>
                     </tr>
                   ))}
