@@ -1024,58 +1024,85 @@ export function StaffScoreSheetAssessmentScoreDialog({
               </div>
 
               <div className={`grid gap-2 ${conversionTemplate ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-                <div className="rounded-lg border bg-background px-3 py-2">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Tổng điểm thô</p>
-                  <p className="mt-0.5 text-lg font-semibold tabular-nums">
-                    {formatScore(preview?.overallRawScore)}
-                    {!conversionTemplate && preview?.gradeBand && (
-                      <span
-                        className="ml-2 text-sm font-medium"
-                        style={{ color: preview.gradeBand.color }}
-                      >
-                        {preview.gradeBand.label}
-                      </span>
-                    )}
-                    {passThreshold?.scoreSource === "overallRawScore"
-                      && preview?.passStatus && (
-                        <span className={`ml-2 inline-flex rounded px-2 py-0.5 align-middle text-xs font-semibold ${
-                          preview.passStatus === "passed"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-red-100 text-red-700"
-                        }`}>
-                          {preview.passStatus === "passed" ? "Đạt" : "Chưa đạt"}
-                        </span>
-                      )}
-                  </p>
-                </div>
-                {conversionTemplate && (
-                  <div className="rounded-lg border border-violet-200 bg-violet-50/70 px-3 py-2 dark:border-violet-900 dark:bg-violet-950/30">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                {conversionTemplate ? (
+                  <div className="rounded-lg border bg-background px-3 py-2">
+                    <div className="grid h-full grid-cols-2 divide-x">
+                      <div className="min-w-0 pr-2">
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Tổng điểm thô
+                        </p>
+                        <p className="mt-1 text-lg font-semibold tabular-nums">
+                          {formatScore(preview?.overallRawScore)}
+                        </p>
+                      </div>
+                      <div className="min-w-0 pl-3">
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-violet-700 dark:text-violet-300">
                           Tổng điểm quy đổi
                         </p>
-                        <p className="mt-0.5 text-lg font-semibold tabular-nums text-violet-800 dark:text-violet-200">
+                        <p className="mt-1 text-lg font-semibold tabular-nums text-violet-800 dark:text-violet-200">
                           {formatScore(preview?.overallConvertedScore)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border bg-background px-3 py-2">
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Tổng điểm thô</p>
+                    <p className="mt-0.5 text-lg font-semibold tabular-nums">
+                      {formatScore(preview?.overallRawScore)}
+                      {preview?.gradeBand && (
+                        <span
+                          className="ml-2 text-sm font-medium"
+                          style={{ color: preview.gradeBand.color }}
+                        >
+                          {preview.gradeBand.label}
+                        </span>
+                      )}
+                      {passThreshold?.scoreSource === "overallRawScore"
+                        && preview?.passStatus && (
+                          <span className={`ml-2 inline-flex rounded px-2 py-0.5 align-middle text-xs font-semibold ${
+                            preview.passStatus === "passed"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-red-100 text-red-700"
+                          }`}>
+                            {preview.passStatus === "passed" ? "Đạt" : "Chưa đạt"}
+                          </span>
+                        )}
+                    </p>
+                  </div>
+                )}
+                {conversionTemplate && (
+                  <div className="rounded-lg border bg-background px-3 py-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Phân loại / Kết quả
+                        </p>
+                        <div className="mt-2 flex min-h-6 flex-wrap items-center gap-1.5">
                           {preview?.gradeBand && (
                             <span
-                              className="ml-2 text-sm font-medium"
-                              style={{ color: preview.gradeBand.color }}
+                              className="inline-flex rounded px-2 py-0.5 text-xs font-semibold"
+                              style={{
+                                color: preview.gradeBand.color,
+                                backgroundColor: `${preview.gradeBand.color}18`,
+                              }}
                             >
                               {preview.gradeBand.label}
                             </span>
                           )}
-                          {passThreshold?.scoreSource === "overallConvertedScore"
-                            && preview?.passStatus && (
-                              <span className={`ml-2 inline-flex rounded px-2 py-0.5 align-middle text-xs font-semibold ${
-                                preview.passStatus === "passed"
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : "bg-red-100 text-red-700"
-                              }`}>
-                                {preview.passStatus === "passed" ? "Đạt" : "Chưa đạt"}
-                              </span>
-                            )}
-                        </p>
+                          {preview?.passStatus && (
+                            <span className={`inline-flex rounded px-2 py-0.5 text-xs font-semibold ${
+                              preview.passStatus === "passed"
+                                ? "bg-emerald-100 text-emerald-700"
+                                : "bg-red-100 text-red-700"
+                            }`}>
+                              {preview.passStatus === "passed" ? "Đạt" : "Chưa đạt"}
+                            </span>
+                          )}
+                          {!preview?.gradeBand && !preview?.passStatus && (
+                            <span className="text-sm text-muted-foreground">—</span>
+                          )}
+                        </div>
                       </div>
                       {((template?.gradeBands?.length ?? 0) > 0
                         || (conversionTemplate?.overallRule.gradeBands.length ?? 0) > 0
