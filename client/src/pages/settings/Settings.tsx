@@ -64,8 +64,7 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EducationConfigHistoryTab } from "@/pages/education/EducationConfigHistoryTab";
 import { useLanguage } from "@/hooks/use-language";
-import { ZbsTemplateMapping } from "@/components/settings/zbs-template-mapping";
-import { ZbsTemplateLibrary } from "@/components/settings/zbs-template-library";
+import { ZbsStandardTemplates } from "@/components/settings/zbs-template-library/ZbsStandardTemplates";
 
 const SETTINGS_HREF = "/settings";
 const SETTINGS_HISTORY_RESOURCES = {
@@ -4200,14 +4199,10 @@ function CallCenterConfig() {
 }
 
 function ZaloOAConfig() {
-  const { data: locations } = useLocations();
   return (
     <div className="space-y-6">
       <NotificationConfig />
-      <ZbsTemplateMapping
-        locations={(locations ?? []).map((location) => ({ id: location.id, name: location.name }))}
-      />
-      <ZbsTemplateLibrary />
+      <ZbsStandardTemplates />
     </div>
   );
 }
