@@ -293,7 +293,7 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets, c
                     const unpaidCount = displaySchedules.filter(item => item.status === "unpaid").length;
                     const canDelete = hasDeletePermission && !sch.isSynthetic && sch.status === "unpaid" && (
                       displaySchedules.length === 1
-                        ? inv.status === "unpaid"
+                        ? true
                         : unpaidCount >= 2
                     );
                     const canSign    = !sch.isSynthetic && isPaid && sch.einvoiceStatus !== "published";

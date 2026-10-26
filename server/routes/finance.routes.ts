@@ -1766,18 +1766,19 @@ export function registerFinanceRoutes(app: Express): void {
       const inv = await storage.getInvoice(req.params.id);
       if (!inv) return res.status(404).json({ message: "Không tìm thấy hoá đơn" });
 
-      if (inv.status !== "unpaid") {
-        const statusLabel = isPaidInvoiceStatus(inv.status) ? (STATUS_LABEL[inv.status] ?? "Đã thanh toán") : inv.status === "partial" ? "Thanh toán một phần" : inv.status;
-        return res.status(409).json({
-          message: `Hoá đơn ${inv.code} đang ở trạng thái ${statusLabel}. Chỉ hoá đơn Chưa thanh toán mới được xoá.`,
-          invoiceStatus: inv.status,
-        });
-      }
-
       const schedules = await db
         .select({ status: invoicePaymentSchedule.status })
         .from(invoicePaymentSchedule)
         .where(eq(invoicePaymentSchedule.invoiceId, req.params.id));
+       const deletingFinalUnpaidSchedule = schedules.length === 1 && schedules[0].status === "unpaid";
+       if (inv.status !== "unpaid" && !deletingFinalUnpaidSchedule) {
+         const statusLabel = isPaidInvoiceStatus(inv.status) ? (STATUS_LABEL[inv.status] ?? "Đã thanh toán") : inv.status === "partial" ? "Thanh toán một phần" : inv.status;
+         return res.status(409).json({
+           message: `Hoá đơn ${inv.code} đang ở trạng thái ${statusLabel}. Chỉ hoá đơn Chưa thanh toán mới được xoá.`,
+           invoiceStatus: inv.status,
+         });
+       }
+
       if (schedules.length > 1) {
         return res.status(409).json({ message: "Hãy xoá từng đợt chưa thanh toán trước khi xoá hoá đơn." });
       }

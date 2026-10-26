@@ -203,7 +203,7 @@ export function ScheduleRows({
         const unpaidScheduleCount = schedules.filter(schedule => schedule.status === "unpaid").length;
         const canDeleteSchedule = canDelete && s.status === "unpaid" && (
           totalSchedules === 1
-            ? invoice?.status === "unpaid"
+            ? true
             : unpaidScheduleCount >= 2
         );
         const isSelected = selectedScheduleIds?.has(s.id) ?? false;

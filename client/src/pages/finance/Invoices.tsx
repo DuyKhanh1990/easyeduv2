@@ -2785,7 +2785,7 @@ export default function Invoices() {
                 const unpaidScheduleCount = parentSchedules.filter(item => item.status === "unpaid").length;
                 const canDeleteSchedule = !!schedule && invPerm.canDelete && schedule.status === "unpaid" && (
                   parentSchedules.length === 1
-                    ? parentInvoice.status === "unpaid"
+                    ? true
                     : unpaidScheduleCount >= 2
                 );
                 const isSelected = isScheduleRow

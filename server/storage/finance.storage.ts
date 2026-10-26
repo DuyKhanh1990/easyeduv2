@@ -2980,12 +2980,15 @@ export async function deleteInvoice(id: string): Promise<void> {
     await tx.execute(sql`SELECT id FROM invoices WHERE id = ${id} FOR UPDATE`);
     const [invoice] = await tx.select({ status: invoices.status }).from(invoices).where(eq(invoices.id, id));
     if (!invoice) throw new Error("Không tìm thấy hoá đơn");
-    if (invoice.status !== "unpaid") throw new Error("Chỉ được xoá hoá đơn chưa thanh toán");
 
     const schedules = await tx
       .select({ id: invoicePaymentSchedule.id, status: invoicePaymentSchedule.status })
       .from(invoicePaymentSchedule)
       .where(eq(invoicePaymentSchedule.invoiceId, id));
+    const deletingFinalUnpaidSchedule = schedules.length === 1 && schedules[0].status === "unpaid";
+    if (invoice.status !== "unpaid" && !deletingFinalUnpaidSchedule) {
+      throw new Error("Chỉ được xoá hoá đơn chưa thanh toán");
+    }
     if (schedules.length > 1) {
       throw new Error("Hãy xoá từng đợt chưa thanh toán trước khi xoá hoá đơn.");
     }
