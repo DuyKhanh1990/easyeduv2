@@ -20,6 +20,7 @@ import {
 import { db } from "../storage/base";
 import { getEffectivePermissions } from "../storage/permissions.storage";
 import { decrypt } from "../lib/encryption";
+import { refreshZaloOaToken } from "../services/zalo-token-refresh.service";
 import { buildZbsPaymentTemplateData } from "../services/zbs-payment-template-payload";
 import {
   hasZbsTemplateSettingsPermission,
@@ -139,6 +140,13 @@ function normalizeZaloPhone(value: string) {
   return digits;
 }
 
+function isZaloTokenError(errorCode: unknown, message: unknown) {
+  const code = Number(errorCode);
+  const detail = String(message ?? "");
+  return [-155, -216, 216, -124].includes(code)
+    || /access[\s_-]?token.*invalid|invalid.*access[\s_-]?token|token.*expired/i.test(detail);
+}
+
 async function getInvoiceZbsContext(req: Request, invoiceId: string, scheduleId?: string) {
   const [invoice] = await db
     .select({
@@ -206,10 +214,6 @@ async function getInvoiceZbsContext(req: Request, invoiceId: string, scheduleId?
   if (!oa.accessTokenEncrypted) {
     throw new ZbsTemplateManagementError(424, "ZBS_TOKEN_MISSING", "OA chưa có access token.");
   }
-  if (oa.tokenExpiredAt && oa.tokenExpiredAt.getTime() <= Date.now()) {
-    throw new ZbsTemplateManagementError(424, "ZBS_TOKEN_EXPIRED", "Access token OA đã hết hạn; hãy kết nối lại OA.");
-  }
-
   const [center] = await db.select({ id: centerConfig.id }).from(centerConfig).limit(1);
   const [channel] = center
     ? await db.select({
@@ -351,22 +355,60 @@ export function registerZbsTemplateRoutes(app: Express) {
         throw new ZbsTemplateManagementError(424, "ZBS_TOKEN_UNREADABLE", "Không giải mã được access token của OA.");
       }
       const trackingId = randomUUID().replace(/-/g, "");
-      let response: Awaited<ReturnType<typeof fetch>>;
-      try {
-        response = await fetch("https://business.openapi.zalo.me/message/template", {
-          method: "POST",
-          headers: { access_token: accessToken, "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({
-            ...recipient,
-            template_id: context.templateId,
-            template_data: context.templateData,
-            tracking_id: trackingId,
-          }),
+      const requestBody = JSON.stringify({
+        ...recipient,
+        template_id: context.templateId,
+        template_data: context.templateData,
+        tracking_id: trackingId,
+      });
+      const sendOnce = async (token: string) => {
+        let response: Awaited<ReturnType<typeof fetch>>;
+        try {
+          response = await fetch("https://business.openapi.zalo.me/message/template", {
+            method: "POST",
+            headers: { access_token: token, "Content-Type": "application/json", Accept: "application/json" },
+            body: requestBody,
+          });
+        } catch {
+          throw new ZbsTemplateManagementError(502, "ZBS_SEND_UNAVAILABLE", "Không kết nối được dịch vụ gửi tin ZBS của Zalo.");
+        }
+        const body = await response.json().catch(() => null) as any;
+        return { response, body };
+      };
+
+      let attempt = await sendOnce(accessToken);
+      if (isZaloTokenError(attempt.body?.error, attempt.body?.message)) {
+        const refresh = await refreshZaloOaToken({
+          configId: context.oa.id,
+          reason: "token_expired",
+          accessTokenUsed: accessToken,
         });
-      } catch {
-        throw new ZbsTemplateManagementError(502, "ZBS_SEND_UNAVAILABLE", "Không kết nối được dịch vụ gửi tin ZBS của Zalo.");
+        if (refresh.status === "refreshed" || refresh.status === "already_refreshed") {
+          if (refresh.accessToken === accessToken) {
+            throw new ZbsTemplateManagementError(
+              424,
+              "ZBS_TOKEN_INVALID",
+              "Token OA bị Zalo từ chối và chưa có token mới. Hãy kết nối lại Zalo OA rồi thử gửi lại.",
+            );
+          }
+          attempt = await sendOnce(refresh.accessToken);
+          if (isZaloTokenError(attempt.body?.error, attempt.body?.message)) {
+            throw new ZbsTemplateManagementError(
+              424,
+              "ZBS_TOKEN_INVALID_AFTER_REFRESH",
+              "Zalo vẫn từ chối token sau khi làm mới. Hãy kết nối lại OA và kiểm tra OA/cơ sở của hóa đơn.",
+            );
+          }
+        } else {
+          throw new ZbsTemplateManagementError(
+            424,
+            "ZBS_TOKEN_REFRESH_FAILED",
+            "Token OA không còn hợp lệ và hệ thống không làm mới được. Hãy kết nối lại Zalo OA rồi thử gửi lại.",
+          );
+        }
       }
-      const result = await response.json().catch(() => null) as any;
+
+      const { response, body: result } = attempt;
       if (!response.ok || !result || Number(result.error ?? -1) !== 0) {
         const detail = String(result?.message ?? `HTTP ${response.status}`);
         const isPermissionError = /token|permission|unauthori[sz]ed/i.test(detail);
