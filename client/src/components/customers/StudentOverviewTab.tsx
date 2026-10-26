@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { STATIC_STALE_TIME, getAuthHeaders } from "@/lib/queryClient";
 import { useStaff } from "@/hooks/use-staff";
+import { useCrmCustomFields } from "@/hooks/use-crm-config";
 import {
   Phone, Mail, MessageSquare, CheckCircle2, XCircle, CreditCard, AlertCircle,
   User, Clock, CalendarClock, ChevronLeft, ChevronRight, Users, MapPin, School, Link2,
@@ -222,9 +223,36 @@ export function StudentOverviewTab({ studentId, student, classesData, processedC
 
   // ── staff: reuse same cache key as useStaff(undefined, true) in parent ──────
   const { data: staffRaw } = useStaff(undefined, true);
+  const { data: customFields = [] } = useCrmCustomFields();
 
   const allStaff: { id: string; fullName: string }[] = Array.isArray(staffRaw) ? staffRaw : [];
   const staffMap  = new Map(allStaff.map(s => [s.id, s.fullName]));
+  const formatInfoValue = (value: unknown): string | null => {
+    if (value === null || value === undefined || value === "") return null;
+    if (Array.isArray(value)) {
+      const items = value.map(item => String(item ?? "").trim()).filter(Boolean);
+      return items.length ? items.join(", ") : null;
+    }
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
+  };
+  const getStaffNames = (ids: unknown, records: unknown): string | null => {
+    if (!Array.isArray(ids) || ids.length === 0) return null;
+    const recordNames = new Map(
+      (Array.isArray(records) ? records : [])
+        .filter((record: any) => record?.id && record?.fullName)
+        .map((record: any) => [record.id, record.fullName as string])
+    );
+    const names = ids
+      .map((id: string) => recordNames.get(id) || staffMap.get(id))
+      .filter(Boolean);
+    return names.length ? names.join(", ") : null;
+  };
+  const customInfoRows = (customFields ?? [])
+    .slice()
+    .sort((a, b) => a.position - b.position)
+    .map(field => ({ label: field.label, value: formatInfoValue(student.customFields?.[field.id]) }))
+    .filter(row => row.value !== null);
   const statusMap = new Map((taskStatuses ?? []).map(s => [s.id, s]));
   const levelMap  = new Map((taskLevels ?? []).map(l => [l.id, l]));
 
@@ -540,23 +568,25 @@ export function StudentOverviewTab({ studentId, student, classesData, processedC
               iconBg="bg-violet-50"
               title="Thông tin bổ sung"
             />
-            <div className="px-5 py-1 divide-y divide-gray-50 overflow-hidden">
+            <div className="px-5 py-1 divide-y divide-gray-50 overflow-y-auto min-h-0">
               <InfoRow icon={<User    className="w-3.5 h-3.5" />} label="Giới tính"        value={student.gender} />
               <InfoRow icon={<MapPin  className="w-3.5 h-3.5" />} label="Địa chỉ"          value={student.address} />
-              <InfoRow icon={<School  className="w-3.5 h-3.5" />} label="Trường học"       value={student.academicLevel} />
-              <InfoRow icon={<Tag     className="w-3.5 h-3.5" />} label="Nguồn KH"         value={student.source} />
+              <InfoRow icon={<School  className="w-3.5 h-3.5" />} label="Trường học"       value={student.schoolList?.map((school: any) => school.name).filter(Boolean).join(", ") || null} />
+              <InfoRow icon={<School  className="w-3.5 h-3.5" />} label="Trình độ"         value={student.academicLevel} />
+              <InfoRow icon={<Tag     className="w-3.5 h-3.5" />} label="Nguồn KH"         value={student.sourceList?.join(", ") || student.source} />
               <InfoRow icon={<Link2   className="w-3.5 h-3.5" />} label="Mạng xã hội"      value={student.socialLink} link={!!student.socialLink} />
               <InfoRow icon={<UserCog className="w-3.5 h-3.5" />} label="Sale"
-                value={Array.isArray(student.salesByIds) && student.salesByIds.length > 0
-                  ? student.salesByIds.map((id: string) => staffMap.get(id) || id).join(", ") : null} />
+                value={getStaffNames(student.salesByIds, student.salesByList)} />
               <InfoRow icon={<UserCog className="w-3.5 h-3.5" />} label="Quản lý"
-                value={Array.isArray(student.managedByIds) && student.managedByIds.length > 0
-                  ? student.managedByIds.map((id: string) => staffMap.get(id) || id).join(", ") : null} />
-              {student.parentName  && <InfoRow icon={<Users className="w-3.5 h-3.5" />} label="Phụ huynh"   value={[student.parentName,  student.parentPhone ].filter(Boolean).join(" — ")} />}
-              {student.parentName2 && <InfoRow icon={<Users className="w-3.5 h-3.5" />} label="Phụ huynh 2" value={[student.parentName2, student.parentPhone2].filter(Boolean).join(" — ")} />}
-              {student.parentName3 && <InfoRow icon={<Users className="w-3.5 h-3.5" />} label="Phụ huynh 3" value={[student.parentName3, student.parentPhone3].filter(Boolean).join(" — ")} />}
-              <InfoRow icon={<Heart    className="w-3.5 h-3.5" />} label="Quan hệ"     value={student.relationship} />
+                value={getStaffNames(student.managedByIds, student.managedByList)} />
+              {Boolean(student.parentName || student.parentPhone) && <InfoRow icon={<Users className="w-3.5 h-3.5" />} label="Phụ huynh"   value={[student.parentName, student.parentPhone].filter(Boolean).join(" — ")} />}
+              {Boolean(student.parentName2 || student.parentPhone2) && <InfoRow icon={<Users className="w-3.5 h-3.5" />} label="Phụ huynh 2" value={[student.parentName2, student.parentPhone2].filter(Boolean).join(" — ")} />}
+              {Boolean(student.parentName3 || student.parentPhone3) && <InfoRow icon={<Users className="w-3.5 h-3.5" />} label="Phụ huynh 3" value={[student.parentName3, student.parentPhone3].filter(Boolean).join(" — ")} />}
+              <InfoRow icon={<Heart    className="w-3.5 h-3.5" />} label="Quan hệ"     value={student.relationshipList?.map((relationship: any) => relationship.name).filter(Boolean).join(", ") || student.relationship} />
               <InfoRow icon={<Calendar className="w-3.5 h-3.5" />} label="Ngày tạo"    value={student.createdAt ? fmtDate(student.createdAt) : null} />
+              {customInfoRows.map((row, index) => (
+                <InfoRow key={`${row.label}-${index}`} icon={<FileText className="w-3.5 h-3.5" />} label={row.label} value={row.value} />
+              ))}
             </div>
           </div>
 

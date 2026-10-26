@@ -1311,6 +1311,7 @@ export type StudentResponse = Student & {
   classDetails?: ClassDetail[];
   classNames?: string[];
   schoolList?: CrmSchool[];
+  sourceList?: string[];
   zaloChannel?: ZaloChannelInfo | null;
   lastComment?: { content: string; createdAt: string; authorName: string } | null;
 };

@@ -798,7 +798,7 @@ export async function getStudent(id: string, allowedLocationIds: string[], isSup
   const relevantRelationshipIds = student.relationshipIds || [];
   const relevantClassIds = student.classIds || [];
 
-  const [allStaff, allRelationships, allClasses, allSchools, allStudentClasses] = await Promise.all([
+  const [allStaff, allRelationships, allClasses, allSchools, allSources, allStudentClasses] = await Promise.all([
     relevantStaffIds.length > 0
       ? db.select().from(staff).where(inArray(staff.id, relevantStaffIds))
       : Promise.resolve([]),
@@ -810,6 +810,9 @@ export async function getStudent(id: string, allowedLocationIds: string[], isSup
       : Promise.resolve([]),
     student.schoolIds?.length
       ? db.select().from(crmSchools).where(inArray(crmSchools.id, student.schoolIds))
+      : Promise.resolve([]),
+    student.customerSourceIds?.length
+      ? db.select().from(crmCustomerSources).where(inArray(crmCustomerSources.id, student.customerSourceIds))
       : Promise.resolve([]),
     db.select().from(studentClasses).where(eq(studentClasses.studentId, student.id)),
   ]);
@@ -828,6 +831,7 @@ export async function getStudent(id: string, allowedLocationIds: string[], isSup
      childIds: childRows.map(child => child.id),
     classNames: (student.classIds || []).map(id => classMap.get(id)?.name).filter(Boolean) as string[],
      schoolList: (student.schoolIds || []).map(id => allSchools.find(s => s.id === id)).filter(Boolean) as CrmSchool[],
+     sourceList: (student.customerSourceIds || []).map(id => allSources.find(s => s.id === id)?.name).filter(Boolean) as string[],
     classDetails: (student.classIds || []).map(classId => {
       const studentClassRecord = allStudentClasses.find(sc => sc.studentId === student.id && sc.classId === classId);
       const classRecord = classMap.get(classId);
