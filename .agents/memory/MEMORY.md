@@ -38,13 +38,13 @@
 - [Holiday bulk all-scope rule](holiday-bulk-all-scope.md) — “Tất cả” phải loại trừ mọi buổi trong kỳ nghỉ, không lọc ngày quá khứ hay trạng thái lớp/buổi.
 - [Student renewal shift fallback](student-renewal-shift-fallback.md) — gia hạn phải lấy ca theo lịch hiện có khi lớp cũ/import thiếu shift_template_ids.
 - [Drizzle schema push prompt](drizzle-schema-push-prompt.md) — schema push có thể bị chặn bởi prompt data-loss không liên quan; không truncate dữ liệu để áp dụng thay đổi cộng thêm.
-- [Invoice installment allocation](invoice-installment-allocation.md) — lịch thanh toán luôn đủ tổng tiền; sửa chỉ cân giữa đợt chưa trả, tăng số đợt bằng Tách đợt, giữ nguyên đợt đã trả.
+- [Multi-installment parent and child invoices](invoice-installment-allocation.md) — cha chỉ nhóm/liên kết; mỗi hóa đơn con là nguồn chuẩn độc lập cho thanh toán và nghiệp vụ tài chính.
 - [Invoice print amount variables](invoice-print-amount-variables.md) — `total` là tổng sau khấu trừ; `thanh_tien` là sau KM/PT, trước khấu trừ (riêng đợt lấy số đợt).
 - [Invoice print-preview parity](invoice-print-preview-parity.md) — xem trước và bản in thật dùng chung lề, giãn dòng, reset mặc định của đoạn và khoảng cách bảng.
 - [Debt view installment truth](debt-view-installment-truth.md) — trang công nợ phải tính theo các đợt chưa thanh toán, không chỉ invoices.remaining_amount hoặc hạn hóa đơn gốc.
 - [Production restore safety](production-restore-safety.md) — snapshot dự phòng phải drain mọi writer; marker finalizing commit cùng dữ liệu và chỉ completed sau cleanup.
 - [Production PostgreSQL client](production-postgres-client.md) — backup/restore cần PostgreSQL client ở runtime của cả Replit và Docker, không chỉ trong workspace dev.
-- [Bulk finance child-first behavior](bulk-child-first-finance.md) — bulk phải tách invoice/schedule targets và luôn đồng bộ summary của invoice cha sau thao tác trên đợt.
+- [Bulk finance child-first behavior](bulk-child-first-finance.md) — bulk phải nhắm đúng ID từng hóa đơn con; cha chỉ dùng để nhóm/liên kết, không phải nguồn tài chính.
 - [Inventory availability expiry](inventory-availability-expiry.md) — tồn thực tách khỏi giữ chỗ; khả dụng trừ đúng reservation và phiếu xuất nháp còn hạn, không ghi giữ chỗ vào ledger.
 - [Store audit quantity deltas](store-audit-quantity-deltas.md) — nhật ký nhập/xuất hiển thị tăng giảm số lượng tính từ Trước/Sau; không đổi nghiệp vụ tồn kho.
 - [Student discussion edit audit](student-discussion-edit-audit.md) — giữ tác giả gốc và lưu riêng người sửa/thời điểm sửa để hiển thị lịch sử minh bạch.
@@ -93,7 +93,7 @@
 - [Student detail free-class sources](student-detail-free-class-sources.md) — tab Lớp học phải đọc free_class_registrations và union class IDs từ hóa đơn gắn học viên.
 - [Free-class teacher assignment precedence](free-class-teacher-assignment.md) — override học viên/ngày thắng GV chung; lịch cá nhân chỉ gửi cho GV hiệu lực.
 - [Grade book roster snapshot](grade-book-roster-snapshot.md) — danh sách học viên được chốt lúc tạo; học viên active phát sinh sau đó chỉ được thêm thủ công.
-- [Invoice total vs installments](invoice-schedule-adjustments.md) — tổng hóa đơn theo các trường hóa đơn; lịch đợt chỉ phân bổ tổng và không được đổi tổng.
+- [Child invoice adjustments](invoice-schedule-adjustments.md) — từng hóa đơn con tự sở hữu dòng hàng, điều chỉnh, tổng tiền và trạng thái thanh toán.
 - [Mockup sandbox screenshots](mockup-sandbox-screenshots.md) — screenshot isolated previews from the sandbox URL; appPreview paths load the main app instead.
 - [Score-sheet template configuration](score-sheet-template-configuration.md) — scoring keeps its saved snapshot; linked templates supply current deadlines and evaluation criteria.
 - [Score-sheet category order snapshots](score-sheet-category-order.md) — existing gradebooks keep their category order when a shared score sheet is reordered; new books use the new order.

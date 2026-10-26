@@ -1,10 +1,10 @@
 ---
-name: Invoice installment adjustments
-description: Rules for promotions and surcharges assigned to unpaid invoice installments.
+name: Child invoice adjustments
+description: Adjustment and total ownership in multi-installment invoice groups.
 ---
 
-The invoice total is authoritative and is calculated from invoice line amounts, invoice promotions, surcharges, and deposit deduction; installment rows must sum to that total and never recalculate it. A promotion applied to a specific unpaid installment is a real additional discount: keep it visible on that installment, reduce its net amount, roll the discount into the parent invoice's aggregate promotion/total, and do not redistribute it to another installment. Invoices without installment-specific promotions retain the existing allocation behavior.
+Each child invoice owns its own line items, discounts, surcharges, total, payment status, and payment records. The parent is a grouping/link record, not the authority for child totals. A parent-level aggregate, if shown, is informational and must not replace or overwrite the child invoice values.
 
-**Why:** The user confirmed that a child installment's discount must reduce the parent amount due while preserving the installment-level breakdown, without changing invoices that have no child-specific promotion.
+**Why:** The user clarified that child invoices are the actual financial records and parent invoices do not participate in their payment operations.
 
-**How to apply:** Keep paid/confirmed installments immutable. When a child promotion exists, calculate the parent aggregate from item/header adjustments plus child promotions and preserve the child details for display/audit; validate that paid amounts do not exceed the revised parent total and that installment allocations still match. When no child promotion exists, retain the current parent-total and allocation path.
+**How to apply:** Apply edits, payment locks, and status rules against the child invoice being operated on. Do not calculate a child's total from a parent total or roll a child's adjustment into a parent financial amount. Confirm any intended propagation before implementing it.

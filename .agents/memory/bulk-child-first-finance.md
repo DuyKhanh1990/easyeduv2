@@ -1,13 +1,13 @@
 ---
 name: Bulk finance child-first behavior
-description: Quy tắc cho các thao tác hàng loạt khi hóa đơn được hiển thị theo các đợt thanh toán.
+description: Quy tắc thao tác trên hóa đơn con trong chế độ danh sách gộp.
 ---
 
-Các thao tác hàng loạt phải truyền riêng danh sách hóa đơn thường và `scheduleIds`; thao tác trên đợt con không được tự động chuyển thành thao tác trên hóa đơn cha. Khi cập nhật hoặc thu một đợt, phải đồng bộ các trường tổng hợp của hóa đơn cha từ toàn bộ các đợt.
+Hóa đơn con là các chứng từ thanh toán thực tế; hóa đơn cha chỉ nhóm/liên kết chúng. Thao tác hàng loạt phải giữ đúng ID từng hóa đơn con, không biến thành thao tác trên cha và không yêu cầu đồng bộ cha như nguồn tài chính.
 
-**Why:** Dữ liệu nhiều đợt có trạng thái, số tiền và ngày nghiệp vụ ở cấp đợt. Nếu bỏ qua danh sách đợt hoặc chỉ cập nhật đợt mà không đồng bộ cha, giao diện công nợ và trạng thái hóa đơn sẽ sai hoặc im lặng không thay đổi.
+**Why:** Người dùng làm rõ rằng chỉ hóa đơn con tham gia thanh toán; cha không quyết định số tiền hoặc trạng thái của con.
 
-**How to apply:** Dùng một mảng duy nhất khi gọi `Promise.all`; kiểm tra cả API invoice và schedule trong bulk status/date/collect; không dùng `Promise.all(a, b)` vì đối số thứ hai bị JavaScript bỏ qua.
+**How to apply:** Bulk delete/status/payment and row counts must target the visible child invoice IDs. Keep any parent use limited to grouping and informational display. Use one combined array for `Promise.all`; avoid `Promise.all(a, b)`, which silently ignores its second argument.
 
 Tab và tổng số cuối danh sách phải đếm theo các dòng người dùng nhìn thấy: hóa đơn thường là một mục, hóa đơn có nhiều đợt là số đợt. Có thể giữ riêng số hóa đơn cha cho phân trang nội bộ.
 

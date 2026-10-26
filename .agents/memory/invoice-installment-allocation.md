@@ -1,10 +1,10 @@
 ---
-name: Invoice installment allocation
-description: Quy tắc bảo toàn tổng tiền, sửa phân bổ và tách đợt trong dialog hóa đơn.
+name: Multi-installment parent and child invoice model
+description: The parent record groups child invoices; each child is the financial record.
 ---
 
-Khi lịch thanh toán đã được bắt đầu, tổng tiền đã thanh toán trực tiếp và các đợt phải luôn bằng tổng hóa đơn. Phần còn thiếu được tạo hoặc cập nhật thành một đợt chưa thanh toán còn lại. Chỉ xóa đợt chưa thanh toán khi còn một đợt chưa thanh toán khác để nhận toàn bộ số tiền; đợt đã thanh toán không bao giờ là đợt đích. Đợt cuối chỉ được xóa cùng hóa đơn khi hóa đơn và đợt đó đều chưa thanh toán.
+Với hóa đơn nhiều đợt, hóa đơn cha chỉ là bản ghi nhóm/liên kết ngầm. Các hóa đơn con mới là chứng từ tài chính thực tế: mỗi hóa đơn con tự tham gia thanh toán và là nguồn chuẩn cho số tiền, trạng thái và thao tác nghiệp vụ của chính nó. Không dùng trạng thái/tổng tiền của cha để quyết định thanh toán hay xóa hóa đơn con; không tự dồn tiền giữa các hóa đơn con hoặc xóa cha khi xóa con nếu chưa có quy tắc riêng được người dùng xác nhận.
 
-**Why:** Người dùng có thể quên tạo đợt cho phần tiền còn thiếu; đồng thời lịch sử của các đợt đã thanh toán không được thay đổi. Người dùng xác nhận xóa đợt là thao tác dồn tiền giữa các đợt chưa thanh toán, còn xóa đợt cuối sẽ xóa toàn bộ hóa đơn.
+**Why:** Người dùng làm rõ rằng hóa đơn cha chỉ giữ liên kết nhóm; hóa đơn con mới tham gia thanh toán. Cách hiểu cũ coi các dòng con là phần phân bổ của hóa đơn cha dẫn đến suy luận sai về điều kiện xóa.
 
-**How to apply:** Nút Thêm chỉ khởi tạo đợt đầu. Sửa số tiền chỉ cân sang đợt chưa thanh toán khác; nếu chưa có lịch sử thanh toán và chỉ có một đợt thì có thể tự sinh đợt còn lại. Khi chỉ còn một đợt chưa thanh toán sau các đợt đã trả, khóa sửa trực tiếp và dùng Tách đợt. Tách chỉ áp dụng cho đợt chưa thanh toán, chuyển một phần tiền sang đợt mới và giữ nguyên tổng hóa đơn. Khi xóa, đếm các đợt có status `unpaid`, chọn đích trong chính tập đó, và chỉ xóa toàn bộ hóa đơn nếu còn tối đa một đợt, mọi trạng thái liên quan đều `unpaid`.
+**How to apply:** Khi đọc hoặc sửa phân hệ này, lần theo ID của hóa đơn con trong CRUD, thanh toán, quyền, lọc, đối soát và xóa. Cha chỉ dùng để nhóm/liên kết hoặc hiển thị thông tin tổng hợp; không để thao tác trên cha ghi đè dữ liệu tài chính của con. Xác minh với người dùng trước mọi thao tác dây chuyền giữa các hóa đơn con.
