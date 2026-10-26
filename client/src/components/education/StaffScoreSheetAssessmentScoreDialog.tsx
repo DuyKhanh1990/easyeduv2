@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, Calculator, CheckCircle2, Loader2, Save } from "lucide-react";
+import { AlertCircle, Calculator, CheckCircle2, Loader2, Save, Settings2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -25,6 +25,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { hasScoreSheetAssessmentFeedback } from "@shared/score-sheet-assessment-publication";
 import {
   formatEvaluationExclusionViolation,
@@ -1045,30 +1050,98 @@ export function StaffScoreSheetAssessmentScoreDialog({
                 </div>
                 {conversionTemplate && (
                   <div className="rounded-lg border border-violet-200 bg-violet-50/70 px-3 py-2 dark:border-violet-900 dark:bg-violet-950/30">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-violet-700 dark:text-violet-300">
-                      Tổng điểm quy đổi
-                    </p>
-                    <p className="mt-0.5 text-lg font-semibold tabular-nums text-violet-800 dark:text-violet-200">
-                      {formatScore(preview?.overallConvertedScore)}
-                      {preview?.gradeBand && (
-                        <span
-                          className="ml-2 text-sm font-medium"
-                          style={{ color: preview.gradeBand.color }}
-                        >
-                          {preview.gradeBand.label}
-                        </span>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                          Tổng điểm quy đổi
+                        </p>
+                        <p className="mt-0.5 text-lg font-semibold tabular-nums text-violet-800 dark:text-violet-200">
+                          {formatScore(preview?.overallConvertedScore)}
+                          {preview?.gradeBand && (
+                            <span
+                              className="ml-2 text-sm font-medium"
+                              style={{ color: preview.gradeBand.color }}
+                            >
+                              {preview.gradeBand.label}
+                            </span>
+                          )}
+                          {passThreshold?.scoreSource === "overallConvertedScore"
+                            && preview?.passStatus && (
+                              <span className={`ml-2 inline-flex rounded px-2 py-0.5 align-middle text-xs font-semibold ${
+                                preview.passStatus === "passed"
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-red-100 text-red-700"
+                              }`}>
+                                {preview.passStatus === "passed" ? "Đạt" : "Chưa đạt"}
+                              </span>
+                            )}
+                        </p>
+                      </div>
+                      {((template?.gradeBands?.length ?? 0) > 0
+                        || (conversionTemplate?.overallRule.gradeBands.length ?? 0) > 0
+                        || passThreshold) && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Điều chỉnh phân loại và ngưỡng"
+                              title="Điều chỉnh phân loại và ngưỡng"
+                              className="h-7 w-7 shrink-0 text-violet-700 hover:bg-violet-100 hover:text-violet-900 dark:text-violet-300 dark:hover:bg-violet-900/50"
+                            >
+                              <Settings2 className="h-4 w-4" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent
+                            align="end"
+                            className="z-[350] w-[min(22rem,calc(100vw-2rem))] space-y-3"
+                          >
+                            {gradeBands.length > 0 && (
+                              <label className="block space-y-1.5 text-xs">
+                                <span className="font-medium text-muted-foreground">Phân loại</span>
+                                <select
+                                  aria-label="Phân loại thủ công"
+                                  value={currentValues.gradeBandOverrideId ?? ""}
+                                  onChange={(event) => updateDraft((current) => ({
+                                    ...current,
+                                    gradeBandOverrideId: event.target.value || null,
+                                  }))}
+                                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                                >
+                                  <option value="">Tự động theo điểm</option>
+                                  {gradeBands.map((band) => (
+                                    <option key={band.id} value={band.id}>{band.label}</option>
+                                  ))}
+                                </select>
+                              </label>
+                            )}
+                            <label className="block space-y-1.5 text-xs">
+                              <span className="font-medium text-muted-foreground">Ngưỡng</span>
+                              <select
+                                aria-label="Kết quả ngưỡng thủ công"
+                                value={currentValues.passStatusOverride ?? ""}
+                                onChange={(event) => updateDraft((current) => ({
+                                  ...current,
+                                  passStatusOverride: event.target.value === "passed"
+                                    || event.target.value === "failed"
+                                    ? event.target.value
+                                    : null,
+                                }))}
+                                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                              >
+                                <option value="">Tự động theo ngưỡng</option>
+                                <option value="passed">Đạt</option>
+                                <option value="failed">Không đạt</option>
+                              </select>
+                            </label>
+                            <p className="text-xs text-muted-foreground">
+                              Điểm thô và điểm quy đổi vẫn tự tính; lựa chọn thủ công chỉ ghi đè kết quả hiển thị.
+                            </p>
+                          </PopoverContent>
+                        </Popover>
                       )}
-                      {passThreshold?.scoreSource === "overallConvertedScore"
-                        && preview?.passStatus && (
-                          <span className={`ml-2 inline-flex rounded px-2 py-0.5 align-middle text-xs font-semibold ${
-                            preview.passStatus === "passed"
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-red-100 text-red-700"
-                          }`}>
-                            {preview.passStatus === "passed" ? "Đạt" : "Chưa đạt"}
-                          </span>
-                        )}
-                    </p>
+                    </div>
                   </div>
                 )}
                 <div className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2">
@@ -1085,49 +1158,53 @@ export function StaffScoreSheetAssessmentScoreDialog({
                   </div>
                 </div>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {gradeBands.length > 0 && (
-                  <label className="space-y-1 text-xs">
-                    <span className="font-medium text-muted-foreground">Phân loại</span>
-                    <select
-                      aria-label="Phân loại thủ công"
-                      value={currentValues.gradeBandOverrideId ?? ""}
-                      onChange={(event) => updateDraft((current) => ({
-                        ...current,
-                        gradeBandOverrideId: event.target.value || null,
-                      }))}
-                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="">Tự động theo điểm</option>
-                      {gradeBands.map((band) => (
-                        <option key={band.id} value={band.id}>{band.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                <label className="space-y-1 text-xs">
-                  <span className="font-medium text-muted-foreground">Ngưỡng</span>
-                  <select
-                    aria-label="Kết quả ngưỡng thủ công"
-                    value={currentValues.passStatusOverride ?? ""}
-                    onChange={(event) => updateDraft((current) => ({
-                      ...current,
-                      passStatusOverride: event.target.value === "passed"
-                        || event.target.value === "failed"
-                        ? event.target.value
-                        : null,
-                    }))}
-                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="">Tự động theo ngưỡng</option>
-                    <option value="passed">Đạt</option>
-                    <option value="failed">Không đạt</option>
-                  </select>
-                </label>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Điểm thô và điểm quy đổi vẫn tính tự động; lựa chọn thủ công chỉ ghi đè phân loại hoặc kết quả ngưỡng.
-              </p>
+              {!conversionTemplate && (
+                <>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {gradeBands.length > 0 && (
+                      <label className="space-y-1 text-xs">
+                        <span className="font-medium text-muted-foreground">Phân loại</span>
+                        <select
+                          aria-label="Phân loại thủ công"
+                          value={currentValues.gradeBandOverrideId ?? ""}
+                          onChange={(event) => updateDraft((current) => ({
+                            ...current,
+                            gradeBandOverrideId: event.target.value || null,
+                          }))}
+                          className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        >
+                          <option value="">Tự động theo điểm</option>
+                          {gradeBands.map((band) => (
+                            <option key={band.id} value={band.id}>{band.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    <label className="space-y-1 text-xs">
+                      <span className="font-medium text-muted-foreground">Ngưỡng</span>
+                      <select
+                        aria-label="Kết quả ngưỡng thủ công"
+                        value={currentValues.passStatusOverride ?? ""}
+                        onChange={(event) => updateDraft((current) => ({
+                          ...current,
+                          passStatusOverride: event.target.value === "passed"
+                            || event.target.value === "failed"
+                            ? event.target.value
+                            : null,
+                        }))}
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        <option value="">Tự động theo ngưỡng</option>
+                        <option value="passed">Đạt</option>
+                        <option value="failed">Không đạt</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Điểm thô vẫn tự tính; lựa chọn thủ công chỉ ghi đè phân loại hoặc kết quả ngưỡng.
+                  </p>
+                </>
+              )}
               {conversionTemplate && preview?.inputComplete && !preview.conversionComplete && (
                 <p className="text-xs text-amber-700 dark:text-amber-300">
                   Một số điểm thô chưa có khoảng quy đổi tương ứng trong cấu hình.
