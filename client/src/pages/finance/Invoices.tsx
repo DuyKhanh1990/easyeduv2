@@ -1603,6 +1603,15 @@ export default function Invoices() {
   const [activeTab, setActiveTab]   = useState<TabKey>("all");
   const [debtCondition, setDebtCondition] = useState<DebtCondition>("all");
   const { data: locationsList = [] } = useLocations();
+  const { data: zaloOaConfigs = [] } = useQuery<Array<{ locationId: string; isConnected: boolean }>>({
+    queryKey: ["/api/zalo-oa/configs"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/zalo-oa/configs");
+      if (!response.ok) throw new Error("Không thể tải trạng thái kết nối Zalo OA.");
+      return response.json();
+    },
+    staleTime: 60_000,
+  });
   const [selectedIds, setSelectedIds]   = useState<Set<string>>(new Set());
   const [selectedSchedules, setSelectedSchedules] = useState<Map<string, ScheduleItem>>(new Map());
   const [expandedIds, setExpandedIds]   = useState<Set<string>>(new Set());
@@ -2783,6 +2792,10 @@ export default function Invoices() {
                 const isScheduleRow = !!inv.isScheduleRow;
                 const schedule = getScheduleForRow(inv);
                 const parentInvoice = inv.parentInvoice ?? inv;
+                const invoiceLocationId = parentInvoice.locationId ?? inv.locationId;
+                const hasConnectedZaloOa = !!invoiceLocationId && zaloOaConfigs.some(
+                  (config) => config.locationId === invoiceLocationId && config.isConnected,
+                );
                 const parentSchedules = parentInvoice.paymentSchedule ?? [];
                 const unpaidScheduleCount = parentSchedules.filter(item => item.status === "unpaid").length;
                 const canDeleteSchedule = !!schedule && invPerm.canDelete && schedule.status === "unpaid" && (
@@ -2871,6 +2884,7 @@ export default function Invoices() {
                             {invPerm.canEdit &&
                               inv.type === "Thu" &&
                               !!parentInvoice.studentId &&
+                              hasConnectedZaloOa &&
                               zbsSendAllowed && (
                                 <ActionMenuItem
                                   className="gap-2 cursor-pointer"
