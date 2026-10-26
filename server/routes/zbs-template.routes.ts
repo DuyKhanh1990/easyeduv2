@@ -359,12 +359,15 @@ export function registerZbsTemplateRoutes(app: Express) {
         ...recipient,
         template_id: context.templateId,
         template_data: context.templateData,
-        tracking_id: trackingId,
+        ...(method === "phone" ? { tracking_id: trackingId } : {}),
       });
       const sendOnce = async (token: string) => {
         let response: Awaited<ReturnType<typeof fetch>>;
         try {
-          response = await fetch("https://business.openapi.zalo.me/message/template", {
+          const endpoint = method === "uid"
+            ? "https://openapi.zalo.me/v3.0/oa/message/template"
+            : "https://business.openapi.zalo.me/message/template";
+          response = await fetch(endpoint, {
             method: "POST",
             headers: { access_token: token, "Content-Type": "application/json", Accept: "application/json" },
             body: requestBody,
@@ -422,8 +425,8 @@ export function registerZbsTemplateRoutes(app: Express) {
         success: true,
         recipientMethod: method,
         recipientLabel,
-        messageId: result?.data?.msg_id ?? null,
-        sentAt: result?.data?.sent_time ?? null,
+        messageId: result?.data?.msg_id ?? result?.data?.message_id ?? null,
+        sentAt: result?.data?.sent_time ?? result?.sent_time ?? null,
       });
     } catch (error) {
       return sendError(res, error);
