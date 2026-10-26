@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   Send, MessageCircle, Loader2, RefreshCw, Link2,
   Search, Phone, Info, MoreHorizontal, Image, Smile,
-  CheckCheck, Wifi, User, X, UserPlus, ExternalLink,
+  CheckCheck, Wifi, User, X, UserPlus, ExternalLink, FileCheck2,
   Paperclip, FileText, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,8 +17,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { MultiSelect } from "@/components/ui/multi-select";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type ZaloConversation = {
   id: string;
@@ -53,6 +55,35 @@ type ZaloConfig = {
   isTokenExpired: boolean;
   isConnected: boolean;
 };
+
+type ZbsTemplate = {
+  templateId: string;
+  templateName: string;
+  status: string;
+  templateQuality?: string | null;
+};
+
+type ZbsTemplatePage = {
+  data: ZbsTemplate[];
+  total: number | null;
+};
+
+function zbsTemplateStatus(status: string | number) {
+  const normalized = String(status).trim().toUpperCase();
+  if (["ENABLE", "APPROVED", "ACTIVE", "1"].includes(normalized)) {
+    return { label: "Đã duyệt", className: "border-emerald-200 bg-emerald-50 text-emerald-700" };
+  }
+  if (["PENDING_REVIEW", "PENDING", "2"].includes(normalized)) {
+    return { label: "Chờ duyệt", className: "border-amber-200 bg-amber-50 text-amber-700" };
+  }
+  if (["REJECT", "REJECTED", "3"].includes(normalized)) {
+    return { label: "Từ chối", className: "border-red-200 bg-red-50 text-red-700" };
+  }
+  if (["DISABLE", "DISABLED", "INACTIVE", "4"].includes(normalized)) {
+    return { label: "Ngừng hoạt động", className: "border-slate-200 bg-slate-100 text-slate-600" };
+  }
+  return { label: `Trạng thái ${status || "không rõ"}`, className: "border-slate-200 bg-slate-100 text-slate-600" };
+}
 
 type StudentMinimal = {
   id: string;
@@ -192,6 +223,7 @@ export function ZaloOAChatPage() {
   const [autoCode, setAutoCode] = useState("");
   const [addingStudent, setAddingStudent] = useState(false);
   const [newStudentId, setNewStudentId] = useState<string | null>(null);
+  const [showZbsDialog, setShowZbsDialog] = useState(false);
 
   const { data: crmRelationships } = useQuery<CrmRelationship[]>({
     queryKey: ["/api/crm/relationships"],
@@ -280,6 +312,18 @@ export function ZaloOAChatPage() {
 
   const currentConfig = configs?.find(c => c.locationId === selectedLocationId);
   const isConfigured = !!currentConfig?.hasToken && !currentConfig?.isTokenExpired && currentConfig?.isConnected !== false;
+
+  const zbsTemplatesQuery = useQuery<ZbsTemplatePage>({
+    queryKey: ["/api/notification/zbs/oa", currentConfig?.id, "templates", 0, 100],
+    enabled: showZbsDialog && isConfigured && !!currentConfig?.id,
+    queryFn: async () => {
+      const res = await apiRequest(
+        "GET",
+        `/api/notification/zbs/oa/${encodeURIComponent(currentConfig!.id)}/templates?offset=0&limit=100`,
+      );
+      return res.json() as Promise<ZbsTemplatePage>;
+    },
+  });
 
   useZaloSSE({ enabled: !!selectedLocationId && isConfigured });
 
@@ -794,6 +838,80 @@ export function ZaloOAChatPage() {
   return (
     <DashboardLayout fullscreen>
       {ConnectDialog}
+      <Dialog open={showZbsDialog} onOpenChange={setShowZbsDialog}>
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileCheck2 className="h-5 w-5 text-emerald-600" />
+              Mẫu ZBS{currentConfig?.oaName ? ` — ${currentConfig.oaName}` : ""}
+            </DialogTitle>
+            <DialogDescription>
+              Danh sách mẫu trên OA của cơ sở đang chọn và trạng thái Zalo trả về. Màn hình này chỉ xem, không tạo mẫu hoặc gửi tin.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[58vh] overflow-auto rounded-lg border border-slate-200">
+            {zbsTemplatesQuery.isLoading ? (
+              <div className="space-y-2 p-4">
+                <Skeleton className="h-8 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+            ) : zbsTemplatesQuery.error ? (
+              <div className="p-4 text-sm text-red-700">
+                Không tải được mẫu ZBS. {zbsTemplatesQuery.error instanceof Error ? zbsTemplatesQuery.error.message : ""}
+              </div>
+            ) : (zbsTemplatesQuery.data?.data.length ?? 0) === 0 ? (
+              <div className="p-8 text-center text-sm text-slate-500">
+                OA chưa có mẫu ZBS hoặc Zalo chưa trả về mẫu nào.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader className="sticky top-0 bg-slate-50">
+                  <TableRow>
+                    <TableHead>Tên mẫu</TableHead>
+                    <TableHead className="w-28">Mã mẫu</TableHead>
+                    <TableHead className="w-36">Trạng thái</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {zbsTemplatesQuery.data?.data.map((template) => {
+                    const state = zbsTemplateStatus(template.status);
+                    return (
+                      <TableRow key={template.templateId}>
+                        <TableCell className="min-w-48 font-medium text-slate-700">
+                          {template.templateName || "Mẫu chưa có tên"}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-slate-500">{template.templateId}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={`whitespace-nowrap ${state.className}`}>
+                            {state.label}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+          {zbsTemplatesQuery.data?.total != null && (
+            <p className="text-xs text-slate-500">{zbsTemplatesQuery.data.total} mẫu trên OA</p>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void zbsTemplatesQuery.refetch()}
+              disabled={zbsTemplatesQuery.isFetching}
+            >
+              <RefreshCw className={`mr-2 h-3.5 w-3.5 ${zbsTemplatesQuery.isFetching ? "animate-spin" : ""}`} />
+              Làm mới
+            </Button>
+            <Button size="sm" onClick={() => setShowZbsDialog(false)}>Đóng</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div className="flex h-full min-h-0 bg-slate-50">
 
         {/* ═══ CỘT HỘI THOẠI ═══ */}
@@ -829,6 +947,18 @@ export function ZaloOAChatPage() {
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
                   Đã kết nối
                 </Badge>
+                {isConfigured && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1 px-2 text-[11px] text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                    onClick={() => setShowZbsDialog(true)}
+                    title="Xem mẫu và trạng thái ZBS của OA"
+                  >
+                    <FileCheck2 className="h-3.5 w-3.5" />
+                    ZBS
+                  </Button>
+                )}
                 <button
                   onClick={handleOpenConnectDialog}
                   className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
