@@ -1521,6 +1521,78 @@ function DeleteInvoiceDialog({ target, onClose, deleteMutation }: {
   );
 }
 
+function DeleteScheduleRowDialog({
+  target,
+  onClose,
+  deleteMutation,
+}: {
+  target: { schedule: ScheduleItem; invoice: InvoiceRow; totalSchedules: number };
+  onClose: () => void;
+  deleteMutation: any;
+}) {
+  const { t } = useLanguage();
+  const { data: linkedReceipts = [], isLoading: loadingReceipts } = useQuery<any[]>({
+    queryKey: ["/api/finance/invoices", target.invoice.id, "linked-store-receipts"],
+    queryFn: () => apiRequest("GET", `/api/finance/invoices/${target.invoice.id}/linked-store-receipts`).then(r => r.json()),
+    enabled: target.totalSchedules === 1,
+  });
+  const activeReceipts = linkedReceipts.filter(receipt => receipt.status !== "cancelled");
+  const scheduleCode = target.schedule.code ?? target.schedule.label;
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-red-600">
+            <Trash2 className="h-4 w-4" /> {t("finance.deleteScheduleTitle")}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="py-3 space-y-3">
+          <p className="text-sm">{t("finance.confirmDeleteScheduleQuestion", { label: scheduleCode })}</p>
+          <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3 text-xs text-yellow-800 space-y-1">
+            <p className="font-semibold">{t("finance.businessNote")}</p>
+            <p>{target.totalSchedules === 1
+              ? t("finance.deleteLastScheduleDeletesInvoice")
+              : t("finance.deleteScheduleReallocation", { amount: fmtMoney(parseNum(target.schedule.amount)) })}</p>
+          </div>
+          {target.totalSchedules === 1 && activeReceipts.length > 0 && (
+            <div className="rounded-lg bg-yellow-50 border border-yellow-200 p-3 text-xs text-yellow-800">
+              <p className="font-semibold mb-1">{t("finance.deleteLinkedIssueWarning")}</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                {activeReceipts.map(receipt => (
+                  <li key={receipt.id}>
+                    <span className="font-medium">{receipt.code}</span> {t("finance.deleteLinkedIssueItem")}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {target.totalSchedules === 1 && (
+            <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-red-800">
+              {t("finance.deleteIrreversible")}
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose} disabled={deleteMutation.isPending}>{t("finance.cancel")}</Button>
+          <Button
+            variant="destructive"
+            onClick={() => deleteMutation.mutate({
+              scheduleId: target.schedule.id,
+              invoiceId: target.invoice.id,
+              totalSchedules: target.totalSchedules,
+            })}
+            disabled={deleteMutation.isPending || (target.totalSchedules === 1 && loadingReceipts)}
+            data-testid="button-confirm-delete-schedule-row"
+          >
+            {deleteMutation.isPending ? t("finance.deleting") : t("finance.confirmDelete")}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Invoices() {
   const [location, navigate] = useLocation();
   const routeParams = useParams<{ id?: string }>();
@@ -1581,6 +1653,11 @@ export default function Invoices() {
   };
   const [splitDialog, setSplitDialog]   = useState<{ scheduleId: string; label: string; amount: number; invoiceId: string } | null>(null);
   const [deleteInvoiceTarget, setDeleteInvoiceTarget] = useState<InvoiceRow | null>(null);
+  const [deleteScheduleTarget, setDeleteScheduleTarget] = useState<{
+    schedule: ScheduleItem;
+    invoice: InvoiceRow;
+    totalSchedules: number;
+  } | null>(null);
   const [printPreviewInvoice, setPrintPreviewInvoice] = useState<InvoiceRow | null>(null);
   const [printPreviewSchedule, setPrintPreviewSchedule] = useState<{ schedule: ScheduleItem; invoice: InvoiceRow } | null>(null);
   const [adjustmentTarget, setAdjustmentTarget] = useState<{ schedule: ScheduleItem; invoiceId: string } | null>(null);
@@ -1860,6 +1937,35 @@ export default function Invoices() {
       toast({
         title: t("finance.deleteInvoiceError"),
          description: err?.message ?? t("finance.deleteInvoiceErrorRetry"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteScheduleRowMutation = useMutation({
+    mutationFn: ({ scheduleId, invoiceId, totalSchedules }: {
+      scheduleId: string;
+      invoiceId: string;
+      totalSchedules: number;
+    }) => apiRequest(
+      "DELETE",
+      totalSchedules === 1
+        ? `/api/finance/invoices/${invoiceId}`
+        : `/api/finance/invoice-schedules/${scheduleId}`,
+    ),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
+      setDeleteScheduleTarget(null);
+      toast({
+        title: vars.totalSchedules === 1
+          ? t("finance.deleteInvoiceSuccess")
+          : t("finance.deleteScheduleSuccess"),
+      });
+    },
+    onError: (err: any) => {
+      toast({
+        title: t("finance.deleteError"),
+        description: err?.message ?? t("finance.deleteInvoiceErrorRetry"),
         variant: "destructive",
       });
     },
@@ -2675,6 +2781,13 @@ export default function Invoices() {
                 const isScheduleRow = !!inv.isScheduleRow;
                 const schedule = getScheduleForRow(inv);
                 const parentInvoice = inv.parentInvoice ?? inv;
+                const parentSchedules = parentInvoice.paymentSchedule ?? [];
+                const unpaidScheduleCount = parentSchedules.filter(item => item.status === "unpaid").length;
+                const canDeleteSchedule = !!schedule && invPerm.canDelete && schedule.status === "unpaid" && (
+                  parentSchedules.length === 1
+                    ? parentInvoice.status === "unpaid"
+                    : unpaidScheduleCount >= 2
+                );
                 const isSelected = isScheduleRow
                   ? !!inv.scheduleId && selectedScheduleIdSet.has(inv.scheduleId)
                   : selectedIds.has(inv.id);
@@ -2806,6 +2919,23 @@ export default function Invoices() {
                                 >
                                   <Download className="h-3.5 w-3.5 text-emerald-600" />
                                    {t("finance.downloadInvoicePdf")}
+                                </ActionMenuItem>
+                              </>
+                            )}
+                            {canDeleteSchedule && schedule && (
+                              <>
+                                <ActionMenuSeparator />
+                                <ActionMenuItem
+                                  className="gap-2 cursor-pointer text-destructive focus:text-destructive"
+                                  data-testid={`menuitem-delete-schedule-${schedule.id}`}
+                                  onClick={() => setDeleteScheduleTarget({
+                                    schedule,
+                                    invoice: parentInvoice,
+                                    totalSchedules: parentSchedules.length,
+                                  })}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  {t("finance.delete")}
                                 </ActionMenuItem>
                               </>
                             )}
@@ -3202,6 +3332,14 @@ export default function Invoices() {
           target={deleteInvoiceTarget}
           onClose={() => setDeleteInvoiceTarget(null)}
           deleteMutation={deleteInvoiceMutation}
+        />
+      )}
+
+      {deleteScheduleTarget && (
+        <DeleteScheduleRowDialog
+          target={deleteScheduleTarget}
+          onClose={() => setDeleteScheduleTarget(null)}
+          deleteMutation={deleteScheduleRowMutation}
         />
       )}
 

@@ -3,8 +3,8 @@ name: Multi-installment parent and child invoice model
 description: The parent record groups child invoices; each child is the financial record.
 ---
 
-Với hóa đơn nhiều đợt, hóa đơn cha chỉ là bản ghi nhóm/liên kết ngầm. Các hóa đơn con mới là chứng từ tài chính thực tế: mỗi hóa đơn con tự tham gia thanh toán và là nguồn chuẩn cho số tiền, trạng thái và thao tác nghiệp vụ của chính nó. Không dùng trạng thái/tổng tiền của cha để quyết định thanh toán hay xóa hóa đơn con; không tự dồn tiền giữa các hóa đơn con hoặc xóa cha khi xóa con nếu chưa có quy tắc riêng được người dùng xác nhận.
+Với hóa đơn nhiều đợt, hóa đơn cha chỉ là bản ghi nhóm/liên kết ngầm, không hiển thị trong danh sách; các dòng con là mục người dùng thao tác và tham gia thanh toán. Quy tắc xóa đã được người dùng xác nhận: chỉ xóa dòng chưa thanh toán; nếu nhóm còn nhiều đợt thì phải có một đợt chưa thanh toán khác nhận tiền và dồn toàn bộ số tiền vào đợt chưa thanh toán cuối cùng. Khi chỉ còn một đợt, xóa đợt sẽ xóa hóa đơn cha ẩn cùng đợt đó, chỉ khi cả hai ở trạng thái chưa thanh toán.
 
-**Why:** Người dùng làm rõ rằng hóa đơn cha chỉ giữ liên kết nhóm; hóa đơn con mới tham gia thanh toán. Cách hiểu cũ coi các dòng con là phần phân bổ của hóa đơn cha dẫn đến suy luận sai về điều kiện xóa.
+**Why:** Người dùng xác nhận nghiệp vụ xóa phải thao tác từ từng dòng con theo các điều kiện này; cha không phải mục thanh toán hiển thị, nhưng vẫn là bản ghi nhóm bị xóa khi xóa đợt cuối.
 
-**How to apply:** Khi đọc hoặc sửa phân hệ này, lần theo ID của hóa đơn con trong CRUD, thanh toán, quyền, lọc, đối soát và xóa. Cha chỉ dùng để nhóm/liên kết hoặc hiển thị thông tin tổng hợp; không để thao tác trên cha ghi đè dữ liệu tài chính của con. Xác minh với người dùng trước mọi thao tác dây chuyền giữa các hóa đơn con.
+**How to apply:** Hiển thị thao tác xóa trên từng dòng con khi quyền và điều kiện trạng thái/đợt nhận tiền cho phép; dùng ID đợt cho nhóm nhiều đợt và luồng xóa hóa đơn hiện có cho đợt cuối. Không đưa thao tác xóa chỉ lên dòng cha ẩn.
