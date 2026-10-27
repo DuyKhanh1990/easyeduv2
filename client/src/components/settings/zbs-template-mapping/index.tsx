@@ -44,6 +44,11 @@ type ZaloOaConfig = {
   hasToken: boolean;
   isTokenExpired: boolean;
   isConnected: boolean;
+  templateProvisioning?: {
+    status: string;
+    templateId?: string;
+    message?: string;
+  } | null;
 };
 
 type NotificationType = {
@@ -135,6 +140,20 @@ function statusLabel(status: string | number) {
   if (normalized === "3" || normalized === "rejected" || normalized === "inactive") return "Không hoạt động";
   if (normalized === "4" || normalized === "deleted") return "Đã gỡ";
   return String(status || "Không rõ");
+}
+
+function provisioningStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    PENDING_CONFIGURATION: "Chờ cấu hình logo/ngân hàng",
+    CREATING: "Đang tạo trên Zalo",
+    PENDING_REVIEW: "Đang chờ Zalo duyệt",
+    ENABLE: "Đã được duyệt",
+    REJECT: "Bị Zalo từ chối",
+    DISABLE: "Đã tắt trên Zalo",
+    FAILED: "Tạo mẫu thất bại",
+    UNKNOWN: "Cần kiểm tra trạng thái trên Zalo",
+  };
+  return labels[status] ?? status;
 }
 
 function dateLabel(value?: string | null) {
@@ -403,6 +422,13 @@ export function ZbsTemplateMapping({ locations }: { locations: ZbsAuthorizedLoca
               <span>OA ID <code className="font-mono text-[#354d43]">{selectedOa.oaId}</code></span>
               <span>Ngày kết nối: {dateLabel(selectedOa.connectedAt)}</span>
               <span>Hết hạn token: {dateLabel(selectedOa.tokenExpiredAt)}</span>
+              {selectedOa.templateProvisioning && (
+                <span className="basis-full text-[#354d43]">
+                  Mẫu Test ZBS: {provisioningStatusLabel(selectedOa.templateProvisioning.status)}
+                  {selectedOa.templateProvisioning.templateId ? ` · ID ${selectedOa.templateProvisioning.templateId}` : ""}
+                  {selectedOa.templateProvisioning.message ? ` · ${selectedOa.templateProvisioning.message}` : ""}
+                </span>
+              )}
             </div>
           )}
         </CardContent>

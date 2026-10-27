@@ -229,7 +229,9 @@ async function provisionTuitionTestTemplate(input: {
     if (existing) {
       await saveZbsProvisioningState(input.configId, {
         oaId: input.oaId, locationId: input.locationId,
-        status: existing.status as ZbsProvisioningState["status"],
+        status: ["PENDING_REVIEW", "ENABLE", "REJECT", "DISABLE"].includes(existing.status)
+          ? existing.status as ZbsProvisioningState["status"]
+          : "UNKNOWN",
         templateId: existing.templateId, templateName: existing.templateName,
         message: "Đã tìm thấy mẫu Test trên OA; không tạo trùng.",
         updatedAt: new Date().toISOString(),
@@ -398,6 +400,7 @@ async function handleZaloOAuthCallback(req: Request, res: Response): Promise<voi
     const existing = await db.select().from(zaloOaConfigs)
       .where(eq(zaloOaConfigs.locationId, locationId)).limit(1);
 
+    let configId = existing[0]?.id;
     if (existing.length > 0) {
       await db.update(zaloOaConfigs).set({
         accessTokenEncrypted,
@@ -411,7 +414,7 @@ async function handleZaloOAuthCallback(req: Request, res: Response): Promise<voi
         updatedAt: new Date(),
       }).where(eq(zaloOaConfigs.locationId, locationId));
     } else {
-      await db.insert(zaloOaConfigs).values({
+      const [created] = await db.insert(zaloOaConfigs).values({
         locationId,
         accessTokenEncrypted,
         refreshTokenEncrypted,
@@ -421,11 +424,20 @@ async function handleZaloOAuthCallback(req: Request, res: Response): Promise<voi
         refreshState: "ready",
         oaId,
         oaName,
-      });
+      }).returning({ id: zaloOaConfigs.id });
+      configId = created?.id;
     }
 
     const webhookUrl = getWebhookUrl(req);
     await registerWebhookWithZalo(tokenData.access_token, webhookUrl);
+    if (configId) {
+      await provisionTuitionTestTemplate({
+        configId,
+        locationId,
+        oaId,
+        accessToken: tokenData.access_token,
+      });
+    }
 
     res.redirect(centerRedirect(`${returnPath}?zalo_success=1`));
   } catch (err: any) {
@@ -446,7 +458,12 @@ export function registerZaloOARoutes(app: Express) {
         ? await db.select().from(zaloOaConfigs).where(eq(zaloOaConfigs.locationId, locationId as string))
         : await db.select().from(zaloOaConfigs);
 
-      const result = rows.map((row) => ({
+      const result = await Promise.all(rows.map(async (row) => {
+        const [provisioning] = await db.select({ value: systemSettings.value })
+          .from(systemSettings)
+          .where(eq(systemSettings.key, `zbsTemplateProvisioning:${row.id}`))
+          .limit(1);
+        return {
         id: row.id,
         locationId: row.locationId,
         oaId: row.oaId,
@@ -456,6 +473,8 @@ export function registerZaloOARoutes(app: Express) {
         hasToken: Boolean(row.accessTokenEncrypted),
         isTokenExpired: row.tokenExpiredAt ? new Date(row.tokenExpiredAt) < new Date() : true,
         isConnected: row.isConnected,
+        templateProvisioning: provisioning ? JSON.parse(provisioning.value) : null,
+      };
       }));
       return res.json(result);
     } catch (err: any) {
@@ -528,6 +547,7 @@ export function registerZaloOARoutes(app: Express) {
       const existing = await db.select().from(zaloOaConfigs)
         .where(eq(zaloOaConfigs.locationId, locationId)).limit(1);
 
+      let configId = existing[0]?.id;
       if (existing.length > 0) {
         await db.update(zaloOaConfigs).set({
           accessTokenEncrypted,
@@ -541,7 +561,7 @@ export function registerZaloOARoutes(app: Express) {
           updatedAt: new Date(),
         }).where(eq(zaloOaConfigs.locationId, locationId));
       } else {
-        await db.insert(zaloOaConfigs).values({
+        const [created] = await db.insert(zaloOaConfigs).values({
           locationId,
           accessTokenEncrypted,
           refreshTokenEncrypted,
@@ -551,11 +571,20 @@ export function registerZaloOARoutes(app: Express) {
           connectedAt: new Date(),
           isConnected: true,
           refreshState: "ready",
-        });
+        }).returning({ id: zaloOaConfigs.id });
+        configId = created?.id;
       }
 
       const webhookUrl = getWebhookUrl();
       if (webhookUrl) await registerWebhookWithZalo(accessToken, webhookUrl);
+      if (configId) {
+        await provisionTuitionTestTemplate({
+          configId,
+          locationId,
+          oaId: oaId || existing[0]?.oaId || null,
+          accessToken,
+        });
+      }
 
       return res.json({ ok: true });
     } catch (err: any) {

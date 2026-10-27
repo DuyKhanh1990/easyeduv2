@@ -67,7 +67,7 @@ async function uploadTemplateLogo(
   } catch {
     throw new Error("Đường dẫn logo dùng chung không hợp lệ.");
   }
-  const allowedHost = process.env.S3_HOSTNAME?.trim().toLowerCase();
+  const allowedHost = (process.env.S3_HOSTNAME || process.env.S3_ALIAS_HOST || "").trim().toLowerCase();
   const hostname = parsed.hostname.toLowerCase();
   if (
     parsed.protocol !== "https:"
@@ -164,7 +164,7 @@ function toCreatePayload(
   return {
     template_name: templateRecord.name,
     template_type: 3,
-    tag: "1",
+    tag: 1,
     layout: {
       header: {
         components: [{
