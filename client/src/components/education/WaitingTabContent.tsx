@@ -338,7 +338,7 @@ export function WaitingTabContent({
                         <Label className="text-sm font-medium">Cơ sở <span className="text-destructive">*</span></Label>
                         <Select value={quickForm.locationId} onValueChange={v => setQF("locationId", v)}>
                           <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Chọn cơ sở..." /></SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className="z-[220]">
                             {(locations ?? []).map((l: any) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
                           </SelectContent>
                         </Select>
@@ -347,7 +347,7 @@ export function WaitingTabContent({
                         <Label className="text-sm font-medium">Phân loại</Label>
                         <Select value={quickForm.type} onValueChange={v => setQF("type", v as any)}>
                           <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className="z-[220]">
                             <SelectItem value="Học viên">Học viên</SelectItem>
                             <SelectItem value="Phụ huynh">Phụ huynh</SelectItem>
                           </SelectContent>

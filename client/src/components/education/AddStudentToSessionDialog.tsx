@@ -243,7 +243,7 @@ export function AddStudentToSessionDialog({
                   <Label className="text-sm font-medium">{t("mySpace.calendar.branch")} <span className="text-destructive">*</span></Label>
                   <Select value={qForm.locationId} onValueChange={v => setQF("locationId", v)}>
                     <SelectTrigger className="h-9 text-sm"><SelectValue placeholder={t("mySpace.calendar.selectBranch")} /></SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="z-[220]">
                       {(locationsList as any[]).map((l: any) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
@@ -252,7 +252,7 @@ export function AddStudentToSessionDialog({
                   <Label className="text-sm font-medium">{t("mySpace.calendar.category")}</Label>
                   <Select value={qForm.type} onValueChange={v => setQF("type", v)}>
                     <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="z-[220]">
                       <SelectItem value="Học viên">{t("mySpace.calendar.student")}</SelectItem>
                       <SelectItem value="Phụ huynh">{t("mySpace.calendar.parent")}</SelectItem>
                     </SelectContent>
