@@ -2823,7 +2823,8 @@ export type ZbsLibraryComponent =
   | ZbsLibraryTextComponent
   | ZbsLibraryImageComponent
   | ZbsLibraryButtonComponent
-  | ZbsLibraryQrComponent;
+  | ZbsLibraryQrComponent
+  | { type: "logoPair"; logoLightUrl: string | null; logoDarkUrl: string | null };
 export type ZbsLibraryVariable = {
   key: string;
   example: string;
