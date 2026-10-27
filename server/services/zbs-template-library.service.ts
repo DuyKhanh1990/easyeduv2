@@ -34,11 +34,6 @@ export const zbsLibraryComponentSchema = z.discriminatedUnion("type", [
     caption: z.string().max(255).optional(),
     compatibilityStatus: z.literal("unverified").default("unverified"),
   }),
-  z.object({
-    type: z.literal("logoPair"),
-    logoLightUrl: z.string().url().max(2000).nullable(),
-    logoDarkUrl: z.string().url().max(2000).nullable(),
-  }),
 ]);
 
 export const zbsLibraryInputSchema = z.object({

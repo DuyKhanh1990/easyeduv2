@@ -47,7 +47,6 @@ import { ZBS_TEMPLATE_SYSTEM_VARIABLES } from "@shared/zbs-template-system-varia
 import { QRCodeSVG } from "qrcode.react";
 import { ZbsTextBlockEditor } from "./ZbsTextBlockEditor";
 import { ApprovedZbsTemplateCard, type ApprovedZbsTemplateSource } from "./ApprovedZbsTemplateCard";
-import { ZbsLogoCropField } from "./ZbsLogoCropField";
 import { richTextPreviewHtml } from "./zbs-rich-text";
 import "./zbs-template-library.css";
 
@@ -64,7 +63,6 @@ type ImageBlock = {
 type ButtonBlock = { type: "button"; label: string; url: string; compatibilityStatus: "unverified" };
 type QrBlock = { type: "qr"; value: string; caption?: string; compatibilityStatus: "unverified" };
 type LibraryComponent = TextBlock | ImageBlock | ButtonBlock | QrBlock;
-type LogoPairBlock = { type: "logoPair"; logoLightUrl: string | null; logoDarkUrl: string | null };
 type Variable = {
   key: string;
   example: string;
@@ -78,7 +76,7 @@ type TemplateRecord = {
   name: string;
   notificationType: string;
   title: string;
-  components: (LibraryComponent | LogoPairBlock)[];
+  components: LibraryComponent[];
   variables: Variable[];
   version: number;
   status: "draft" | "archived";
@@ -86,11 +84,7 @@ type TemplateRecord = {
   createdAt: string;
   updatedAt: string;
 };
-type TemplateInput = Omit<Pick<TemplateRecord, "code" | "name" | "notificationType" | "title" | "components" | "variables">, "components"> & {
-  logoLightUrl?: string | null;
-  logoDarkUrl?: string | null;
-  components: LibraryComponent[];
-};
+type TemplateInput = Pick<TemplateRecord, "code" | "name" | "notificationType" | "title" | "components" | "variables">;
 
 const endpoint = "/api/settings/zbs-template-library";
 const emptyForm = (): TemplateInput => ({
@@ -98,8 +92,6 @@ const emptyForm = (): TemplateInput => ({
   name: "",
   notificationType: "",
   title: "",
-  logoLightUrl: null,
-  logoDarkUrl: null,
   components: [],
   variables: [],
 });
@@ -245,7 +237,6 @@ function dateLabel(value: string) {
 }
 
 function asInput(record: TemplateRecord): TemplateInput {
-  const logoPair = record.components.find((component): component is LogoPairBlock => component.type === "logoPair");
   const savedVariables = record.variables ?? [];
   const variables = record.code === "PAYMENT_QR_NOTICE"
     ? [
@@ -258,27 +249,13 @@ function asInput(record: TemplateRecord): TemplateInput {
     name: record.name,
     notificationType: record.notificationType,
     title: normalizeTemplateVariableSyntax(record.title ?? ""),
-    logoLightUrl: logoPair?.logoLightUrl ?? null,
-    logoDarkUrl: logoPair?.logoDarkUrl ?? null,
-    components: (record.components ?? []).filter((component): component is LibraryComponent => component.type !== "logoPair").map((component) => {
+    components: (record.components ?? []).map((component) => {
       if (component.type === "text") return { ...component, text: normalizeTemplateVariableSyntax(component.text) };
       if (component.type === "qr") return { ...component, value: normalizeTemplateVariableSyntax(component.value) };
       return component;
     }),
     variables,
   };
-}
-
-function toStoredInput(input: TemplateInput) {
-  const components: (LibraryComponent | LogoPairBlock)[] = [...input.components];
-  if (input.logoLightUrl || input.logoDarkUrl) {
-    components.push({
-      type: "logoPair",
-      logoLightUrl: input.logoLightUrl ?? null,
-      logoDarkUrl: input.logoDarkUrl ?? null,
-    });
-  }
-  return { ...input, components };
 }
 
 function substitute(text: string, variables: Variable[]) {
@@ -366,8 +343,8 @@ export function ZbsTemplateLibrary() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (selectedId) return sendJson<TemplateRecord>("PUT", `${endpoint}/${encodeURIComponent(selectedId)}`, toStoredInput(form));
-      return sendJson<TemplateRecord>("POST", endpoint, toStoredInput(form));
+      if (selectedId) return sendJson<TemplateRecord>("PUT", `${endpoint}/${encodeURIComponent(selectedId)}`, form);
+      return sendJson<TemplateRecord>("POST", endpoint, form);
     },
     onSuccess: async (record) => {
       setSelectedId(record.id);
@@ -644,31 +621,6 @@ export function ZbsTemplateLibrary() {
                         <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="zl-type">Loại thông báo nội bộ <span className="text-[#a86c4b]">*</span></Label><Input id="zl-type" value={form.notificationType} disabled={isArchived} onChange={(event) => updateField("notificationType", event.target.value)} placeholder="Mã loại thông báo nội bộ" className="border-[#d4ded7] bg-[#fffefa]" /><p className="text-[10px] text-[#89938d]">Đây là định danh nội bộ, không phải lựa chọn hay liên kết tới mẫu Zalo.</p></div>
                         <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="zl-title">Tiêu đề</Label><Input id="zl-title" value={form.title} disabled={isArchived} onChange={(event) => updateField("title", event.target.value)} placeholder="Tiêu đề hiển thị trong bản xem trước" className="border-[#d4ded7] bg-[#fffefa]" /></div>
                       </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="border-[#d9e2dd] shadow-[0_2px_12px_rgba(30,58,47,0.035)]">
-                    <CardHeader className="border-b border-[#e8eeeb] px-4 py-3.5 sm:px-5">
-                      <CardTitle className="text-sm text-[#263e36]">Logo mẫu ZBS</CardTitle>
-                      <p className="mt-1 text-xs leading-5 text-[#78877f]">
-                        Tải logo giao diện sáng và tối. Có thể căn chỉnh, phóng to/thu nhỏ và cắt trong khung 400 × 96 px; ảnh được lưu thành PNG.
-                      </p>
-                    </CardHeader>
-                    <CardContent className="grid gap-6 px-4 py-4 md:grid-cols-2 sm:px-5">
-                      <ZbsLogoCropField
-                        label="Logo giao diện sáng"
-                        theme="light"
-                        value={form.logoLightUrl}
-                        disabled={isArchived || !canWrite}
-                        onChange={(url) => updateField("logoLightUrl", url)}
-                      />
-                      <ZbsLogoCropField
-                        label="Logo giao diện tối"
-                        theme="dark"
-                        value={form.logoDarkUrl}
-                        disabled={isArchived || !canWrite}
-                        onChange={(url) => updateField("logoDarkUrl", url)}
-                      />
                     </CardContent>
                   </Card>
 

@@ -130,25 +130,6 @@ describe("ZBS internal template library", () => {
     expect(parsed.components[1]).toMatchObject({ type: "qr", value: "payment-payload", compatibilityStatus: "unverified" });
   });
 
-  it("stores paired light and dark ZBS logos as internal template metadata", () => {
-    const draft = prepareZbsLibraryDraft({
-      ...validInput,
-      components: [
-        ...validInput.components,
-        {
-          type: "logoPair",
-          logoLightUrl: "https://assets.example.test/logo-light.png",
-          logoDarkUrl: "https://assets.example.test/logo-dark.png",
-        },
-      ],
-    });
-    expect(draft.components.at(-1)).toEqual({
-      type: "logoPair",
-      logoLightUrl: "https://assets.example.test/logo-light.png",
-      logoDarkUrl: "https://assets.example.test/logo-dark.png",
-    });
-  });
-
   it("keeps blue-card styling optional on editable text blocks", () => {
     const parsed = zbsLibraryInputSchema.parse({
       ...validInput,

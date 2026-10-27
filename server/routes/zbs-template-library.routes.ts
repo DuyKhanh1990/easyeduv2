@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { centerConfig, zbsTemplateLibrary } from "@shared/schema";
+import { centerConfig, systemSettings, zbsTemplateLibrary } from "@shared/schema";
 import { z } from "zod";
 import approvedTuitionNotice from "../../shared/zbs-approved-templates/tuition-notice-651693.json";
 import { db } from "../storage/base";
@@ -15,6 +15,10 @@ import {
 
 const RESOURCE = "/settings#providers";
 const idSchema = z.string().uuid();
+const sharedLogosSchema = z.object({
+  logoLightUrl: z.string().url().max(2000).nullable(),
+  logoDarkUrl: z.string().url().max(2000).nullable(),
+});
 
 function privileged(req: Request) {
   return req.isSuperAdmin === true || (req.user as any)?.username === "admin";
@@ -74,6 +78,36 @@ function reportError(res: Response, error: unknown) {
 }
 
 export function registerZbsTemplateLibraryRoutes(app: Express) {
+  app.get("/api/settings/zbs-logo-settings", async (req, res) => {
+    try {
+      if (!(await permission(req, res, "read"))) return;
+      const centerId = await currentCenterId();
+      const key = `zbsSharedLogos:${centerId}`;
+      const [row] = await db.select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, key))
+        .limit(1);
+      const logos = row ? sharedLogosSchema.parse(JSON.parse(row.value)) : { logoLightUrl: null, logoDarkUrl: null };
+      return res.json(logos);
+    } catch (error) { return reportError(res, error); }
+  });
+
+  app.put("/api/settings/zbs-logo-settings", async (req, res) => {
+    try {
+      if (!(await permission(req, res, "write"))) return;
+      const logos = sharedLogosSchema.parse(req.body);
+      const centerId = await currentCenterId();
+      const key = `zbsSharedLogos:${centerId}`;
+      await db.insert(systemSettings)
+        .values({ key, value: JSON.stringify(logos) })
+        .onConflictDoUpdate({
+          target: systemSettings.key,
+          set: { value: JSON.stringify(logos), updatedAt: new Date() },
+        });
+      return res.json(logos);
+    } catch (error) { return reportError(res, error); }
+  });
+
   app.get("/api/settings/zbs-template-library/approved-sources", async (req, res) => {
     try {
       if (!(await permission(req, res, "read"))) return;
