@@ -64,6 +64,37 @@ describe("legacy invoice-print financial variables", () => {
   });
 });
 
+describe("invoice note print variables", () => {
+  const baseInvoice = {
+    id: "invoice-1",
+    type: "Thu",
+    grandTotal: "48000",
+    paidAmount: "48000",
+    createdAt: "2026-10-24T00:00:00.000Z",
+  };
+
+  it("uses the generated invoice description when note is empty", () => {
+    const html = renderTemplate("{{ghi_chu}}|{{noi_dung}}", {
+      ...baseInvoice,
+      description: "Hóa đơn Phiếu xuất kho số 55 bao gồm: IELTS 4.0 SL:1",
+    });
+
+    expect(html).toBe(
+      "Hóa đơn Phiếu xuất kho số 55 bao gồm: IELTS 4.0 SL:1|Hóa đơn Phiếu xuất kho số 55 bao gồm: IELTS 4.0 SL:1",
+    );
+  });
+
+  it("prefers the edited invoice note when both fields exist", () => {
+    const html = renderTemplate("{{ghi_chu}}", {
+      ...baseInvoice,
+      note: "Nội dung đã sửa",
+      description: "Nội dung tự sinh cũ",
+    });
+
+    expect(html).toBe("Nội dung đã sửa");
+  });
+});
+
 describe("{{lich_su_thanh_toan}}", () => {
   it("renders confirmed installments as paid with their actual payment date", () => {
     const html = renderHistoryHtml([

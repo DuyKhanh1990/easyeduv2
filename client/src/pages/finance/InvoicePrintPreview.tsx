@@ -549,8 +549,10 @@ export function renderTemplate(
     lop: invoice.className ?? invoice.class ?? invoice.class_name ?? "",
     // Keep both keys: ghi_chu is the user-facing code, while noi_dung
     // preserves compatibility with existing saved templates.
-    ghi_chu: invoice.note ?? "",
-    noi_dung: invoice.note ?? "",
+    // Store-issued invoices keep their generated note in description; match
+    // CreateInvoiceDialog's fallback so the print template shows that text.
+    ghi_chu: invoice.note ?? invoice.description ?? "",
+    noi_dung: invoice.note ?? invoice.description ?? "",
     khoan_thu: khoanThu,
     thu_ky_nay: paid,
     phuong_thuc: paymentMethodLabel(invoice.paymentMethod),
