@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildTuitionNoticeTestTemplate } from "../server/services/zbs-template-test.service";
-import { createZbsTuitionTemplate } from "../server/services/zbs-template-provisioning.service";
+import {
+  createZbsTuitionTemplate,
+  ZbsProvisioningApiError,
+} from "../server/services/zbs-template-provisioning.service";
 
 describe("ZBS test-template provisioning", () => {
   afterEach(() => {
@@ -85,5 +88,42 @@ describe("ZBS test-template provisioning", () => {
       fetcher,
     })).rejects.toThrow(/kho lưu trữ ảnh/);
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("preserves Zalo's original template-create error details", async () => {
+    vi.stubEnv("S3_HOSTNAME", "assets.example.test");
+    const image = new Uint8Array(24);
+    image.set([137, 80, 78, 71, 13, 10, 26, 10], 0);
+    new DataView(image.buffer).setUint32(16, 400);
+    new DataView(image.buffer).setUint32(20, 96);
+    let uploadCount = 0;
+    const fetcher = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.startsWith("https://assets.example.test/")) return new Response(image);
+      if (url.endsWith("/upload/image")) {
+        uploadCount += 1;
+        return Response.json({ error: 0, data: { media_id: `media-${uploadCount}` } });
+      }
+      return Response.json({ error: -120, message: "OA does not have permission to use this feature" });
+    });
+    const logos = {
+      logoLightUrl: "https://assets.example.test/light.png",
+      logoDarkUrl: "https://assets.example.test/dark.png",
+    };
+
+    await expect(createZbsTuitionTemplate({
+      accessToken: "mock-token",
+      testTemplate: buildTuitionNoticeTestTemplate(logos),
+      logos,
+      payment: { bankCode: "970436", bankName: "VCB", accountName: "CENTER", accountNumber: "123" },
+      trackingId: "test",
+      fetcher,
+    })).rejects.toMatchObject<Partial<ZbsProvisioningApiError>>({
+      operation: "create-template",
+      endpoint: "https://business.openapi.zalo.me/template/create",
+      providerCode: -120,
+      providerHttpStatus: 200,
+      providerMessage: "OA does not have permission to use this feature",
+    });
   });
 });

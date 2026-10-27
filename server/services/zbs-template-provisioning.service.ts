@@ -6,6 +6,20 @@ const VIETQR_BANKS_URL = "https://api.vietqr.io/v2/banks";
 const MAX_LOGO_BYTES = 500 * 1024;
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 
+export class ZbsProvisioningApiError extends Error {
+  constructor(
+    message: string,
+    public readonly operation: string,
+    public readonly endpoint: string,
+    public readonly providerCode?: string | number,
+    public readonly providerHttpStatus?: number,
+    public readonly providerMessage?: string,
+  ) {
+    super(message);
+    this.name = "ZbsProvisioningApiError";
+  }
+}
+
 type TestTemplate = ReturnType<typeof buildTuitionNoticeTestTemplate>;
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -94,15 +108,29 @@ async function uploadTemplateLogo(
 
   const form = new FormData();
   form.append("file", new Blob([bytes], { type: "image/png" }), "zbs-logo.png");
-  const uploadResponse = await fetcher(ZBS_IMAGE_UPLOAD_URL, {
-    method: "POST",
-    headers: { access_token: accessToken },
-    body: form,
-  });
+  let uploadResponse: Response;
+  try {
+    uploadResponse = await fetcher(ZBS_IMAGE_UPLOAD_URL, {
+      method: "POST",
+      headers: { access_token: accessToken },
+      body: form,
+    });
+  } catch (error) {
+    const providerMessage = error instanceof Error ? error.message : String(error);
+    throw new ZbsProvisioningApiError(
+      "Không kết nối được API tải logo của Zalo.", "upload-logo",
+      ZBS_IMAGE_UPLOAD_URL, undefined, undefined, providerMessage,
+    );
+  }
   const result = await uploadResponse.json().catch(() => null) as any;
   const mediaId = String(result?.data?.media_id ?? "");
   if (!uploadResponse.ok || Number(result?.error ?? -1) !== 0 || !mediaId) {
-    throw new Error(`Zalo không nhận được logo (mã lỗi ${result?.error ?? uploadResponse.status}).`);
+    const providerMessage = String(result?.message ?? "Phản hồi không hợp lệ hoặc thiếu media_id.");
+    throw new ZbsProvisioningApiError(
+      `Zalo không nhận được logo (mã lỗi ${result?.error ?? uploadResponse.status}): ${providerMessage}`,
+      "upload-logo", ZBS_IMAGE_UPLOAD_URL, result?.error ?? result?.code,
+      uploadResponse.status, providerMessage,
+    );
   }
   return mediaId;
 }
@@ -202,18 +230,32 @@ export async function createZbsTuitionTemplate(input: {
     { light: lightMediaId, dark: darkMediaId },
     input.trackingId,
   );
-  const response = await fetcher(ZBS_TEMPLATE_CREATE_URL, {
-    method: "POST",
-    headers: {
-      access_token: input.accessToken,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
+  let response: Response;
+  try {
+    response = await fetcher(ZBS_TEMPLATE_CREATE_URL, {
+      method: "POST",
+      headers: {
+        access_token: input.accessToken,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    const providerMessage = error instanceof Error ? error.message : String(error);
+    throw new ZbsProvisioningApiError(
+      "Không kết nối được API tạo template của Zalo.", "create-template",
+      ZBS_TEMPLATE_CREATE_URL, undefined, undefined, providerMessage,
+    );
+  }
   const result = await response.json().catch(() => null) as any;
   if (!response.ok || Number(result?.error ?? -1) !== 0 || !result?.data?.template_id) {
-    throw new Error(`Zalo chưa tạo được mẫu Test (mã lỗi ${result?.error ?? response.status}): ${String(result?.message ?? "phản hồi không hợp lệ")}`);
+    const providerMessage = String(result?.message ?? "Phản hồi không hợp lệ hoặc thiếu template_id.");
+    throw new ZbsProvisioningApiError(
+      `Zalo chưa tạo được mẫu Test (mã lỗi ${result?.error ?? response.status}): ${providerMessage}`,
+      "create-template", ZBS_TEMPLATE_CREATE_URL, result?.error ?? result?.code,
+      response.status, providerMessage,
+    );
   }
   return {
     templateId: String(result.data.template_id),

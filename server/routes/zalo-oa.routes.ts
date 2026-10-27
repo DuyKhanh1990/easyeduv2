@@ -116,6 +116,21 @@ function parseLocationBankAccounts(raw: string | null) {
   }
 }
 
+function formatZbsProvisioningError(error: unknown, fallbackOperation: string) {
+  const value = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  return JSON.stringify({
+    operation: typeof value.operation === "string" ? value.operation : fallbackOperation,
+    endpoint: typeof value.endpoint === "string" ? value.endpoint : undefined,
+    providerHttpStatus: typeof value.providerHttpStatus === "number" ? value.providerHttpStatus : undefined,
+    providerCode: typeof value.providerCode === "string" || typeof value.providerCode === "number"
+      ? value.providerCode
+      : undefined,
+    providerMessage: typeof value.providerMessage === "string" ? value.providerMessage : undefined,
+    errorCode: typeof value.code === "string" ? value.code : undefined,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
 async function getFixedPaymentDetails(locationId: string): Promise<ZbsFixedPaymentDetails | null> {
   const [location] = await db.select({
     bankName: locations.bankName,
@@ -268,7 +283,10 @@ async function provisionTuitionTestTemplate(input: {
         message,
         updatedAt: new Date().toISOString(),
       });
-      console.error(`[ZaloOA] ZBS tuition template provisioning ${uncertain ? "unknown" : "failed"} for OA config ${input.configId}: ${message}`);
+      console.error(
+        `[ZaloOA] ZBS tuition template provisioning ${uncertain ? "unknown" : "failed"} for OA config ${input.configId}:`,
+        formatZbsProvisioningError(error, "create-template"),
+      );
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Không thể chuẩn bị mẫu ZBS.";
@@ -276,7 +294,10 @@ async function provisionTuitionTestTemplate(input: {
       oaId: input.oaId, locationId: input.locationId, status: "FAILED",
       message, updatedAt: new Date().toISOString(),
     }).catch(() => {});
-    console.error(`[ZaloOA] ZBS tuition template provisioning failed for OA config ${input.configId}: ${message}`);
+    console.error(
+      `[ZaloOA] ZBS tuition template provisioning failed for OA config ${input.configId}:`,
+      formatZbsProvisioningError(error, "prepare-or-list-templates"),
+    );
   } finally {
     provisioningInFlight.delete(input.configId);
   }

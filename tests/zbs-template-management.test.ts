@@ -244,7 +244,7 @@ describe("ZBS template management", () => {
     });
 
     for (const testCase of [
-      { response: new Response(JSON.stringify({ error: -124, message: "Invalid access token" }), { status: 200 }), code: "ZBS_TOKEN_INVALID", status: 424 },
+      { response: new Response(JSON.stringify({ error: -124, message: "Invalid access token" }), { status: 200 }), code: "ZBS_TOKEN_INVALID", status: 424, providerCode: -124 },
       { response: new Response(JSON.stringify({ message: "Invalid access token" }), { status: 401 }), code: "ZBS_TOKEN_INVALID", status: 424 },
       { response: new Response(JSON.stringify({ message: "Permission denied" }), { status: 403 }), code: "ZBS_TOKEN_INVALID", status: 424 },
       { response: new Response(JSON.stringify({ message: "Server unavailable" }), { status: 503 }), code: "ZBS_API_ERROR", status: 502 },
@@ -263,6 +263,9 @@ describe("ZBS template management", () => {
       }, { offset: 0, limit: 10 })).rejects.toMatchObject({
         code: testCase.code,
         status: testCase.status,
+        ...(testCase.providerCode !== undefined ? { providerCode: testCase.providerCode } : {}),
+        ...(testCase.providerCode !== undefined ? { providerHttpStatus: 200 } : {}),
+        ...(testCase.providerCode !== undefined ? { endpoint: "https://business.openapi.zalo.me/template/all" } : {}),
       });
     }
   });

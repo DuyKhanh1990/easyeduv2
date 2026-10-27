@@ -60,6 +60,9 @@ export class ZbsTemplateManagementError extends Error {
     public readonly code: string,
     message: string,
     public readonly providerCode?: string | number,
+    public readonly providerHttpStatus?: number,
+    public readonly endpoint?: string,
+    public readonly providerMessage?: string,
   ) {
     super(message);
     this.name = "ZbsTemplateManagementError";
@@ -85,14 +88,24 @@ export function hasZbsTemplateSettingsPermission(input: {
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 type DecryptToken = (ciphertext: string) => string;
 
-function throwApiError(response: Response, detail: string): never {
+function throwApiError(response: Response, body: any, detail: string): never {
+  const providerCode = body?.error ?? body?.code;
+  const providerMessage = String(body?.message ?? detail);
   if (response.status === 401 || response.status === 403) {
-    throw new ZbsTemplateManagementError(424, "ZBS_TOKEN_INVALID", "Token của OA không hợp lệ hoặc thiếu quyền Quản lý Message Template.");
+    throw new ZbsTemplateManagementError(
+      424, "ZBS_TOKEN_INVALID",
+      `Zalo từ chối quyền đọc danh sách template: ${providerMessage}`,
+      providerCode, response.status, ZBS_TEMPLATE_LIST_URL, providerMessage,
+    );
   }
   throw new ZbsTemplateManagementError(
     502,
     "ZBS_API_ERROR",
     `Zalo không trả được danh sách template (HTTP ${response.status}): ${detail}`,
+    providerCode,
+    response.status,
+    ZBS_TEMPLATE_LIST_URL,
+    providerMessage,
   );
 }
 
@@ -115,24 +128,34 @@ export async function fetchZbsTemplatePage(
         Accept: "application/json",
       },
     });
-  } catch {
-    throw new ZbsTemplateManagementError(502, "ZBS_API_UNAVAILABLE", "Không kết nối được API danh sách template của Zalo.");
+  } catch (error) {
+    const providerMessage = error instanceof Error ? error.message : String(error);
+    throw new ZbsTemplateManagementError(
+      502, "ZBS_API_UNAVAILABLE", "Không kết nối được API danh sách template của Zalo.",
+      undefined, undefined, ZBS_TEMPLATE_LIST_URL, providerMessage,
+    );
   }
 
   let body: any;
   try {
     body = await response.json();
   } catch {
-    throwApiError(response, "phản hồi không phải JSON hợp lệ");
+    throwApiError(response, null, "phản hồi không phải JSON hợp lệ");
   }
 
-  if (!response.ok) throwApiError(response, String(body?.message ?? "lỗi từ API Zalo"));
+  if (!response.ok) throwApiError(response, body, String(body?.message ?? "lỗi từ API Zalo"));
   if (Number(body?.error ?? 0) !== 0) {
     const detail = String(body?.message ?? `mã lỗi ${body?.error}`);
     if (/token|access.?token|unauthori[sz]ed|permission/i.test(detail)) {
-      throw new ZbsTemplateManagementError(424, "ZBS_TOKEN_INVALID", `Token OA không hợp lệ hoặc thiếu quyền: ${detail}`);
+      throw new ZbsTemplateManagementError(
+        424, "ZBS_TOKEN_INVALID", `Zalo từ chối quyền đọc danh sách template: ${detail}`,
+        body?.error, response.status, ZBS_TEMPLATE_LIST_URL, detail,
+      );
     }
-    throw new ZbsTemplateManagementError(502, "ZBS_API_ERROR", `Zalo báo lỗi khi đọc template: ${detail}`);
+    throw new ZbsTemplateManagementError(
+      502, "ZBS_API_ERROR", `Zalo báo lỗi khi đọc template: ${detail}`,
+      body?.error, response.status, ZBS_TEMPLATE_LIST_URL, detail,
+    );
   }
   if (!Array.isArray(body?.data)) {
     throw new ZbsTemplateManagementError(502, "ZBS_INVALID_RESPONSE", "Phản hồi danh sách template của Zalo không đúng định dạng.");
