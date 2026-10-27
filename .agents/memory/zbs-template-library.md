@@ -9,6 +9,8 @@ The user wants a saved system-standard “Thông báo học phí” template to 
 
 The two light/dark ZBS logos are center-shared settings, outside the template editor and outside individual template records. Preserve the existing editor layout; future templates may reference the shared assets, but do not add per-template logo fields or send-time linkage unless requested.
 
+The user clarified that the complete “TEST - THÔNG BÁO HỌC PHÍ” draft belongs inside EasyEdu, as the source for future OA provisioning; creating that internal draft does not mean creating anything on ZBS. Build it from the captured tuition layout and shared logo URLs, and keep external OA calls out of this step.
+
 For payment templates, bank code, account name, and bank account are fixed template content, not send-time parameters. The future per-center creation flow should populate those fixed fields from that center's bank settings when creating its own OA template; each new template is submitted to Zalo review and gets an OA-specific ID. Saving the source template definition in EasyEdu does not alter the already-approved source template.
 
 The intended onboarding behavior is to prepare/create a center's OA templates when it connects its OA, pre-filling payment details from that center's settings. If bank details are missing, leave the EasyEdu setup pending for the center to complete; do not submit empty or dummy PAYMENT values. Current Zalo component docs require bank_code, account_name, and bank_account as fixed non-empty text.

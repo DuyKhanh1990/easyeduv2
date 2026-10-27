@@ -12,6 +12,7 @@ import {
   zbsLibraryInputSchema,
   ZbsLibraryError,
 } from "../services/zbs-template-library.service";
+import { buildTuitionNoticeTestTemplate } from "../services/zbs-template-test.service";
 
 const RESOURCE = "/settings#providers";
 const idSchema = z.string().uuid();
@@ -78,6 +79,40 @@ function reportError(res: Response, error: unknown) {
 }
 
 export function registerZbsTemplateLibraryRoutes(app: Express) {
+  app.get("/api/settings/zbs-template-library/test-template", async (req, res) => {
+    try {
+      if (!(await permission(req, res, "write"))) return;
+      const centerId = await currentCenterId();
+      const sharedLogosKey = `zbsSharedLogos:${centerId}`;
+      const testTemplateKey = `zbsTestTemplate:${centerId}`;
+      const [row] = await db.select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, sharedLogosKey))
+        .limit(1);
+      if (!row) {
+        return res.status(409).json({
+          code: "SHARED_LOGOS_REQUIRED",
+          message: "Hãy lưu đủ hai logo dùng chung trước khi tạo mẫu Test.",
+        });
+      }
+      const logos = sharedLogosSchema.parse(JSON.parse(row.value));
+      if (!logos.logoLightUrl || !logos.logoDarkUrl) {
+        return res.status(409).json({
+          code: "SHARED_LOGOS_REQUIRED",
+          message: "Hãy lưu đủ hai logo dùng chung trước khi tạo mẫu Test.",
+        });
+      }
+      const testTemplate = buildTuitionNoticeTestTemplate(logos);
+      await db.insert(systemSettings)
+        .values({ key: testTemplateKey, value: JSON.stringify(testTemplate) })
+        .onConflictDoUpdate({
+          target: systemSettings.key,
+          set: { value: JSON.stringify(testTemplate), updatedAt: new Date() },
+        });
+      return res.json(testTemplate);
+    } catch (error) { return reportError(res, error); }
+  });
+
   app.get("/api/settings/zbs-logo-settings", async (req, res) => {
     try {
       if (!(await permission(req, res, "read"))) return;

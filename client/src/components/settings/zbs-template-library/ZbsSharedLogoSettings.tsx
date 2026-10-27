@@ -14,6 +14,7 @@ type SharedZbsLogos = {
 };
 
 const endpoint = "/api/settings/zbs-logo-settings";
+const testTemplateEndpoint = "/api/settings/zbs-template-library/test-template";
 const emptyLogos: SharedZbsLogos = { logoLightUrl: null, logoDarkUrl: null };
 
 export default function ZbsSharedLogoSettings() {
@@ -26,6 +27,14 @@ export default function ZbsSharedLogoSettings() {
   );
   const { data, isLoading, error } = useQuery<SharedZbsLogos>({
     queryKey: [endpoint],
+  });
+  const testTemplateQuery = useQuery<{ code: string; name: string; status: string }>({
+    queryKey: [testTemplateEndpoint],
+    queryFn: async () => {
+      const response = await apiRequest("GET", testTemplateEndpoint);
+      return response.json() as Promise<{ code: string; name: string; status: string }>;
+    },
+    enabled: canWrite && Boolean(data?.logoLightUrl && data?.logoDarkUrl),
   });
   const [form, setForm] = useState<SharedZbsLogos>(emptyLogos);
 
@@ -84,6 +93,15 @@ export default function ZbsSharedLogoSettings() {
             onChange={(url) => setForm((current) => ({ ...current, logoDarkUrl: url }))}
           />
         </div>
+        {data?.logoLightUrl && data?.logoDarkUrl && (
+          <p className="text-xs leading-5 text-muted-foreground" role="status">
+            {testTemplateQuery.isLoading
+              ? "Đang chuẩn bị mẫu Test nội bộ..."
+              : testTemplateQuery.error
+                ? "Chưa thể chuẩn bị mẫu Test nội bộ."
+                : `Mẫu ${testTemplateQuery.data?.name ?? "TEST - THÔNG BÁO HỌC PHÍ"} đã được lưu trong hệ thống; chưa tạo trên ZBS.`}
+          </p>
+        )}
         {canWrite && (
           <div className="flex justify-end">
             <Button
