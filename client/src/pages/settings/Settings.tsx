@@ -65,6 +65,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { EducationConfigHistoryTab } from "@/pages/education/EducationConfigHistoryTab";
 import { useLanguage } from "@/hooks/use-language";
 import { ZbsStandardTemplates } from "@/components/settings/zbs-template-library/ZbsStandardTemplates";
+import { ZbsTemplateLibrary } from "@/components/settings/zbs-template-library";
 
 const SETTINGS_HREF = "/settings";
 const SETTINGS_HISTORY_RESOURCES = {
@@ -4203,6 +4204,7 @@ function ZaloOAConfig() {
     <div className="space-y-6">
       <NotificationConfig />
       <ZbsStandardTemplates />
+      <ZbsTemplateLibrary />
     </div>
   );
 }
