@@ -1,10 +1,17 @@
 import type { Express, Request, Response } from "express";
 import crypto from "crypto";
 import { db } from "../db";
-import { zaloOaConfigs, centerConfig } from "@shared/schema";
+import { zaloOaConfigs, centerConfig, locations, systemSettings } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
 import { encrypt } from "../lib/encryption";
 import { refreshZaloOaToken } from "../services/zalo-token-refresh.service";
+import { buildTuitionNoticeTestTemplate } from "../services/zbs-template-test.service";
+import {
+  createZbsTuitionTemplate,
+  resolveVietQrBankCode,
+  type ZbsFixedPaymentDetails,
+} from "../services/zbs-template-provisioning.service";
+import { fetchZbsTemplatePage } from "../services/zbs-template-management.service";
 
 // ─── HMAC-signed state (compatible với Gateway) ───────────────────────────────
 // Gateway dùng ZALO_GATEWAY_SHARED_SECRET để verify — main server phải dùng
@@ -73,6 +80,203 @@ async function registerWebhookWithZalo(accessToken: string, webhookUrl: string):
     console.log(`[ZaloOA] Webhook URL (cấu hình thủ công tại Zalo Dev Portal): ${webhookUrl}`);
   } catch (e) {
     console.warn("[ZaloOA] Lỗi khi đăng ký webhook:", e);
+  }
+}
+
+type ZbsProvisioningState = {
+  oaId: string | null;
+  locationId: string;
+  status: "PENDING_CONFIGURATION" | "CREATING" | "PENDING_REVIEW" | "ENABLE" | "REJECT" | "FAILED" | "UNKNOWN";
+  templateId?: string;
+  templateName?: string;
+  previewUrl?: string | null;
+  message?: string;
+  updatedAt: string;
+};
+
+const provisioningInFlight = new Set<string>();
+
+async function saveZbsProvisioningState(configId: string, value: ZbsProvisioningState) {
+  const key = `zbsTemplateProvisioning:${configId}`;
+  await db.insert(systemSettings)
+    .values({ key, value: JSON.stringify(value) })
+    .onConflictDoUpdate({
+      target: systemSettings.key,
+      set: { value: JSON.stringify(value), updatedAt: new Date() },
+    });
+}
+
+function parseLocationBankAccounts(raw: string | null) {
+  if (!raw) return [];
+  try {
+    const value = JSON.parse(raw);
+    return Array.isArray(value) ? value.filter((item) => item && typeof item === "object") : [];
+  } catch {
+    return [];
+  }
+}
+
+async function getFixedPaymentDetails(locationId: string): Promise<ZbsFixedPaymentDetails | null> {
+  const [location] = await db.select({
+    bankName: locations.bankName,
+    bankAccount: locations.bankAccount,
+    accountHolder: locations.accountHolder,
+    useCenterBank: locations.useCenterBank,
+    bankAccounts: locations.bankAccounts,
+    isMain: locations.isMain,
+  }).from(locations).where(eq(locations.id, locationId)).limit(1);
+  if (!location) return null;
+
+  let source = location;
+  if (location.useCenterBank !== false && !location.isMain) {
+    const [mainLocation] = await db.select({
+      bankName: locations.bankName,
+      bankAccount: locations.bankAccount,
+      accountHolder: locations.accountHolder,
+      bankAccounts: locations.bankAccounts,
+    }).from(locations).where(eq(locations.isMain, true)).limit(1);
+    if (mainLocation) source = { ...location, ...mainLocation };
+  }
+
+  const configuredAccounts = parseLocationBankAccounts(source.bankAccounts)
+    .concat(source.bankName && source.bankAccount
+      ? [{ bankName: source.bankName, bankAccount: source.bankAccount, accountHolder: source.accountHolder }]
+      : []);
+  const bank = configuredAccounts.find((item) =>
+    typeof item.bankName === "string"
+    && typeof item.bankAccount === "string"
+    && item.bankName.trim()
+    && item.bankAccount.trim()
+    && typeof (item.accountHolder ?? item.accountName) === "string"
+    && String(item.accountHolder ?? item.accountName).trim(),
+  );
+  if (!bank) return null;
+
+  const bankName = String(bank.bankName).trim();
+  const accountNumber = String(bank.bankAccount).trim();
+  const accountName = String(bank.accountHolder ?? bank.accountName).trim();
+  const bankCode = /^\d{6}$/.test(String(bank.bankCode ?? ""))
+    ? String(bank.bankCode)
+    : await resolveVietQrBankCode(bankName);
+  return bankCode ? { bankCode, bankName, accountName, accountNumber } : null;
+}
+
+async function provisionTuitionTestTemplate(input: {
+  configId: string;
+  locationId: string;
+  oaId: string | null;
+  accessToken: string;
+}): Promise<void> {
+  if (provisioningInFlight.has(input.configId)) return;
+  provisioningInFlight.add(input.configId);
+  try {
+    const [center] = await db.select({ id: centerConfig.id }).from(centerConfig).limit(1);
+    if (!center) throw new Error("Chưa cấu hình trung tâm.");
+
+    const stateKey = `zbsTemplateProvisioning:${input.configId}`;
+    const [oldStateRow] = await db.select({ value: systemSettings.value })
+      .from(systemSettings).where(eq(systemSettings.key, stateKey)).limit(1);
+    const oldState = oldStateRow ? JSON.parse(oldStateRow.value) as ZbsProvisioningState : null;
+    if (
+      oldState?.oaId === input.oaId
+      && ["PENDING_REVIEW", "ENABLE", "REJECT", "UNKNOWN"].includes(oldState.status)
+    ) return;
+
+    const [logosRow] = await db.select({ value: systemSettings.value })
+      .from(systemSettings).where(eq(systemSettings.key, `zbsSharedLogos:${center.id}`)).limit(1);
+    if (!logosRow) {
+      await saveZbsProvisioningState(input.configId, {
+        oaId: input.oaId, locationId: input.locationId, status: "PENDING_CONFIGURATION",
+        message: "Chưa lưu đủ hai logo ZBS dùng chung.", updatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+    const logos = JSON.parse(logosRow.value) as { logoLightUrl?: string | null; logoDarkUrl?: string | null };
+    if (!logos.logoLightUrl || !logos.logoDarkUrl) {
+      await saveZbsProvisioningState(input.configId, {
+        oaId: input.oaId, locationId: input.locationId, status: "PENDING_CONFIGURATION",
+        message: "Chưa lưu đủ hai logo ZBS dùng chung.", updatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+
+    const payment = await getFixedPaymentDetails(input.locationId);
+    if (!payment) {
+      await saveZbsProvisioningState(input.configId, {
+        oaId: input.oaId, locationId: input.locationId, status: "PENDING_CONFIGURATION",
+        message: "Cơ sở chưa có đủ ngân hàng, mã BIN, số tài khoản và tên chủ tài khoản hợp lệ.",
+        updatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+
+    const testKey = `zbsTestTemplate:${center.id}`;
+    const [testRow] = await db.select({ value: systemSettings.value })
+      .from(systemSettings).where(eq(systemSettings.key, testKey)).limit(1);
+    const testTemplate = testRow
+      ? JSON.parse(testRow.value)
+      : buildTuitionNoticeTestTemplate({
+          logoLightUrl: logos.logoLightUrl,
+          logoDarkUrl: logos.logoDarkUrl,
+        });
+    if (!testRow) {
+      await db.insert(systemSettings).values({ key: testKey, value: JSON.stringify(testTemplate) })
+        .onConflictDoNothing({ target: systemSettings.key });
+    }
+
+    const list = await fetchZbsTemplatePage(input.accessToken, { offset: 0, limit: 100 });
+    const existing = list.data.find((item) => item.templateName.trim() === testTemplate.name);
+    if (existing) {
+      await saveZbsProvisioningState(input.configId, {
+        oaId: input.oaId, locationId: input.locationId,
+        status: existing.status as ZbsProvisioningState["status"],
+        templateId: existing.templateId, templateName: existing.templateName,
+        message: "Đã tìm thấy mẫu Test trên OA; không tạo trùng.",
+        updatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+
+    await saveZbsProvisioningState(input.configId, {
+      oaId: input.oaId, locationId: input.locationId, status: "CREATING",
+      templateName: testTemplate.name, updatedAt: new Date().toISOString(),
+    });
+    try {
+      const created = await createZbsTuitionTemplate({
+        accessToken: input.accessToken,
+        testTemplate,
+        logos: { logoLightUrl: logos.logoLightUrl, logoDarkUrl: logos.logoDarkUrl },
+        payment,
+        trackingId: crypto.randomUUID(),
+      });
+      await saveZbsProvisioningState(input.configId, {
+        oaId: input.oaId, locationId: input.locationId, status: "PENDING_REVIEW",
+        templateId: created.templateId, templateName: created.templateName,
+        previewUrl: created.previewUrl,
+        message: "Zalo đã nhận mẫu và đang kiểm duyệt.",
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Không tạo được mẫu Test trên Zalo.";
+      const uncertain = /kết nối|phản hồi không hợp lệ/i.test(message);
+      await saveZbsProvisioningState(input.configId, {
+        oaId: input.oaId, locationId: input.locationId,
+        status: uncertain ? "UNKNOWN" : "FAILED",
+        templateName: testTemplate.name,
+        message,
+        updatedAt: new Date().toISOString(),
+      });
+      console.error(`[ZaloOA] ZBS tuition template provisioning ${uncertain ? "unknown" : "failed"} for OA config ${input.configId}: ${message}`);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Không thể chuẩn bị mẫu ZBS.";
+    await saveZbsProvisioningState(input.configId, {
+      oaId: input.oaId, locationId: input.locationId, status: "FAILED",
+      message, updatedAt: new Date().toISOString(),
+    }).catch(() => {});
+    console.error(`[ZaloOA] ZBS tuition template provisioning failed for OA config ${input.configId}: ${message}`);
+  } finally {
+    provisioningInFlight.delete(input.configId);
   }
 }
 
