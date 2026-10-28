@@ -796,10 +796,13 @@ function ChannelSidebar({
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-1">
             <p className={cn(
-              "text-sm truncate min-w-0 flex-1",
+              "text-sm min-w-0 flex-1",
               isActive ? "text-primary font-semibold" :
               topic.unread > 0 ? "font-semibold text-foreground" : "font-medium text-foreground"
-            )} title={topic.name || topic.topic}>
+            )}
+              title={topic.name || topic.topic}
+              style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            >
               {topic.name || topic.topic}
             </p>
             {topic.lastTs && (
