@@ -1839,8 +1839,8 @@ function defaultPerm(resource?: string, deptName?: string) {
   return { canView: false, canViewAll: false, canCreate: false, canEdit: false, canDelete: false };
 }
 
-// /chat cho phép canView + canCreate + canDelete (không có canViewAll, canEdit)
-const CHAT_ALLOWED_PERM_KEYS = new Set<PermKey>(["canView", "canCreate", "canDelete"]);
+// Chat uses all five permission columns: visibility scope and group/message actions.
+const CHAT_ALLOWED_PERM_KEYS = new Set<PermKey>(["canView", "canViewAll", "canCreate", "canEdit", "canDelete"]);
 
 const READ_ONLY_RESOURCES = new Set([
   "/learning-overview", "/shifts#board", "/", "/zalo",
@@ -1861,7 +1861,7 @@ const MY_SPACE_ASSIGNMENTS_RESOURCE = "/my-space/assignments";
 const PERM_DESCRIPTIONS: Record<string, string> = {
   // Standalone
   "/": "Xem: nhân sự có quyền truy cập trang Dashboard tổng quan hệ thống.",
-  "/chat": "Xem: nhân sự có quyền truy cập và sử dụng tính năng nhắn tin nội bộ. Thêm: nhân sự có quyền thêm thành viên vào nhóm chat. Xoá: nhân sự có quyền xoá thành viên khỏi nhóm chat.",
+  "/chat": "Xem: chỉ xem các cuộc trò chuyện mà nhân sự là thành viên. Xem all: xem mọi cuộc trò chuyện trong phạm vi cơ sở. Thêm: tạo nhóm chat, bắt đầu tin nhắn mới và thêm thành viên. Sửa: sửa tin nhắn do mình gửi. Xoá: xoá thành viên khỏi nhóm chat.",
   "/zalo": "Xem: nhân sự có quyền truy cập và quản lý trang Zalo OA kết nối.",
   "/news-feed": "Xem / Xem all: nhân sự xem bài viết thuộc cơ sở mình. Thêm: được đăng bài viết mới. Sửa: được chỉnh sửa bài viết, ghim và bỏ ghim. Xoá: được xoá bài viết.",
   // Dashboard tabs
@@ -1965,7 +1965,7 @@ const PERM_DESCRIPTIONS: Record<string, string> = {
 
 const PERM_DESCRIPTIONS_EN: Record<string, string> = {
   "/": "View: access the system overview dashboard.",
-  "/chat": "View: access and use internal messaging. Create: add members to chat groups. Delete: remove members from chat groups.",
+  "/chat": "View: see conversations the staff member belongs to. View all: see all conversations within the center. Create: create groups, start new messages, and add members. Edit: edit messages sent by the staff member. Delete: remove members from chat groups.",
   "/zalo": "View: access and manage the connected Zalo OA page.",
   "/news-feed": "View / View All: view posts in the assigned branch. Create: publish posts. Edit: edit, pin, and unpin posts. Delete: delete posts.",
   "/#khach-hang": "View / View All: view the Customers tab in the Dashboard. Uncheck to hide the tab.",
@@ -2231,6 +2231,24 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
     }
     if (resource === "/chat" && !CHAT_ALLOWED_PERM_KEYS.has(permKey)) {
       toast({ title: t("settings.permissions.unavailable"), description: t("settings.permissions.chatDesc"), variant: "destructive" });
+      return;
+    }
+    if (resource === "/chat") {
+      const updated = { ...current, [permKey]: toggling };
+      const hasView = updated.canView || updated.canViewAll;
+
+      if (toggling && permKey !== "canView" && permKey !== "canViewAll" && !hasView) {
+        toast({ title: t("settings.permissions.requireViewTitle"), description: t("settings.permissions.requireCreateDesc"), variant: "destructive" });
+        return;
+      }
+      if (!toggling && (permKey === "canView" || permKey === "canViewAll") && !hasView) {
+        updated.canCreate = false;
+        updated.canEdit = false;
+        updated.canDelete = false;
+      }
+
+      setLocalPerms(prev => ({ ...prev, [resource]: updated }));
+      queuePermissionUpdate(resource, updated);
       return;
     }
     if (READ_ONLY_RESOURCES.has(resource) && (permKey === "canCreate" || permKey === "canEdit" || permKey === "canDelete")) {

@@ -12,9 +12,10 @@
 
 import type { Express } from "express";
 import { db } from "../db";
-import { users, students, staff, studentClasses, classes, chatGroups, chatGroupMembers } from "@shared/schema";
+import { users, students, staff, staffAssignments, studentClasses, classes, chatGroups, chatGroupMembers } from "@shared/schema";
 import { eq, and, inArray, ilike, or, sql, isNotNull } from "drizzle-orm";
 import { storage } from "../storage";
+import { getEffectivePermissions } from "../storage/permissions.storage";
 import multer from "multer";
 
 // Cache chỉ cho bước ensureUserInTinode (idempotent, tốn ~400ms mỗi lần).
@@ -26,6 +27,157 @@ const ENSURE_CACHE_TTL = 5 * 60 * 1000;
 // uid → { name: string | null, expiresAt: number }
 const userNameCache = new Map<string, { name: string | null; expiresAt: number }>();
 const USER_NAME_CACHE_TTL = 10 * 60 * 1000; // 10 phút
+
+type ChatPermissions = {
+  canView: boolean;
+  canViewAll: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+};
+
+async function getChatPermissions(req: any): Promise<ChatPermissions> {
+  if (req.isSuperAdmin || (req.user as any)?.username === "admin") {
+    return { canView: true, canViewAll: true, canCreate: true, canEdit: true, canDelete: true };
+  }
+  if (req.isStudent) {
+    return { canView: true, canViewAll: false, canCreate: false, canEdit: false, canDelete: false };
+  }
+  return getEffectivePermissions(req.roleIds ?? [], "/chat");
+}
+
+function canViewChat(permissions: ChatPermissions): boolean {
+  return permissions.canView || permissions.canViewAll;
+}
+
+function canCreateChat(permissions: ChatPermissions): boolean {
+  return permissions.canCreate && canViewChat(permissions);
+}
+
+async function canCreateClassChatGroup(req: any, classId: string): Promise<boolean> {
+  if (req.isStudent) return false;
+  const permissions = await getChatPermissions(req);
+  if (!canCreateChat(permissions)) return false;
+  if (req.isSuperAdmin || (req.user as any)?.username === "admin") return true;
+
+  const [cls] = await db
+    .select({ locationId: classes.locationId, teacherIds: classes.teacherIds, managerIds: classes.managerIds })
+    .from(classes)
+    .where(eq(classes.id, classId))
+    .limit(1);
+  if (!cls) return false;
+
+  const allowedLocationIds: string[] = req.allowedLocationIds ?? [];
+  if (!allowedLocationIds.includes(cls.locationId)) return false;
+  if (permissions.canViewAll) return true;
+
+  const staffId: string | null = req.staffId ?? null;
+  return !!staffId && (
+    (cls.teacherIds ?? []).includes(staffId) ||
+    (cls.managerIds ?? []).includes(staffId)
+  );
+}
+
+async function canReadClassChat(req: any, classInfo: {
+  id: string;
+  locationId: string;
+  teacherIds: string[] | null;
+  managerIds: string[] | null;
+}): Promise<boolean> {
+  const permissions = await getChatPermissions(req);
+  if (req.isSuperAdmin || (req.user as any)?.username === "admin") return true;
+
+  if (req.isStudent) {
+    const [enrollment] = await db
+      .select({ id: studentClasses.id })
+      .from(studentClasses)
+      .innerJoin(students, eq(studentClasses.studentId, students.id))
+      .where(and(
+        eq(students.userId, (req.user as any).id),
+        eq(studentClasses.classId, classInfo.id),
+        eq(studentClasses.status, "active"),
+      ))
+      .limit(1);
+    return !!enrollment;
+  }
+
+  const allowedLocationIds: string[] = req.allowedLocationIds ?? [];
+  if (!canViewChat(permissions) || !allowedLocationIds.includes(classInfo.locationId)) return false;
+  if (permissions.canViewAll) return true;
+  const staffId: string | null = req.staffId ?? null;
+  return !!staffId && (
+    (classInfo.teacherIds ?? []).includes(staffId) ||
+    (classInfo.managerIds ?? []).includes(staffId)
+  );
+}
+
+async function canReadGroupChat(req: any, groupId: string): Promise<boolean> {
+  const permissions = await getChatPermissions(req);
+  if (req.isSuperAdmin || (req.user as any)?.username === "admin") return true;
+  if (!canViewChat(permissions)) return false;
+  if (permissions.canViewAll) return true;
+  const [membership] = await db
+    .select({ id: chatGroupMembers.id })
+    .from(chatGroupMembers)
+    .where(and(
+      eq(chatGroupMembers.groupId, groupId),
+      eq(chatGroupMembers.userId, (req.user as any).id),
+    ))
+    .limit(1);
+  return !!membership;
+}
+
+async function getAllowedChatRecipientIds(req: any, permissions: ChatPermissions): Promise<Set<string> | null> {
+  if (req.isSuperAdmin || (req.user as any)?.username === "admin") return null;
+  const allowedLocationIds: string[] = req.allowedLocationIds ?? [];
+  if (allowedLocationIds.length === 0) return new Set();
+
+  const staffUsers = await db
+    .select({ userId: staff.userId })
+    .from(staff)
+    .innerJoin(staffAssignments, eq(staffAssignments.staffId, staff.id))
+    .where(and(inArray(staffAssignments.locationId, allowedLocationIds), isNotNull(staff.userId)));
+  const allowed = new Set(staffUsers.map(row => row.userId).filter((id): id is string => !!id));
+
+  if (permissions.canViewAll) {
+    const studentUsers = await db
+      .selectDistinct({ userId: students.userId })
+      .from(students)
+      .innerJoin(studentClasses, eq(studentClasses.studentId, students.id))
+      .innerJoin(classes, eq(classes.id, studentClasses.classId))
+      .where(and(
+        inArray(classes.locationId, allowedLocationIds),
+        eq(studentClasses.status, "active"),
+        isNotNull(students.userId),
+      ));
+    studentUsers.forEach(row => { if (row.userId) allowed.add(row.userId); });
+    return allowed;
+  }
+
+  const staffId: string | null = req.staffId ?? null;
+  if (!staffId) return allowed;
+  const assignedClasses = await db
+    .select({ id: classes.id })
+    .from(classes)
+    .where(and(
+      inArray(classes.locationId, allowedLocationIds),
+      sql`${staffId} = ANY(COALESCE(${classes.teacherIds}, ARRAY[]::uuid[]) || COALESCE(${classes.managerIds}, ARRAY[]::uuid[]))`,
+    ));
+  const assignedClassIds = assignedClasses.map(row => row.id);
+  if (assignedClassIds.length > 0) {
+    const studentUsers = await db
+      .select({ userId: students.userId })
+      .from(students)
+      .innerJoin(studentClasses, eq(studentClasses.studentId, students.id))
+      .where(and(
+        inArray(studentClasses.classId, assignedClassIds),
+        eq(studentClasses.status, "active"),
+        isNotNull(students.userId),
+      ));
+    studentUsers.forEach(row => { if (row.userId) allowed.add(row.userId); });
+  }
+  return allowed;
+}
 
 async function ensureUserCached(userId: string): Promise<void> {
   const expiresAt = ensureUserCache.get(userId) ?? 0;
@@ -43,6 +195,9 @@ export function registerChatRoutes(app: Express): void {
     const userId = (req.user as any).id;
 
     try {
+      if (!canViewChat(await getChatPermissions(req))) {
+        return res.status(403).json({ message: "Bạn chưa được cấp quyền xem Chat." });
+      }
       const { isTinodeConfigured, getUserCredentials } = await import("../lib/tinode.service");
       if (!isTinodeConfigured()) {
         return res.status(503).json({ message: "Tính năng chat chưa được cấu hình" });
@@ -84,37 +239,51 @@ export function registerChatRoutes(app: Express): void {
 
     try {
       const { isTinodeConfigured } = await import("../lib/tinode.service");
+      const permissions = await getChatPermissions(req);
+      if (!canViewChat(permissions)) {
+        res.set("Cache-Control", "no-store");
+        return res.json({ channels: [] });
+      }
 
       if (!isTinodeConfigured()) {
         return res.json({ channels: [] });
       }
 
       // ── Custom chat groups ─────────────────────────────────────────────────
-      const memberRows = await db
-        .select({ groupId: chatGroupMembers.groupId })
-        .from(chatGroupMembers)
-        .where(eq(chatGroupMembers.userId, userId));
-
-      const groupIds = memberRows.map(r => r.groupId);
-      const customGroups = groupIds.length > 0
-        ? await db.select().from(chatGroups).where(inArray(chatGroups.id, groupIds))
-        : [];
+      let customGroups;
+      if (permissions.canViewAll) {
+        customGroups = await db.select().from(chatGroups);
+      } else {
+        const memberRows = await db
+          .select({ groupId: chatGroupMembers.groupId })
+          .from(chatGroupMembers)
+          .where(eq(chatGroupMembers.userId, userId));
+        const groupIds = memberRows.map(r => r.groupId);
+        customGroups = groupIds.length > 0
+          ? await db.select().from(chatGroups).where(inArray(chatGroups.id, groupIds))
+          : [];
+      }
 
       const groupChannels = customGroups
         .filter(g => !!g.tinodeTopicId && !g.isDirectMessage)
         .map(g => ({ topicId: g.tinodeTopicId!, className: g.name, classId: null, groupId: g.id, isCustomGroup: true, isDirectMessage: false }));
 
       // ── Also include DM (direct message) channels ────────────────────────────
+      const dmMemberScope = permissions.canViewAll
+        ? sql``
+        : sql`AND m1.user_id = ${userId} AND m2.user_id <> ${userId}`;
       const dmRows = await db.execute(sql`
         SELECT g.id, g.tinode_topic_id,
-               COALESCE(s.full_name, st.full_name, u.username) AS other_name
+               STRING_AGG(DISTINCT COALESCE(s.full_name, st.full_name, u.username), ' · ' ORDER BY COALESCE(s.full_name, st.full_name, u.username)) AS other_name
         FROM chat_groups g
-        INNER JOIN chat_group_members m1 ON m1.group_id = g.id AND m1.user_id = ${userId}
-        INNER JOIN chat_group_members m2 ON m2.group_id = g.id AND m2.user_id != ${userId}
+        INNER JOIN chat_group_members m1 ON m1.group_id = g.id
+        INNER JOIN chat_group_members m2 ON m2.group_id = g.id
+        ${dmMemberScope}
         INNER JOIN users u ON u.id = m2.user_id
         LEFT JOIN staff s ON s.user_id = u.id
         LEFT JOIN students st ON st.user_id = u.id
         WHERE g.is_direct_message = TRUE AND g.tinode_topic_id IS NOT NULL
+        GROUP BY g.id, g.tinode_topic_id
       `);
       const dmChannels = ((dmRows as any).rows ?? (dmRows as any) ?? [])
         .filter((r: any) => !!r.tinode_topic_id)
@@ -300,18 +469,64 @@ export function registerChatRoutes(app: Express): void {
         return res.json({ users: results });
       }
 
-      // Nhân viên / Admin: tìm tất cả nhân viên và học viên như cũ
+      const permissions = await getChatPermissions(req);
+      if (!canCreateChat(permissions)) {
+        return res.status(403).json({ message: "Bạn không có quyền bắt đầu cuộc trò chuyện mới." });
+      }
+      const allowedLocationIds: string[] = req.allowedLocationIds ?? [];
+      const isSuperAdmin = !!req.isSuperAdmin || (req.user as any)?.username === "admin";
+      if (!isSuperAdmin && allowedLocationIds.length === 0) return res.json({ users: [] });
+
+      // Staff lookup stays within permitted locations.
       staffRows = await db
-        .select({ userId: staff.userId, fullName: staff.fullName })
+        .selectDistinct({ userId: staff.userId, fullName: staff.fullName })
         .from(staff)
-        .where(ilike(staff.fullName, pattern))
+        .innerJoin(staffAssignments, eq(staffAssignments.staffId, staff.id))
+        .where(and(
+          ilike(staff.fullName, pattern),
+          ...(isSuperAdmin ? [] : [inArray(staffAssignments.locationId, allowedLocationIds)]),
+        ))
         .limit(10);
 
-      const studentRows = await db
-        .select({ userId: students.userId, fullName: students.fullName })
-        .from(students)
-        .where(and(ilike(students.fullName, pattern)))
-        .limit(10);
+      let studentRows: { userId: string | null; fullName: string | null }[] = [];
+      if (permissions.canViewAll) {
+        studentRows = await db
+          .selectDistinct({ userId: students.userId, fullName: students.fullName })
+          .from(students)
+          .innerJoin(studentClasses, eq(studentClasses.studentId, students.id))
+          .innerJoin(classes, eq(classes.id, studentClasses.classId))
+          .where(and(
+            ilike(students.fullName, pattern),
+            ...(isSuperAdmin ? [] : [inArray(classes.locationId, allowedLocationIds)]),
+            eq(studentClasses.status, "active"),
+          ))
+          .limit(10);
+      } else {
+        const staffId: string | null = req.staffId ?? null;
+        if (staffId) {
+          const assignedClasses = await db
+            .select({ id: classes.id })
+            .from(classes)
+            .where(and(
+              inArray(classes.locationId, allowedLocationIds),
+              sql`${staffId} = ANY(COALESCE(${classes.teacherIds}, ARRAY[]::uuid[]) || COALESCE(${classes.managerIds}, ARRAY[]::uuid[]))`,
+            ));
+          const assignedClassIds = assignedClasses.map(row => row.id);
+          if (assignedClassIds.length > 0) {
+            studentRows = await db
+              .select({ userId: students.userId, fullName: students.fullName })
+              .from(students)
+              .innerJoin(studentClasses, eq(studentClasses.studentId, students.id))
+              .where(and(
+                ilike(students.fullName, pattern),
+                inArray(studentClasses.classId, assignedClassIds),
+                eq(studentClasses.status, "active"),
+                isNotNull(students.userId),
+              ))
+              .limit(10);
+          }
+        }
+      }
 
       const allUserIds = [
         ...staffRows.map(r => r.userId),
@@ -380,6 +595,17 @@ export function registerChatRoutes(app: Express): void {
     }
 
     try {
+      if (!isStudent) {
+        const permissions = await getChatPermissions(req);
+        if (!canCreateChat(permissions)) {
+          return res.status(403).json({ message: "Bạn cần quyền Xem hoặc Xem all và Thêm để nhắn tin mới." });
+        }
+        const allowedRecipients = await getAllowedChatRecipientIds(req, permissions);
+        if (allowedRecipients && !allowedRecipients.has(targetUserId)) {
+          return res.status(403).json({ message: "Người nhận không thuộc phạm vi Chat được phép." });
+        }
+      }
+
       const { isTinodeConfigured, createGroupTopic, addMemberToTopic, ensureUserInTinode, verifyAndSetTopicDefacs } = await import("../lib/tinode.service");
 
       if (!isTinodeConfigured()) {
@@ -521,18 +747,22 @@ export function registerChatRoutes(app: Express): void {
     const staffId: string | null = (req as any).staffId ?? null;
     const allowedLocationIds: string[] = (req as any).allowedLocationIds ?? [];
 
-    // Default-deny: học sinh không tìm lớp; user không có staffId cũng không có quyền
+    // Only staff with chat-view + create may use classes in the create-group picker.
     if (isStudent) return res.json({ classes: [] });
+    const permissions = await getChatPermissions(req);
+    if (!canCreateChat(permissions)) return res.status(403).json({ message: "Bạn không có quyền tạo nhóm chat." });
     if (!isSuperAdmin && !staffId) return res.json({ classes: [] });
+    if (!isSuperAdmin && allowedLocationIds.length === 0) return res.json({ classes: [] });
 
     try {
       const conditions: any[] = [];
       if (q) {
         conditions.push(or(ilike(classes.name, `%${q}%`), ilike(classes.classCode, `%${q}%`)));
       }
-      if (!isSuperAdmin && staffId) {
-        if (allowedLocationIds.length > 0) {
-          conditions.push(inArray(classes.locationId, allowedLocationIds));
+      if (!isSuperAdmin) {
+        conditions.push(inArray(classes.locationId, allowedLocationIds));
+        if (!permissions.canViewAll) {
+          conditions.push(sql`${staffId} = ANY(COALESCE(${classes.teacherIds}, ARRAY[]::uuid[]) || COALESCE(${classes.managerIds}, ARRAY[]::uuid[]))`);
         }
       }
 
@@ -557,10 +787,9 @@ export function registerChatRoutes(app: Express): void {
   app.get("/api/chat/classes/:classId/members", async (req, res) => {
     if (!req.user) return res.status(401).json({ message: "Unauthorized" });
     const { classId } = req.params;
-    const isSuperAdmin = (req as any).isSuperAdmin ?? false;
-    const isStudent   = (req as any).isStudent ?? false;
-    const staffId: string | null = (req as any).staffId ?? null;
-    const userId = (req.user as any).id;
+    if (!(await canCreateClassChatGroup(req, classId))) {
+      return res.status(403).json({ message: "Không có quyền tạo nhóm từ lớp này." });
+    }
 
     try {
       const [cls] = await db
@@ -569,27 +798,6 @@ export function registerChatRoutes(app: Express): void {
         .where(eq(classes.id, classId))
         .limit(1);
       if (!cls) return res.status(404).json({ message: "Không tìm thấy lớp" });
-
-      // Authorization: superAdmin xem được tất cả; staff phải là giáo viên/phụ trách;
-      // học sinh phải đang học lớp này
-      if (!isSuperAdmin) {
-        if (isStudent) {
-          const [enrollment] = await db
-            .select({ id: students.id })
-            .from(students)
-            .innerJoin(studentClasses, eq(studentClasses.studentId, students.id))
-            .where(and(eq(students.userId, userId), eq(studentClasses.classId, classId), eq(studentClasses.status, "active")))
-            .limit(1);
-          if (!enrollment) return res.status(403).json({ message: "Không có quyền xem lớp này" });
-        } else if (staffId) {
-          const isTeacherOrManager =
-            (cls.teacherIds ?? []).includes(staffId) ||
-            (cls.managerIds ?? []).includes(staffId);
-          if (!isTeacherOrManager) return res.status(403).json({ message: "Không có quyền xem lớp này" });
-        } else {
-          return res.status(403).json({ message: "Không có quyền xem lớp này" });
-        }
-      }
 
       // Resolve staff (teachers + managers) → userId + displayName
       const allStaffIds = Array.from(new Set([...(cls.teacherIds ?? []), ...(cls.managerIds ?? [])]));
@@ -643,40 +851,11 @@ export function registerChatRoutes(app: Express): void {
   app.get("/api/chat/classes/:classId/groups", async (req, res) => {
     if (!req.user) return res.status(401).json({ message: "Unauthorized" });
     const { classId } = req.params;
-    const isSuperAdmin = (req as any).isSuperAdmin ?? false;
-    const isStudent   = (req as any).isStudent ?? false;
-    const staffId: string | null = (req as any).staffId ?? null;
-    const userId = (req.user as any).id;
+    if (!(await canCreateClassChatGroup(req, classId))) {
+      return res.status(403).json({ message: "Không có quyền tạo nhóm từ lớp này." });
+    }
 
     try {
-      // Authorization: superAdmin xem được tất cả; staff phải là giáo viên/phụ trách;
-      // học sinh phải đang học lớp này
-      if (!isSuperAdmin) {
-        const [cls] = await db
-          .select({ teacherIds: classes.teacherIds, managerIds: classes.managerIds })
-          .from(classes)
-          .where(eq(classes.id, classId))
-          .limit(1);
-        if (!cls) return res.status(404).json({ message: "Không tìm thấy lớp" });
-
-        if (isStudent) {
-          const [enrollment] = await db
-            .select({ id: students.id })
-            .from(students)
-            .innerJoin(studentClasses, eq(studentClasses.studentId, students.id))
-            .where(and(eq(students.userId, userId), eq(studentClasses.classId, classId), eq(studentClasses.status, "active")))
-            .limit(1);
-          if (!enrollment) return res.status(403).json({ message: "Không có quyền xem lớp này" });
-        } else if (staffId) {
-          const isTeacherOrManager =
-            (cls.teacherIds ?? []).includes(staffId) ||
-            (cls.managerIds ?? []).includes(staffId);
-          if (!isTeacherOrManager) return res.status(403).json({ message: "Không có quyền xem lớp này" });
-        } else {
-          return res.status(403).json({ message: "Không có quyền xem lớp này" });
-        }
-      }
-
       const groups = await db
         .select({ id: chatGroups.id, name: chatGroups.name })
         .from(chatGroups)
@@ -699,13 +878,31 @@ export function registerChatRoutes(app: Express): void {
     if (isStudent) return res.status(403).json({ message: "Học sinh và phụ huynh không được phép tạo nhóm chat." });
     const userId = (req.user as any).id;
     const { name, memberUserIds = [], classId } = req.body;
+    const permissions = await getChatPermissions(req);
+    if (!canCreateChat(permissions)) {
+      return res.status(403).json({ message: "Cần có quyền Xem hoặc Xem all và Thêm để tạo nhóm chat." });
+    }
 
     if (!name || typeof name !== "string" || !name.trim()) {
       return res.status(400).json({ message: "Tên nhóm không được để trống" });
     }
+    if (!Array.isArray(memberUserIds) || memberUserIds.some((id: unknown) => typeof id !== "string")) {
+      return res.status(400).json({ message: "Danh sách thành viên không hợp lệ." });
+    }
     const validClassId = classId && typeof classId === "string" ? classId : null;
 
     try {
+      if (validClassId && !(await canCreateClassChatGroup(req, validClassId))) {
+        return res.status(403).json({ message: "Không có quyền tạo nhóm từ lớp này." });
+      }
+      const allowedRecipients = await getAllowedChatRecipientIds(req, permissions);
+      if (allowedRecipients) {
+        const invalidRecipient = memberUserIds.find((id: string) => !allowedRecipients.has(id));
+        if (invalidRecipient) {
+          return res.status(403).json({ message: "Có thành viên ngoài phạm vi Chat được phép." });
+        }
+      }
+
       const { isTinodeConfigured, createGroupTopic, addMemberToTopic, ensureUserInTinode } = await import("../lib/tinode.service");
 
       // 1. Tạo bản ghi nhóm trong DB (kèm classId nếu có)
@@ -880,6 +1077,9 @@ export function registerChatRoutes(app: Express): void {
         .limit(1);
 
       if (group) {
+        if (!(await canReadGroupChat(req, group.id))) {
+          return res.status(403).json({ message: "Bạn không có quyền xem cuộc trò chuyện này." });
+        }
         // Lấy tất cả userId trong nhóm
         const memberRows = await db
           .select({ userId: chatGroupMembers.userId })
@@ -920,6 +1120,14 @@ export function registerChatRoutes(app: Express): void {
         .limit(1);
 
       if (cls) {
+        const [classInfo] = await db
+          .select({ id: classes.id, locationId: classes.locationId, teacherIds: classes.teacherIds, managerIds: classes.managerIds })
+          .from(classes)
+          .where(eq(classes.id, cls.id))
+          .limit(1);
+        if (!classInfo || !(await canReadClassChat(req, classInfo))) {
+          return res.status(403).json({ message: "Bạn không có quyền xem cuộc trò chuyện này." });
+        }
         const allStaffIds = Array.from(new Set([...(cls.teacherIds ?? []), ...(cls.managerIds ?? [])]));
         const staffMembers: { userId: string; displayName: string; role: "staff" }[] = [];
         if (allStaffIds.length > 0) {
@@ -971,13 +1179,15 @@ export function registerChatRoutes(app: Express): void {
 
     try {
       const checkPerm = async (createdBy?: string | null) => {
+        const chatPermissions = await getChatPermissions(req);
+        if (!canViewChat(chatPermissions)) return false;
         if (isSuperAdmin) return true;
         if (createdBy === userId) return true;
         const { getEffectivePermissions } = await import("../storage/permissions.storage");
         const roleIds: string[] = (req as any).roleIds || [];
         if (!roleIds.length) return false;
         const perms = await getEffectivePermissions(roleIds, "/chat");
-        return perms.canCreate;
+        return perms.canCreate && (perms.canView || perms.canViewAll);
       };
 
       const addToTinode = async (tid: string) => {
@@ -994,6 +1204,9 @@ export function registerChatRoutes(app: Express): void {
       // Tìm trong chat_groups trước (custom group hoặc DM)
       const [group] = await db.select().from(chatGroups).where(eq(chatGroups.tinodeTopicId, topicId)).limit(1);
       if (group) {
+        if (!(await canReadGroupChat(req, group.id))) {
+          return res.status(403).json({ message: "Bạn không có quyền xem cuộc trò chuyện này." });
+        }
         if (group.isDirectMessage) return res.status(400).json({ message: "Không thể thêm thành viên vào tin nhắn trực tiếp" });
         if (!await checkPerm(group.createdBy)) return res.status(403).json({ message: "Bạn không có quyền thêm thành viên" });
 
@@ -1007,10 +1220,16 @@ export function registerChatRoutes(app: Express): void {
       }
 
       // Fallback: tìm trong classes (nhóm lớp học) → chỉ thêm vào Tinode
-      const [cls] = await db.select({ id: classes.id }).from(classes)
+      const [cls] = await db.select({
+        id: classes.id, locationId: classes.locationId,
+        teacherIds: classes.teacherIds, managerIds: classes.managerIds,
+      }).from(classes)
         .where(eq(classes.tinodeTopicId as any, topicId)).limit(1);
       if (!cls) return res.status(404).json({ message: "Không tìm thấy nhóm" });
 
+      if (!(await canCreateClassChatGroup(req, cls.id))) {
+        return res.status(403).json({ message: "Không có quyền quản lý thành viên của lớp này." });
+      }
       if (!await checkPerm(null)) return res.status(403).json({ message: "Bạn không có quyền thêm thành viên" });
       await addToTinode(topicId);
       return res.json({ ok: true });
@@ -1033,13 +1252,15 @@ export function registerChatRoutes(app: Express): void {
 
     try {
       const checkPerm = async (createdBy?: string | null) => {
+        const chatPermissions = await getChatPermissions(req);
+        if (!canViewChat(chatPermissions)) return false;
         if (isSuperAdmin) return true;
         if (createdBy === userId) return true;
         const { getEffectivePermissions } = await import("../storage/permissions.storage");
         const roleIds: string[] = (req as any).roleIds || [];
         if (!roleIds.length) return false;
         const perms = await getEffectivePermissions(roleIds, "/chat");
-        return perms.canDelete;
+        return perms.canDelete && (perms.canView || perms.canViewAll);
       };
 
       const removeFromTinode = async (tid: string) => {
@@ -1055,6 +1276,9 @@ export function registerChatRoutes(app: Express): void {
       // Tìm trong chat_groups trước
       const [group] = await db.select().from(chatGroups).where(eq(chatGroups.tinodeTopicId, topicId)).limit(1);
       if (group) {
+        if (!(await canReadGroupChat(req, group.id))) {
+          return res.status(403).json({ message: "Bạn không có quyền xem cuộc trò chuyện này." });
+        }
         if (group.isDirectMessage) return res.status(400).json({ message: "Không thể xoá thành viên khỏi tin nhắn trực tiếp" });
         if (!await checkPerm(group.createdBy)) return res.status(403).json({ message: "Bạn không có quyền xoá thành viên" });
 
@@ -1065,9 +1289,15 @@ export function registerChatRoutes(app: Express): void {
       }
 
       // Fallback: tìm trong classes → chỉ xoá khỏi Tinode
-      const [cls] = await db.select({ id: classes.id }).from(classes)
+      const [cls] = await db.select({
+        id: classes.id, locationId: classes.locationId,
+        teacherIds: classes.teacherIds, managerIds: classes.managerIds,
+      }).from(classes)
         .where(eq(classes.tinodeTopicId as any, topicId)).limit(1);
       if (!cls) return res.status(404).json({ message: "Không tìm thấy nhóm" });
+      if (!(await canReadClassChat(req, cls))) {
+        return res.status(403).json({ message: "Bạn không có quyền quản lý thành viên của lớp này." });
+      }
 
       if (!await checkPerm(null)) return res.status(403).json({ message: "Bạn không có quyền xoá thành viên" });
       await removeFromTinode(topicId);
@@ -1101,6 +1331,8 @@ export function registerChatRoutes(app: Express): void {
           id:            classes.id,
           name:          classes.name,
           locationId:    classes.locationId,
+          teacherIds:    classes.teacherIds,
+          managerIds:    classes.managerIds,
           tinodeTopicId: classes.tinodeTopicId,
         })
         .from(classes)
@@ -1109,14 +1341,7 @@ export function registerChatRoutes(app: Express): void {
 
       if (!cls) return res.status(404).json({ message: "Không tìm thấy lớp học" });
 
-      const allowed = await checkClassAccess({
-        userId,
-        classId,
-        locationId:         cls.locationId,
-        isSuperAdmin:       (req as any).isSuperAdmin ?? false,
-        isStudent:          (req as any).isStudent ?? false,
-        allowedLocationIds: (req as any).allowedLocationIds ?? [],
-      });
+      const allowed = await canReadClassChat(req, cls);
 
       if (!allowed) {
         return res.status(403).json({ message: "Bạn không có quyền truy cập nhóm chat này" });
@@ -1261,37 +1486,3 @@ export function registerChatRoutes(app: Express): void {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-async function checkClassAccess(opts: {
-  userId: string;
-  classId: string;
-  locationId: string;
-  isSuperAdmin: boolean;
-  isStudent: boolean;
-  allowedLocationIds: string[];
-}): Promise<boolean> {
-  if (opts.isSuperAdmin) return true;
-
-  if (!opts.isStudent) {
-    return opts.allowedLocationIds.includes(opts.locationId);
-  }
-
-  const [studentRow] = await db
-    .select({ id: students.id })
-    .from(students)
-    .where(eq(students.userId, opts.userId))
-    .limit(1);
-
-  if (!studentRow) return false;
-
-  const [enrollment] = await db
-    .select({ id: studentClasses.id })
-    .from(studentClasses)
-    .where(and(
-      eq(studentClasses.studentId, studentRow.id),
-      eq(studentClasses.classId, opts.classId)
-    ))
-    .limit(1);
-
-  return !!enrollment;
-}

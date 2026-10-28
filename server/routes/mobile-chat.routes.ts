@@ -59,27 +59,33 @@ function requireUser(req: any, res: any): string | null {
  *                     học sinh chỉ được DM giáo viên của mình (server enforce per-request)
  */
 async function getChatPermissions(req: any): Promise<{
+  canView: boolean;
+  canViewAll: boolean;
   canCreateGroup: boolean;
   canAddMember: boolean;
   canRemoveMember: boolean;
+  canEditMessages: boolean;
   canOpenDM: boolean;
 }> {
   const isSuperAdmin: boolean = req.isSuperAdmin ?? false;
   const isStudent: boolean    = req.isStudent ?? false;
 
   if (isSuperAdmin) {
-    return { canCreateGroup: true, canAddMember: true, canRemoveMember: true, canOpenDM: true };
+    return { canView: true, canViewAll: true, canCreateGroup: true, canAddMember: true, canRemoveMember: true, canEditMessages: true, canOpenDM: true };
   }
 
   if (isStudent) {
     // Học sinh không tạo nhóm, không thêm/xoá thành viên
     // nhưng vẫn được mở DM với giáo viên của mình
-    return { canCreateGroup: false, canAddMember: false, canRemoveMember: false, canOpenDM: true };
+    return { canView: true, canViewAll: false, canCreateGroup: false, canAddMember: false, canRemoveMember: false, canEditMessages: false, canOpenDM: true };
   }
 
   // Staff — lấy quyền thực tế từ bảng phân quyền theo route /chat
   let canCreate = false;
   let canDelete = false;
+  let canEdit = false;
+  let canView = false;
+  let canViewAll = false;
   try {
     const { getEffectivePermissions } = await import("../storage/permissions.storage");
     const roleIds: string[] = req.roleIds || [];
@@ -87,15 +93,56 @@ async function getChatPermissions(req: any): Promise<{
       const perms = await getEffectivePermissions(roleIds, "/chat");
       canCreate = perms.canCreate;
       canDelete = perms.canDelete;
+      canEdit = perms.canEdit;
+      canView = perms.canView;
+      canViewAll = perms.canViewAll;
     }
   } catch { /* bỏ qua lỗi, mặc định false */ }
 
   return {
-    canCreateGroup:  true,        // Staff luôn được tạo nhóm (chỉ học sinh mới bị chặn)
-    canAddMember:    canCreate,   // Quyền "Tạo" trên /chat → thêm thành viên
+    canView,
+    canViewAll,
+    canCreateGroup:  canCreate && (canView || canViewAll),
+    canAddMember:    canCreate && (canView || canViewAll),
     canRemoveMember: canDelete,   // Quyền "Xoá" trên /chat → xoá thành viên
-    canOpenDM:       true,        // Staff DM với bất kỳ ai
+    canEditMessages: canEdit,
+    canOpenDM:       canCreate && (canView || canViewAll),
   };
+}
+
+async function getAllowedChatRecipients(req: any, permissions: Awaited<ReturnType<typeof getChatPermissions>>): Promise<Set<string> | null> {
+  if (req.isSuperAdmin) return null;
+  const locationIds: string[] = req.allowedLocationIds ?? [];
+  if (!locationIds.length) return new Set();
+
+  const staffRows = await db
+    .select({ userId: staff.userId })
+    .from(staff)
+    .innerJoin(staffAssignments, eq(staffAssignments.staffId, staff.id))
+    .where(inArray(staffAssignments.locationId, locationIds));
+  const allowed = new Set(staffRows.map(row => row.userId));
+
+  let classRows;
+  if (permissions.canViewAll) {
+    classRows = await db.select({ id: classes.id }).from(classes).where(inArray(classes.locationId, locationIds));
+  } else {
+    const staffId: string | null = req.staffId ?? null;
+    if (!staffId) return allowed;
+    classRows = await db.select({ id: classes.id }).from(classes).where(and(
+      inArray(classes.locationId, locationIds),
+      sql`${staffId} = ANY(COALESCE(${classes.teacherIds}, ARRAY[]::uuid[]) || COALESCE(${classes.managerIds}, ARRAY[]::uuid[]))`,
+    ));
+  }
+  const classIds = classRows.map(row => row.id);
+  if (classIds.length) {
+    const studentRows = await db
+      .select({ userId: students.userId })
+      .from(students)
+      .innerJoin(studentClasses, eq(studentClasses.studentId, students.id))
+      .where(and(inArray(studentClasses.classId, classIds), eq(studentClasses.status, "active"), isNotNull(students.userId)));
+    studentRows.forEach(row => { if (row.userId) allowed.add(row.userId); });
+  }
+  return allowed;
 }
 
 // ─── Helper: kiểm tra quyền truy cập kênh chat ────────────────────────────────
@@ -495,6 +542,9 @@ export function registerMobileChatRoutes(app: Express): void {
     const isStudent: boolean = (req as any).isStudent ?? false;
 
     try {
+      if (!isStudent && !(await getChatPermissions(req)).canCreateGroup) {
+        return res.status(403).json({ success: false, message: "Bạn không có quyền bắt đầu cuộc trò chuyện mới." });
+      }
       const { getTinodeLogin } = await import("../lib/tinode.service");
       const pattern = `%${q}%`;
 
@@ -564,6 +614,11 @@ export function registerMobileChatRoutes(app: Express): void {
         ];
       }
 
+      if (!isStudent) {
+        const permissions = await getChatPermissions(req);
+        const allowedRecipients = await getAllowedChatRecipients(req, permissions);
+        if (allowedRecipients) results = results.filter(row => allowedRecipients.has(row.userId));
+      }
       return res.status(200).json({ success: true, data: { users: results } });
     } catch (err: any) {
       console.error("[MobileChat] /search-users error:", err);
@@ -613,6 +668,16 @@ export function registerMobileChatRoutes(app: Express): void {
     }
 
     try {
+      const chatPermissions = await getChatPermissions(req);
+      if (!isStudent && !chatPermissions.canCreateGroup) {
+        return res.status(403).json({ success: false, message: "Bạn cần quyền Xem hoặc Xem all và Thêm để nhắn tin mới." });
+      }
+      if (!isStudent) {
+        const allowedRecipients = await getAllowedChatRecipients(req, chatPermissions);
+        if (allowedRecipients && !allowedRecipients.has(targetUserId)) {
+          return res.status(403).json({ success: false, message: "Người nhận không thuộc phạm vi Chat được phép." });
+        }
+      }
       const { isTinodeConfigured, createGroupTopic, addMemberToTopic, ensureUserInTinode, verifyAndSetTopicDefacs } = await import("../lib/tinode.service");
 
       if (!isTinodeConfigured()) {
@@ -940,8 +1005,19 @@ export function registerMobileChatRoutes(app: Express): void {
     }
 
     const { name, memberUserIds = [], classId } = req.body;
+    const chatPermissions = await getChatPermissions(req);
+    if (!chatPermissions.canCreateGroup) {
+      return res.status(403).json({ success: false, message: "Cần có quyền Xem hoặc Xem all và Thêm để tạo nhóm chat." });
+    }
     if (!name || typeof name !== "string" || !name.trim()) {
       return res.status(400).json({ success: false, message: "Tên nhóm không được để trống." });
+    }
+    if (!Array.isArray(memberUserIds) || memberUserIds.some((id: unknown) => typeof id !== "string")) {
+      return res.status(400).json({ success: false, message: "Danh sách thành viên không hợp lệ." });
+    }
+    const allowedRecipients = await getAllowedChatRecipients(req, chatPermissions);
+    if (allowedRecipients && memberUserIds.some((id: string) => !allowedRecipients.has(id))) {
+      return res.status(403).json({ success: false, message: "Có thành viên ngoài phạm vi Chat được phép." });
     }
     const validClassId: string | null = classId && typeof classId === "string" ? classId : null;
 
@@ -952,10 +1028,23 @@ export function registerMobileChatRoutes(app: Express): void {
       let extraMemberUserIds: string[] = [];
       if (validClassId) {
         const [cls] = await db
-          .select({ teacherIds: classes.teacherIds, managerIds: classes.managerIds })
+          .select({ locationId: classes.locationId, teacherIds: classes.teacherIds, managerIds: classes.managerIds })
           .from(classes)
           .where(eq(classes.id, validClassId))
           .limit(1);
+
+        const isSuperAdmin = !!(req as any).isSuperAdmin;
+        const allowedLocationIds: string[] = (req as any).allowedLocationIds ?? [];
+        const staffId: string | null = (req as any).staffId ?? null;
+        const canUseClass = !!cls && (
+          isSuperAdmin ||
+          (allowedLocationIds.includes(cls.locationId) &&
+            (chatPermissions.canViewAll ||
+              (!!staffId && ((cls.teacherIds ?? []).includes(staffId) || (cls.managerIds ?? []).includes(staffId)))))
+        );
+        if (!canUseClass) {
+          return res.status(403).json({ success: false, message: "Không có quyền tạo nhóm từ lớp này." });
+        }
 
         if (cls) {
           const allStaffIds = Array.from(new Set([...(cls.teacherIds ?? []), ...(cls.managerIds ?? [])]));

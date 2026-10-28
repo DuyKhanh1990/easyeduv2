@@ -743,6 +743,7 @@ function NewP2PDialog({
 
 function ChannelSidebar({
   topics, currentTopic, onSelect, connected, messages, onCreateGroup, isStudent, onNewP2P,
+  canCreateGroup,
 }: {
   topics: UseTinodeResult["topics"];
   currentTopic: string | null;
@@ -752,6 +753,7 @@ function ChannelSidebar({
   onCreateGroup: () => void;
   isStudent: boolean;
   onNewP2P: () => void;
+  canCreateGroup: boolean;
 }) {
   const [search, setSearch] = useState("");
 
@@ -871,7 +873,7 @@ function ChannelSidebar({
       </ScrollArea>
 
       {/* Bottom action buttons */}
-      {!isStudent && (
+      {!isStudent && canCreateGroup && (
         <div className="shrink-0 px-3 py-3 border-t border-border/50 flex gap-2">
           <button
             onClick={onCreateGroup}
@@ -891,6 +893,18 @@ function ChannelSidebar({
           </button>
         </div>
       )}
+      {isStudent && (
+        <div className="shrink-0 px-3 py-3 border-t border-border/50 flex gap-2">
+          <button
+            onClick={onNewP2P}
+            data-testid="new-p2p-button"
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Nhắn tin mới
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -898,7 +912,7 @@ function ChannelSidebar({
 // ─── Message Window ───────────────────────────────────────────────────────────
 
 function MessageWindow({
-  topic, messages, myUid, myLogin, userNames, onSend, onUploadFile, onOpenViewer,
+  topic, messages, myUid, myLogin, userNames, onSend, onUploadFile, onOpenViewer, canEditMessages,
 }: {
   topic: UseTinodeResult["topics"][0] | undefined;
   messages: UseTinodeResult["messages"][string];
@@ -908,6 +922,7 @@ function MessageWindow({
   onSend: (content: string | Record<string, any>, head?: Record<string, any>) => void;
   onUploadFile: (file: File) => Promise<{ ref: string; size: number; mime: string; name: string } | null>;
   onOpenViewer: (url: string, name: string) => void;
+  canEditMessages: boolean;
 }) {
   const { toast } = useToast();
   const { tinodeUrl } = useTinodeContext();
@@ -1272,7 +1287,7 @@ function MessageWindow({
                     const isEdited = msg.edited === true || typeof msg.head?.replace === "string";
                     const isHighlighted = (editingMsg && editingMsg.seq === msg.seq) || (replyingTo && replyingTo.seq === msg.seq);
                     const isSearchMatch = searchTrimmed ? matchedSeqs.has(msg.seq) : false;
-                    const canEdit = isMe && typeof content === "string";
+                    const canEdit = canEditMessages && isMe && typeof content === "string";
 
                     return (
                       <div
@@ -1884,6 +1899,17 @@ export function ChatPage() {
     currentTopic, subscribe, sendMessage, uploadFile, setCurrentTopic, userNames, registerName,
   } = useTinodeContext();
 
+  const { data: myPerms, isLoading: permissionsLoading } = useMyPermissions();
+  const rawChatPermissions = myPerms?.permissions["/chat"];
+  const isStudentUser = isStudent || !!myPerms?.isStudent;
+  const chatCanView = !!myPerms?.isSuperAdmin || isStudentUser || !!rawChatPermissions?.canView || !!rawChatPermissions?.canViewAll;
+  const chatCanCreate = !!myPerms?.isSuperAdmin || (
+    !isStudentUser &&
+    !!rawChatPermissions?.canCreate &&
+    (!!rawChatPermissions?.canView || !!rawChatPermissions?.canViewAll)
+  );
+  const chatCanEdit = !!myPerms?.isSuperAdmin || !!rawChatPermissions?.canEdit;
+
   const { toast } = useToast();
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showNewP2P, setShowNewP2P] = useState(false);
@@ -1976,7 +2002,15 @@ export function ChatPage() {
 
   return (
     <DashboardLayout fullscreen>
-      <div className="flex flex-col h-full bg-background min-h-0">
+      {permissionsLoading ? (
+        <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin mr-2" /> Đang kiểm tra quyền Chat...
+        </div>
+      ) : !chatCanView ? (
+        <div className="h-full flex items-center justify-center p-6">
+          <p className="text-sm text-muted-foreground">Bạn chưa được cấp quyền xem Chat.</p>
+        </div>
+      ) : <div className="flex flex-col h-full bg-background min-h-0">
         {/* ─── Tinode (Nội bộ) ─────────────────────────────────────────── */}
         {/* Reconnecting banner — chỉ hiện sau khi mất kết nối >= 3s (debounced) */}
         {showReconnecting && (
@@ -2022,8 +2056,9 @@ export function ChatPage() {
                   connected={connected}
                   messages={messages}
                   onCreateGroup={() => setShowCreateGroup(true)}
-                  isStudent={isStudent}
+                  isStudent={isStudentUser}
                   onNewP2P={() => setShowNewP2P(true)}
+                  canCreateGroup={chatCanCreate}
                 />
 
                 <MessageWindow
@@ -2035,6 +2070,7 @@ export function ChatPage() {
                   onSend={handleSend}
                   onUploadFile={uploadFile}
                   onOpenViewer={handleOpenViewer}
+                  canEditMessages={chatCanEdit}
                 />
 
                 <InfoPanel
@@ -2046,19 +2082,19 @@ export function ChatPage() {
             )}
 
             <CreateGroupDialog
-              open={showCreateGroup}
+              open={showCreateGroup && chatCanCreate}
               onClose={() => setShowCreateGroup(false)}
               onCreated={handleGroupCreated}
             />
 
             <NewP2PDialog
-              open={showNewP2P}
+              open={showNewP2P && (isStudentUser || chatCanCreate)}
               onClose={() => setShowNewP2P(false)}
               onSelectUser={handleSelectP2PUser}
-              isStudent={isStudent}
+              isStudent={isStudentUser}
             />
           </div>
-      </div>
+      </div>}
       <FileViewer
         open={!!viewerFile}
         onClose={() => setViewerFile(null)}

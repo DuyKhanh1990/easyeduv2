@@ -140,3 +140,4 @@
 - [Hourly staff pay stays additive](hr-hourly-pay-additive.md) — hourly compensation must remain a separate branch; existing fixed-pay configuration and calculations stay unchanged.
 - [Teacher attendance overview scope](teacher-attendance-view-scope.md) — “Xem” sees only the logged-in teacher’s assigned classes; “Xem all” and Super Admin retain all rows.
 - [Staff role assignment permissions](staff-role-assignment-permissions.md) — role-assignment grants are per department/role; unchecked roles stay visible but disabled, while staff create/edit rights remain unchanged.
+- [Chat permission scopes](chat-permission-scopes.md) — staff Chat view is membership-only; View all is center-wide, while create and other actions require a view scope.
