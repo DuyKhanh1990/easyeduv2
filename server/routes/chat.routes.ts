@@ -16,6 +16,7 @@ import { users, students, staff, staffAssignments, studentClasses, classes, chat
 import { eq, and, inArray, ilike, or, sql, isNotNull } from "drizzle-orm";
 import { storage } from "../storage";
 import { getEffectivePermissions } from "../storage/permissions.storage";
+import { canCreateChat as hasCreateChatPermission, canCreateClassChat, canViewConversation, hasChatViewScope } from "@shared/chat-permissions";
 import multer from "multer";
 
 // Cache chỉ cho bước ensureUserInTinode (idempotent, tốn ~400ms mỗi lần).
@@ -47,11 +48,11 @@ async function getChatPermissions(req: any): Promise<ChatPermissions> {
 }
 
 function canViewChat(permissions: ChatPermissions): boolean {
-  return permissions.canView || permissions.canViewAll;
+  return hasChatViewScope(permissions);
 }
 
 function canCreateChat(permissions: ChatPermissions): boolean {
-  return permissions.canCreate && canViewChat(permissions);
+  return hasCreateChatPermission(permissions);
 }
 
 async function canCreateClassChatGroup(req: any, classId: string): Promise<boolean> {
@@ -68,14 +69,16 @@ async function canCreateClassChatGroup(req: any, classId: string): Promise<boole
   if (!cls) return false;
 
   const allowedLocationIds: string[] = req.allowedLocationIds ?? [];
-  if (!allowedLocationIds.includes(cls.locationId)) return false;
-  if (permissions.canViewAll) return true;
-
   const staffId: string | null = req.staffId ?? null;
-  return !!staffId && (
-    (cls.teacherIds ?? []).includes(staffId) ||
-    (cls.managerIds ?? []).includes(staffId)
-  );
+  return canCreateClassChat(permissions, {
+    isStudent: false,
+    isSuperAdmin: false,
+    locationAllowed: allowedLocationIds.includes(cls.locationId),
+    assignedToClass: !!staffId && (
+      (cls.teacherIds ?? []).includes(staffId) ||
+      (cls.managerIds ?? []).includes(staffId)
+    ),
+  });
 }
 
 async function canReadClassChat(req: any, classInfo: {
@@ -98,24 +101,21 @@ async function canReadClassChat(req: any, classInfo: {
         eq(studentClasses.status, "active"),
       ))
       .limit(1);
-    return !!enrollment;
+    return canViewConversation(permissions, !!enrollment);
   }
 
   const allowedLocationIds: string[] = req.allowedLocationIds ?? [];
-  if (!canViewChat(permissions) || !allowedLocationIds.includes(classInfo.locationId)) return false;
-  if (permissions.canViewAll) return true;
+  if (!allowedLocationIds.includes(classInfo.locationId)) return false;
   const staffId: string | null = req.staffId ?? null;
-  return !!staffId && (
+  return canViewConversation(permissions, !!staffId && (
     (classInfo.teacherIds ?? []).includes(staffId) ||
     (classInfo.managerIds ?? []).includes(staffId)
-  );
+  ));
 }
 
 async function canReadGroupChat(req: any, groupId: string): Promise<boolean> {
   const permissions = await getChatPermissions(req);
   if (req.isSuperAdmin || (req.user as any)?.username === "admin") return true;
-  if (!canViewChat(permissions)) return false;
-  if (permissions.canViewAll) return true;
   const [membership] = await db
     .select({ id: chatGroupMembers.id })
     .from(chatGroupMembers)
@@ -124,7 +124,7 @@ async function canReadGroupChat(req: any, groupId: string): Promise<boolean> {
       eq(chatGroupMembers.userId, (req.user as any).id),
     ))
     .limit(1);
-  return !!membership;
+  return canViewConversation(permissions, !!membership);
 }
 
 async function getAllowedChatRecipientIds(req: any, permissions: ChatPermissions): Promise<Set<string> | null> {

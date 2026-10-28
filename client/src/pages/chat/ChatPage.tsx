@@ -18,6 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getAuthToken } from "@/lib/queryClient";
+import { canCreateChat as hasCreateChatPermission, canEditChatMessage, hasChatViewScope } from "@shared/chat-permissions";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -1287,7 +1288,10 @@ function MessageWindow({
                     const isEdited = msg.edited === true || typeof msg.head?.replace === "string";
                     const isHighlighted = (editingMsg && editingMsg.seq === msg.seq) || (replyingTo && replyingTo.seq === msg.seq);
                     const isSearchMatch = searchTrimmed ? matchedSeqs.has(msg.seq) : false;
-                    const canEdit = canEditMessages && isMe && typeof content === "string";
+                    const canEdit = canEditChatMessage(
+                      { canEdit: canEditMessages },
+                      isMe && typeof content === "string",
+                    );
 
                     return (
                       <div
@@ -1902,11 +1906,11 @@ export function ChatPage() {
   const { data: myPerms, isLoading: permissionsLoading } = useMyPermissions();
   const rawChatPermissions = myPerms?.permissions["/chat"];
   const isStudentUser = isStudent || !!myPerms?.isStudent;
-  const chatCanView = !!myPerms?.isSuperAdmin || isStudentUser || !!rawChatPermissions?.canView || !!rawChatPermissions?.canViewAll;
+  const chatCanView = !!myPerms?.isSuperAdmin || isStudentUser || !!rawChatPermissions && hasChatViewScope(rawChatPermissions);
   const chatCanCreate = !!myPerms?.isSuperAdmin || (
     !isStudentUser &&
-    !!rawChatPermissions?.canCreate &&
-    (!!rawChatPermissions?.canView || !!rawChatPermissions?.canViewAll)
+    !!rawChatPermissions &&
+    hasCreateChatPermission(rawChatPermissions)
   );
   const chatCanEdit = !!myPerms?.isSuperAdmin || !!rawChatPermissions?.canEdit;
 

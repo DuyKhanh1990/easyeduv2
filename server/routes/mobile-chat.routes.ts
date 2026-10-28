@@ -32,6 +32,7 @@ import type { Express } from "express";
 import { db } from "../db";
 import { users, students, staff, staffAssignments, studentClasses, classes, chatGroups, chatGroupMembers, locations } from "@shared/schema";
 import { eq, and, inArray, ilike, or, sql, isNull, isNotNull } from "drizzle-orm";
+import { canCreateChat, canRemoveChatMember, type ChatPermissionFlags } from "@shared/chat-permissions";
 
 // ─── Helper: xác thực user từ req ──────────────────────────────────────────────
 
@@ -99,14 +100,16 @@ async function getChatPermissions(req: any): Promise<{
     }
   } catch { /* bỏ qua lỗi, mặc định false */ }
 
+  const permissions: ChatPermissionFlags = { canView, canViewAll, canCreate, canEdit, canDelete };
+  const canCreateInScope = canCreateChat(permissions);
   return {
     canView,
     canViewAll,
-    canCreateGroup:  canCreate && (canView || canViewAll),
-    canAddMember:    canCreate && (canView || canViewAll),
-    canRemoveMember: canDelete,   // Quyền "Xoá" trên /chat → xoá thành viên
+    canCreateGroup: canCreateInScope,
+    canAddMember: canCreateInScope,
+    canRemoveMember: canRemoveChatMember(permissions),
     canEditMessages: canEdit,
-    canOpenDM:       canCreate && (canView || canViewAll),
+    canOpenDM: canCreateInScope,
   };
 }
 
