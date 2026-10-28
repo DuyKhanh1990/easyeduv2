@@ -16,3 +16,9 @@ When changing Chat permissions, preserve existing conversation titles and group 
 **Why:** the user asked to change permissions only and corrected an unintended title change that surfaced when View all exposed more direct-message channels.
 
 **How to apply:** keep permission-scope changes separate from display-name behavior; if a newly visible channel needs a label, retain the existing per-viewer DM naming convention and the group's saved name.
+
+Adding a member requires Chat's **Thêm** permission across web and mobile; being the group creator does not bypass it.
+
+**Why:** the user chose one consistent permission rule for adding members instead of a creator-specific exception.
+
+**How to apply:** enforce the same Add permission in both the UI and every member-add API.

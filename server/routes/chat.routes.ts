@@ -273,7 +273,7 @@ export function registerChatRoutes(app: Express): void {
         SELECT g.id, g.tinode_topic_id, participants.other_name
         FROM chat_groups g
         LEFT JOIN LATERAL (
-          SELECT STRING_AGG(participant.display_name, ' · ' ORDER BY participant.display_name) AS other_name
+          SELECT STRING_AGG(participant.display_name, ' - ' ORDER BY participant.display_name) AS other_name
           FROM (
             SELECT COALESCE(s.full_name, st.full_name, u.username) AS display_name
             FROM chat_group_members member
@@ -1187,27 +1187,19 @@ export function registerChatRoutes(app: Express): void {
   // ─── POST /api/chat/topics/:topicId/members ─────────────────────────────────
   /**
    * Thêm thành viên vào nhóm chat bằng tinode topic ID.
-   * Yêu cầu: canCreate trên /chat HOẶC là người tạo nhóm.
+   * Yêu cầu: quyền Thêm trên /chat (kèm quyền xem).
    */
   app.post("/api/chat/topics/:topicId/members", async (req, res) => {
     if (!req.user) return res.status(401).json({ message: "Unauthorized" });
     const userId = (req.user as any).id;
-    const isSuperAdmin = (req.user as any).isSuperAdmin;
     const { topicId } = req.params;
     const { memberUserId } = req.body;
     if (!memberUserId) return res.status(400).json({ message: "memberUserId required" });
 
     try {
-      const checkPerm = async (createdBy?: string | null) => {
+      const checkPerm = async () => {
         const chatPermissions = await getChatPermissions(req);
-        if (!canViewChat(chatPermissions)) return false;
-        if (isSuperAdmin) return true;
-        if (createdBy === userId) return true;
-        const { getEffectivePermissions } = await import("../storage/permissions.storage");
-        const roleIds: string[] = (req as any).roleIds || [];
-        if (!roleIds.length) return false;
-        const perms = await getEffectivePermissions(roleIds, "/chat");
-        return perms.canCreate && (perms.canView || perms.canViewAll);
+        return canCreateChat(chatPermissions);
       };
 
       const addToTinode = async (tid: string) => {
@@ -1228,7 +1220,7 @@ export function registerChatRoutes(app: Express): void {
           return res.status(403).json({ message: "Bạn không có quyền xem cuộc trò chuyện này." });
         }
         if (group.isDirectMessage) return res.status(400).json({ message: "Không thể thêm thành viên vào tin nhắn trực tiếp" });
-        if (!await checkPerm(group.createdBy)) return res.status(403).json({ message: "Bạn không có quyền thêm thành viên" });
+        if (!await checkPerm()) return res.status(403).json({ message: "Bạn không có quyền thêm thành viên" });
 
         const [existing] = await db.select().from(chatGroupMembers)
           .where(and(eq(chatGroupMembers.groupId, group.id), eq(chatGroupMembers.userId, memberUserId))).limit(1);
@@ -1250,7 +1242,7 @@ export function registerChatRoutes(app: Express): void {
       if (!(await canCreateClassChatGroup(req, cls.id))) {
         return res.status(403).json({ message: "Không có quyền quản lý thành viên của lớp này." });
       }
-      if (!await checkPerm(null)) return res.status(403).json({ message: "Bạn không có quyền thêm thành viên" });
+      if (!await checkPerm()) return res.status(403).json({ message: "Bạn không có quyền thêm thành viên" });
       await addToTinode(topicId);
       return res.json({ ok: true });
     } catch (err: any) {

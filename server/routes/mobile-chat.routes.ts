@@ -52,8 +52,7 @@ function requireUser(req: any, res: any): string | null {
 /**
  * Trả về object quyền chat với tên rõ ràng, tách biệt từng hành động:
  *   canCreateGroup  — Tạo nhóm chat mới (chỉ staff/admin, không phải học sinh)
- *   canAddMember    — Thêm thành viên vào nhóm (cần quyền "Tạo" trên /chat,
- *                     hoặc là người tạo nhóm — kiểm tra per-group khi gọi API)
+ *   canAddMember    — Thêm thành viên vào nhóm (cần quyền "Thêm" trên /chat)
  *   canRemoveMember — Xoá thành viên khỏi nhóm (cần quyền "Xoá" trên /chat,
  *                     hoặc là người tạo nhóm — kiểm tra per-group khi gọi API)
  *   canOpenDM       — Mở chat 1-1: staff được DM với bất kỳ ai;
@@ -938,7 +937,7 @@ export function registerMobileChatRoutes(app: Express): void {
    *   "data": {
    *     "permissions": {
    *       "canCreateGroup":  boolean,  // Tạo nhóm chat mới (false với học sinh)
-   *       "canAddMember":    boolean,  // Thêm thành viên vào nhóm (quyền "Tạo" /chat)
+    *       "canAddMember":    boolean,  // Thêm thành viên vào nhóm (quyền "Thêm" /chat)
    *       "canRemoveMember": boolean,  // Xoá thành viên khỏi nhóm (quyền "Xoá" /chat)
    *       "canOpenDM":       boolean   // Mở chat 1-1; học sinh chỉ được DM GV của mình (server enforce)
    *     }
@@ -946,9 +945,8 @@ export function registerMobileChatRoutes(app: Express): void {
    * }
    *
    * Lưu ý per-group:
-   *   Người tạo nhóm (isCreator = true trong GET /groups) luôn có quyền thêm/xoá thành viên
-   *   trong nhóm đó, kể cả khi canAddMember/canRemoveMember = false ở đây.
-   *   → Mobile nên kết hợp: hiện nút thêm/xoá nếu (canAddMember || isCreator) / (canRemoveMember || isCreator)
+   *   Thêm thành viên luôn yêu cầu canAddMember; người tạo nhóm không được bỏ qua quyền này.
+   *   Quyền xoá vẫn giữ ngoại lệ người tạo nhóm theo nghiệp vụ hiện có.
    */
   app.get("/api/mobile/chat/permissions", async (req, res) => {
     const userId = requireUser(req, res);
@@ -1477,7 +1475,7 @@ export function registerMobileChatRoutes(app: Express): void {
    * Thêm thành viên vào nhóm chat tuỳ chỉnh.
    * Chỉ áp dụng cho custom group (không áp dụng cho DM hoặc nhóm lớp học).
    *
-   * Quyền: isSuperAdmin  HOẶC  người tạo nhóm  HOẶC  staff có quyền "Tạo" trên /chat.
+   * Quyền: staff có quyền "Thêm" trên /chat hoặc Super Admin.
    *
    * Headers:
    *   Authorization: Bearer <jwt_token>
@@ -1503,7 +1501,6 @@ export function registerMobileChatRoutes(app: Express): void {
     const userId = requireUser(req, res);
     if (!userId) return;
 
-    const isSuperAdmin: boolean = (req as any).isSuperAdmin ?? false;
     const { topicId } = req.params;
     const { memberUserId } = req.body;
 
@@ -1512,20 +1509,15 @@ export function registerMobileChatRoutes(app: Express): void {
     }
 
     try {
-      const checkPerm = async (createdBy?: string | null): Promise<boolean> => {
-        if (isSuperAdmin) return true;
-        if (createdBy === userId) return true;
-        const { getEffectivePermissions } = await import("../storage/permissions.storage");
-        const roleIds: string[] = (req as any).roleIds || [];
-        if (!roleIds.length) return false;
-        const perms = await getEffectivePermissions(roleIds, "/chat");
-        return perms.canCreate;
+      const checkPerm = async (): Promise<boolean> => {
+        const permissions = await getChatPermissions(req);
+        return permissions.canAddMember;
       };
 
       const [group] = await db.select().from(chatGroups).where(eq(chatGroups.tinodeTopicId, topicId)).limit(1);
       if (!group) return res.status(404).json({ success: false, message: "Không tìm thấy nhóm." });
       if (group.isDirectMessage) return res.status(400).json({ success: false, message: "Không thể thêm thành viên vào tin nhắn trực tiếp." });
-      if (!await checkPerm(group.createdBy)) return res.status(403).json({ success: false, message: "Bạn không có quyền thêm thành viên." });
+      if (!await checkPerm()) return res.status(403).json({ success: false, message: "Bạn không có quyền thêm thành viên." });
 
       const [existing] = await db.select().from(chatGroupMembers)
         .where(and(eq(chatGroupMembers.groupId, group.id), eq(chatGroupMembers.userId, memberUserId))).limit(1);
