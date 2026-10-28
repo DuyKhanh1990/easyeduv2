@@ -22,3 +22,9 @@ Adding a member requires Chat's **Thêm** permission across web and mobile; bein
 **Why:** the user chose one consistent permission rule for adding members instead of a creator-specific exception.
 
 **How to apply:** enforce the same Add permission in both the UI and every member-add API.
+
+When shortening long Chat channel names, preserve the timestamp and message preview; let the title use only the remaining width and show an ellipsis.
+
+**Why:** fixed-character truncation made the timestamp run into the sidebar edge.
+
+**How to apply:** constrain the title flex item, keep timestamps non-shrinking, widen the desktop sidebar when needed, and inspect the whole row rather than the title alone.
