@@ -770,6 +770,11 @@ function ChannelSidebar({
 
   function renderTopicItem(topic: UseTinodeResult["topics"][0], isCustom = false) {
     const isActive = currentTopic === topic.topic;
+    const fullTopicName = topic.name || topic.topic;
+    const topicNameCharacters = Array.from(fullTopicName);
+    const displayTopicName = topicNameCharacters.length > 25
+      ? `${topicNameCharacters.slice(0, 25).join("").trimEnd()}...`
+      : fullTopicName;
     return (
       <button
         key={topic.topic}
@@ -803,7 +808,7 @@ function ChannelSidebar({
               title={topic.name || topic.topic}
               style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
             >
-              {topic.name || topic.topic}
+              {displayTopicName}
             </p>
             {topic.lastTs && (
               <span className={cn(
