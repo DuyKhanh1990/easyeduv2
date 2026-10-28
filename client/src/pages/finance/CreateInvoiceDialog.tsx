@@ -3808,7 +3808,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold">{p.label}</span>
                         <Select value={p.status} onValueChange={v => updatePaymentStatus(p.id, v)} disabled={isSchedulePaid}>
-                          <SelectTrigger className={`h-6 text-[10px] px-1.5 py-0 rounded font-medium whitespace-nowrap border-0 shadow-none focus:ring-0 w-auto gap-1 ${isSchedulePaid ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"}`}>
+                          <SelectTrigger className={`h-6 text-[9px] px-1.5 py-0 rounded font-medium whitespace-nowrap border-0 shadow-none focus:ring-0 w-auto gap-1 ${isSchedulePaid ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"}`}>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -3819,7 +3819,6 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         </Select>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-muted-foreground">{t("finance.create.invoiceCodePrefix")} {p.code}</span>
                         {canRemoveSchedule && (
                           <button
                             type="button"
