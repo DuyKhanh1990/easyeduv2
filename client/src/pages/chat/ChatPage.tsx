@@ -6,7 +6,7 @@ import { useMyPermissions } from "@/hooks/use-my-permissions";
 import {
   Search, Send, Users, Hash, Wifi, WifiOff, Loader2,
   MessageCircle, Info, Bell, Plus, X, UserPlus, Trash2, UserRound,
-  Smile, Paperclip, FileText, Download, ImageIcon, Eye,
+  Smile, Paperclip, FileText, Download, ImageIcon, Eye, CircleAlert,
   CornerUpLeft, Pencil
 } from "lucide-react";
 import Picker from "@emoji-mart/react";
@@ -15,6 +15,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useTinodeContext, UseTinodeResult } from "@/hooks/use-tinode";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getAuthToken } from "@/lib/queryClient";
@@ -939,11 +940,40 @@ function MessageWindow({
   const [pendingFilePreview, setPendingFilePreview] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [editHistoryOpen, setEditHistoryOpen] = useState(false);
+  const [editHistory, setEditHistory] = useState<Array<{ id: string; previousContent: string; editedAt: string }>>([]);
+  const [editHistoryLoading, setEditHistoryLoading] = useState(false);
+  const [editHistoryError, setEditHistoryError] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  async function openEditHistory(messageSeq: number) {
+    if (!topic) return;
+    setEditHistory([]);
+    setEditHistoryError(null);
+    setEditHistoryLoading(true);
+    setEditHistoryOpen(true);
+    try {
+      const token = getAuthToken();
+      const response = await fetch(
+        `/api/chat/topics/${encodeURIComponent(topic.topic)}/messages/${messageSeq}/edit-history`,
+        {
+          credentials: "include",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.message || "Không thể tải lịch sử tin nhắn.");
+      setEditHistory(data.history ?? []);
+    } catch (error: any) {
+      setEditHistoryError(error?.message || "Không thể tải lịch sử tin nhắn.");
+    } finally {
+      setEditHistoryLoading(false);
+    }
+  }
 
   // Quick lookup of messages by seq (used to render quoted previews).
   const messagesBySeq = (messages ?? []).reduce<Record<number, typeof messages[0]>>(
@@ -1024,6 +1054,31 @@ function MessageWindow({
     }
 
     if (editingMsg) {
+      if (!topic) return;
+      try {
+        const token = getAuthToken();
+        const response = await fetch(
+          `/api/chat/topics/${encodeURIComponent(topic.topic)}/messages/${editingMsg.seq}/edit-history`,
+          {
+            method: "POST",
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ previousContent: editingMsg.content }),
+          },
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data?.message || "Không thể lưu nội dung cũ.");
+      } catch (error: any) {
+        toast({
+          title: "Chưa sửa được tin nhắn",
+          description: error?.message || "Không thể lưu nội dung cũ. Vui lòng thử lại.",
+          variant: "destructive",
+        });
+        return;
+      }
       onSend(text, { replace: `:${editingMsg.seq}` });
       setEditingMsg(null);
     } else if (replyingTo && topic) {
@@ -1402,12 +1457,22 @@ function MessageWindow({
                               {isEdited && (
                                 <span
                                   className={cn(
-                                    "ml-1.5 text-[10px] italic",
+                                    "ml-1.5 inline-flex items-center gap-1 text-[10px] italic",
                                     isMe ? "text-white/70" : "text-muted-foreground"
                                   )}
                                   data-testid={`text-edited-${msg.seq}`}
                                 >
                                   (đã sửa)
+                                  <button
+                                    type="button"
+                                    onClick={() => void openEditHistory(msg.seq)}
+                                    title="Xem nội dung cũ"
+                                    aria-label="Xem lịch sử sửa tin nhắn"
+                                    data-testid={`button-edit-history-${msg.seq}`}
+                                    className="inline-flex h-4 w-4 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/10"
+                                  >
+                                    <CircleAlert className="h-3.5 w-3.5" />
+                                  </button>
                                 </span>
                               )}
                             </div>
@@ -1598,6 +1663,46 @@ function MessageWindow({
           </div>
         )}
       </div>
+      <Dialog open={editHistoryOpen} onOpenChange={setEditHistoryOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Lịch sử sửa tin nhắn</DialogTitle>
+            <DialogDescription>
+              Nội dung được lưu trước mỗi lần sửa tin nhắn.
+            </DialogDescription>
+          </DialogHeader>
+          {editHistoryLoading ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Đang tải lịch sử...
+            </div>
+          ) : editHistoryError ? (
+            <p className="py-6 text-center text-sm text-destructive">{editHistoryError}</p>
+          ) : editHistory.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Chưa có nội dung cũ được lưu cho tin nhắn này.
+            </p>
+          ) : (
+            <div className="max-h-[55vh] space-y-3 overflow-y-auto pr-1" data-testid="chat-edit-history-list">
+              {editHistory.map((revision, index) => (
+                <section key={revision.id} className="rounded-xl border border-border bg-muted/30 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <p className="text-xs font-semibold text-foreground">
+                      {index === 0 ? "Trước lần sửa gần nhất" : `Lần sửa trước ${index + 1}`}
+                    </p>
+                    <time className="shrink-0 text-[11px] text-muted-foreground">
+                      {new Date(revision.editedAt).toLocaleString("vi-VN")}
+                    </time>
+                  </div>
+                  <p className="whitespace-pre-wrap break-words text-sm text-foreground">
+                    {revision.previousContent || "(Tin nhắn trống)"}
+                  </p>
+                </section>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

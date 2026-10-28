@@ -28,3 +28,9 @@ When shortening long Chat channel names, preserve the timestamp and message prev
 **Why:** fixed-character truncation made the timestamp run into the sidebar edge.
 
 **How to apply:** constrain the title flex item, keep timestamps non-shrinking, widen the desktop sidebar when needed, and inspect the whole row rather than the title alone.
+
+Before sending a Tinode text replacement, persist the previous message content. If persistence fails, do not send the edit; users who can read the conversation may view its saved revisions.
+
+**Why:** the user requested an audit trail for edited messages without changing the existing edit flow.
+
+**How to apply:** use the existing Chat Edit permission to save revisions and the conversation's read scope to retrieve them; keep the normal Tinode replacement payload unchanged.

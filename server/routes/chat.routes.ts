@@ -12,8 +12,8 @@
 
 import type { Express } from "express";
 import { db } from "../db";
-import { users, students, staff, staffAssignments, studentClasses, classes, chatGroups, chatGroupMembers } from "@shared/schema";
-import { eq, and, inArray, ilike, or, sql, isNotNull } from "drizzle-orm";
+import { users, students, staff, staffAssignments, studentClasses, classes, chatGroups, chatGroupMembers, chatMessageEditHistory } from "@shared/schema";
+import { eq, and, inArray, ilike, or, sql, isNotNull, desc } from "drizzle-orm";
 import { storage } from "../storage";
 import { getEffectivePermissions } from "../storage/permissions.storage";
 import { canCreateChat as hasCreateChatPermission, canCreateClassChat, canViewConversation, hasChatViewScope } from "@shared/chat-permissions";
@@ -125,6 +125,24 @@ async function canReadGroupChat(req: any, groupId: string): Promise<boolean> {
     ))
     .limit(1);
   return canViewConversation(permissions, !!membership);
+}
+
+async function canReadChatTopic(req: any, topicId: string): Promise<boolean> {
+  const [group] = await db.select({ id: chatGroups.id })
+    .from(chatGroups)
+    .where(eq(chatGroups.tinodeTopicId, topicId))
+    .limit(1);
+  if (group) return canReadGroupChat(req, group.id);
+
+  const [classInfo] = await db.select({
+    id: classes.id,
+    locationId: classes.locationId,
+    teacherIds: classes.teacherIds,
+    managerIds: classes.managerIds,
+  }).from(classes)
+    .where(eq(classes.tinodeTopicId as any, topicId))
+    .limit(1);
+  return !!classInfo && canReadClassChat(req, classInfo);
 }
 
 async function getAllowedChatRecipientIds(req: any, permissions: ChatPermissions): Promise<Set<string> | null> {
@@ -1075,6 +1093,71 @@ export function registerChatRoutes(app: Express): void {
     } catch (err: any) {
       console.error("[Chat] POST /api/chat/groups/:id/members error:", err);
       return res.status(500).json({ message: "Lỗi server" });
+    }
+  });
+
+  // ─── Chat message edit history ───────────────────────────────────────────────
+  app.get("/api/chat/topics/:topicId/messages/:messageSeq/edit-history", async (req, res) => {
+    if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+    const { topicId } = req.params;
+    const messageSeq = Number(req.params.messageSeq);
+    if (!Number.isSafeInteger(messageSeq) || messageSeq < 1) {
+      return res.status(400).json({ message: "messageSeq không hợp lệ." });
+    }
+
+    try {
+      if (!canViewChat(await getChatPermissions(req)) || !await canReadChatTopic(req, topicId)) {
+        return res.status(403).json({ message: "Bạn không có quyền xem lịch sử tin nhắn này." });
+      }
+
+      const history = await db.select({
+        id: chatMessageEditHistory.id,
+        previousContent: chatMessageEditHistory.previousContent,
+        editedAt: chatMessageEditHistory.editedAt,
+      }).from(chatMessageEditHistory)
+        .where(and(
+          eq(chatMessageEditHistory.topicId, topicId),
+          eq(chatMessageEditHistory.messageSeq, messageSeq),
+        ))
+        .orderBy(desc(chatMessageEditHistory.editedAt));
+
+      return res.json({ history });
+    } catch (err: any) {
+      console.error("[Chat] GET message edit history error:", err);
+      return res.status(500).json({ message: "Không thể tải lịch sử tin nhắn." });
+    }
+  });
+
+  app.post("/api/chat/topics/:topicId/messages/:messageSeq/edit-history", async (req, res) => {
+    if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+    const userId = (req.user as any).id;
+    const { topicId } = req.params;
+    const messageSeq = Number(req.params.messageSeq);
+    const previousContent = req.body?.previousContent;
+    if (!Number.isSafeInteger(messageSeq) || messageSeq < 1) {
+      return res.status(400).json({ message: "messageSeq không hợp lệ." });
+    }
+    if (typeof previousContent !== "string") {
+      return res.status(400).json({ message: "previousContent phải là văn bản." });
+    }
+
+    try {
+      const permissions = await getChatPermissions(req);
+      if (!permissions.canEdit || !canViewChat(permissions) || !await canReadChatTopic(req, topicId)) {
+        return res.status(403).json({ message: "Bạn không có quyền lưu lịch sử sửa tin nhắn." });
+      }
+
+      const [saved] = await db.insert(chatMessageEditHistory).values({
+        topicId,
+        messageSeq,
+        previousContent,
+        editedBy: userId,
+      }).returning({ id: chatMessageEditHistory.id });
+
+      return res.status(201).json({ ok: true, id: saved.id });
+    } catch (err: any) {
+      console.error("[Chat] POST message edit history error:", err);
+      return res.status(500).json({ message: "Không thể lưu lịch sử tin nhắn." });
     }
   });
 

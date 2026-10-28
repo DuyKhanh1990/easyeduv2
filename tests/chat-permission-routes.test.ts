@@ -2,11 +2,15 @@ import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getEffectivePermissionsMock } = vi.hoisted(() => ({
+const { getEffectivePermissionsMock, dbMock } = vi.hoisted(() => ({
   getEffectivePermissionsMock: vi.fn(),
+  dbMock: {
+    select: vi.fn(),
+    insert: vi.fn(),
+  },
 }));
 
-vi.mock("../server/db", () => ({ db: {} }));
+vi.mock("../server/db", () => ({ db: dbMock }));
 vi.mock("../server/storage", () => ({ storage: {} }));
 vi.mock("../server/storage/permissions.storage", () => ({
   getEffectivePermissions: getEffectivePermissionsMock,
@@ -32,6 +36,8 @@ function createApp(options: { isStudent?: boolean } = {}) {
 describe("Chat API permission gates", () => {
   beforeEach(() => {
     getEffectivePermissionsMock.mockReset();
+    dbMock.select.mockReset();
+    dbMock.insert.mockReset();
     getEffectivePermissionsMock.mockResolvedValue({
       canView: false,
       canViewAll: false,
@@ -89,5 +95,104 @@ describe("Chat API permission gates", () => {
 
     expect(response.status).toBe(403);
     expect(response.body.message).toContain("không được phép tạo nhóm");
+  });
+
+  it("blocks saving an edited message without Chat Edit permission", async () => {
+    getEffectivePermissionsMock.mockResolvedValue({
+      canView: true,
+      canViewAll: false,
+      canCreate: false,
+      canEdit: false,
+      canDelete: false,
+    });
+
+    const response = await request(createApp())
+      .post("/api/chat/topics/grp-test/messages/12/edit-history")
+      .send({ previousContent: "Tin nhắn cũ" });
+
+    expect(response.status).toBe(403);
+    expect(dbMock.select).not.toHaveBeenCalled();
+  });
+
+  it("stores the previous text when an authorized staff member edits a class message", async () => {
+    getEffectivePermissionsMock.mockResolvedValue({
+      canView: true,
+      canViewAll: false,
+      canCreate: false,
+      canEdit: true,
+      canDelete: false,
+    });
+
+    let selectCall = 0;
+    dbMock.select.mockImplementation(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => {
+            selectCall += 1;
+            return selectCall === 1
+              ? []
+              : [{
+                  id: "class-id",
+                  locationId: "test-location-id",
+                  teacherIds: ["test-staff-id"],
+                  managerIds: [],
+                }];
+          },
+        }),
+      }),
+    }));
+    dbMock.insert.mockReturnValue({
+      values: () => ({
+        returning: async () => [{ id: "history-id" }],
+      }),
+    });
+
+    const response = await request(createApp())
+      .post("/api/chat/topics/grp-class/messages/12/edit-history")
+      .send({ previousContent: "Phiên bản cũ" });
+
+    expect(response.status).toBe(201);
+    expect(dbMock.insert).toHaveBeenCalledOnce();
+  });
+
+  it("returns saved revisions to staff who can read the class conversation", async () => {
+    getEffectivePermissionsMock.mockResolvedValue({
+      canView: true,
+      canViewAll: false,
+      canCreate: false,
+      canEdit: false,
+      canDelete: false,
+    });
+
+    let selectCall = 0;
+    dbMock.select.mockImplementation(() => {
+      const call = selectCall++;
+      return {
+        from: () => ({
+          where: () => ({
+            limit: async () => call === 0
+              ? []
+              : [{
+                  id: "class-id",
+                  locationId: "test-location-id",
+                  teacherIds: ["test-staff-id"],
+                  managerIds: [],
+                }],
+            orderBy: async () => [{
+              id: "history-id",
+              previousContent: "Nội dung trước khi sửa",
+              editedAt: "2026-10-28T09:00:00.000Z",
+            }],
+          }),
+        }),
+      };
+    });
+
+    const response = await request(createApp())
+      .get("/api/chat/topics/grp-class/messages/12/edit-history");
+
+    expect(response.status).toBe(200);
+    expect(response.body.history).toHaveLength(1);
+    expect(response.body.history[0].previousContent).toBe("Nội dung trước khi sửa");
   });
 });

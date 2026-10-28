@@ -2407,6 +2407,20 @@ export const chatGroupMembers = pgTable("chat_group_members", {
 });
 
 export type ChatGroupMember = typeof chatGroupMembers.$inferSelect;
+
+export const chatMessageEditHistory = pgTable("chat_message_edit_history", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  topicId: varchar("topic_id", { length: 100 }).notNull(),
+  messageSeq: integer("message_seq").notNull(),
+  previousContent: text("previous_content").notNull(),
+  editedBy: uuid("edited_by").references(() => users.id, { onDelete: "set null" }),
+  editedAt: timestamp("edited_at").defaultNow().notNull(),
+}, (table) => ({
+  messageHistoryIdx: index("chat_message_edit_history_message_idx")
+    .on(table.topicId, table.messageSeq, table.editedAt),
+}));
+
+export type ChatMessageEditHistory = typeof chatMessageEditHistory.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 
