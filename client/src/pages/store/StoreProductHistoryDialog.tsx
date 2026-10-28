@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { History, PackagePlus, Pencil, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { History, PackagePlus, Pencil, Trash2, ChevronLeft, ChevronRight, Eye } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
 type ProductHistoryEvent = {
@@ -39,9 +39,9 @@ const EVENT_CONFIG = {
 const LEGACY_FIELD_LABELS: Record<string, string> = {
   code: "Mã sản phẩm",
   name: "Tên sản phẩm",
-  categoryId: "Danh mục (ID)",
-  unitId: "Đơn vị (ID)",
-  supplierId: "Nhà cung cấp (ID)",
+  categoryId: "Danh mục",
+  unitId: "Đơn vị",
+  supplierId: "Nhà cung cấp",
   costPrice: "Giá nhập",
   salePrice: "Giá bán",
   starPrice: "Giá sao",
@@ -51,18 +51,30 @@ const LEGACY_FIELD_LABELS: Record<string, string> = {
   status: "Trạng thái",
 };
 
-function parseSnapshot(raw: string | null): Record<string, unknown> | null {
+type LookupMaps = {
+  categories: Map<string, string>;
+  units: Map<string, string>;
+  suppliers: Map<string, string>;
+};
+
+function parseSnapshot(raw: string | null, lookups: LookupMaps): Record<string, unknown> | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-    return Object.fromEntries(Object.entries(parsed).map(([key, value]) => {
+    const normalized: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (key === "productId") continue;
       const label = LEGACY_FIELD_LABELS[key] ?? key;
-      if (key === "hasVariants" && typeof value === "boolean") return [label, value ? "Có" : "Không"];
-      if (key === "status" && value === "active") return [label, "Đang bán"];
-      if (key === "status" && value === "inactive") return [label, "Ngừng bán"];
-      return [label, value];
-    }));
+      if (key === "categoryId") normalized[label] = value ? lookups.categories.get(String(value)) ?? "Danh mục không còn tồn tại" : null;
+      else if (key === "unitId") normalized[label] = value ? lookups.units.get(String(value)) ?? "Đơn vị không còn tồn tại" : null;
+      else if (key === "supplierId") normalized[label] = value ? lookups.suppliers.get(String(value)) ?? "Nhà cung cấp không còn tồn tại" : null;
+      else if (key === "hasVariants" && typeof value === "boolean") normalized[label] = value ? "Có" : "Không";
+      else if (key === "status" && value === "active") normalized[label] = "Đang bán";
+      else if (key === "status" && value === "inactive") normalized[label] = "Ngừng bán";
+      else normalized[label] = value;
+    }
+    return normalized;
   } catch {
     return null;
   }
@@ -111,6 +123,51 @@ function EventSnapshot({
   );
 }
 
+function EventDetailDialog({
+  event,
+  lookups,
+  onClose,
+}: {
+  event: ProductHistoryEvent | null;
+  lookups: LookupMaps;
+  onClose: () => void;
+}) {
+  if (!event) return null;
+  const config = EVENT_CONFIG[event.action];
+  const oldContent = parseSnapshot(event.oldContent, lookups);
+  const newContent = parseSnapshot(event.newContent, lookups);
+  const titleContent = newContent ?? oldContent ?? {};
+
+  return (
+    <Dialog open={!!event} onOpenChange={isOpen => !isOpen && onClose()}>
+      <DialogContent className="w-[min(800px,94vw)] max-w-[800px] max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex flex-wrap items-center gap-2 text-sm">
+            <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${config.className}`}>
+              <config.Icon className="h-3 w-3" />{config.label}
+            </span>
+            <span className="font-bold text-slate-700">
+              {displayValue(titleContent["Mã sản phẩm"])} · {displayValue(titleContent["Tên sản phẩm"])}
+            </span>
+            <span className="font-normal text-slate-400">
+              {format(new Date(event.createdAt), "HH:mm — dd/MM/yyyy", { locale: vi })}
+            </span>
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-1 text-xs text-slate-500">
+          {event.userName && <p><span className="font-medium">Người thực hiện:</span> {event.userName}</p>}
+        </div>
+        <div className="mt-1">
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            {event.action === "store.product.updated" ? "Thay đổi" : "Thông tin sản phẩm"}
+          </p>
+          <EventSnapshot oldContent={oldContent} newContent={newContent} />
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function StoreProductHistoryDialog({
   open,
   onOpenChange,
@@ -119,12 +176,36 @@ export function StoreProductHistoryDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const [page, setPage] = useState(1);
+  const [detailEvent, setDetailEvent] = useState<ProductHistoryEvent | null>(null);
   const { data, isLoading, isError } = useQuery<HistoryResponse>({
     queryKey: ["/api/store/products/history", page, PAGE_SIZE],
     queryFn: () => apiRequest("GET", `/api/store/products/history?page=${page}&pageSize=${PAGE_SIZE}`).then(res => res.json()),
     enabled: open,
     staleTime: 15_000,
   });
+  const { data: categories = [] } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ["/api/store/categories"],
+    queryFn: () => apiRequest("GET", "/api/store/categories").then(res => res.json()),
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const { data: units = [] } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ["/api/store/units"],
+    queryFn: () => apiRequest("GET", "/api/store/units").then(res => res.json()),
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const { data: suppliers = [] } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ["/api/store/suppliers"],
+    queryFn: () => apiRequest("GET", "/api/store/suppliers").then(res => res.json()),
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const lookups: LookupMaps = {
+    categories: new Map(categories.map(item => [item.id, item.name])),
+    units: new Map(units.map(item => [item.id, item.name])),
+    suppliers: new Map(suppliers.map(item => [item.id, item.name])),
+  };
   const events = data?.events ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -154,12 +235,12 @@ export function StoreProductHistoryDialog({
               {events.map(event => {
                 const config = EVENT_CONFIG[event.action];
                 const Icon = config.Icon;
-                const oldContent = parseSnapshot(event.oldContent);
-                const newContent = parseSnapshot(event.newContent);
+                const oldContent = parseSnapshot(event.oldContent, lookups);
+                const newContent = parseSnapshot(event.newContent, lookups);
                 const product = newContent ?? oldContent ?? {};
                 const date = new Date(event.createdAt);
                 return (
-                  <article key={event.id} className="rounded-xl border border-slate-100 bg-white p-3">
+                  <article key={event.id} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 hover:border-slate-200 hover:shadow-sm">
                     <div className="flex items-start gap-3">
                       <span className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${config.className}`}>
                         <Icon className="h-3.5 w-3.5" />
@@ -177,9 +258,17 @@ export function StoreProductHistoryDialog({
                           {Number.isNaN(date.getTime()) ? event.createdAt : format(date, "HH:mm — dd/MM/yyyy", { locale: vi })}
                           {event.userName ? ` · bởi ${event.userName}` : ""}
                         </p>
-                        <EventSnapshot oldContent={oldContent} newContent={newContent} />
                       </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setDetailEvent(event)}
+                      className={`ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${config.className} hover:opacity-80`}
+                      title="Xem chi tiết"
+                      aria-label={`Xem chi tiết ${config.label.toLowerCase()}`}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
                   </article>
                 );
               })}
@@ -212,6 +301,7 @@ export function StoreProductHistoryDialog({
           </div>
         </div>
       </DialogContent>
+      <EventDetailDialog event={detailEvent} lookups={lookups} onClose={() => setDetailEvent(null)} />
     </Dialog>
   );
 }
