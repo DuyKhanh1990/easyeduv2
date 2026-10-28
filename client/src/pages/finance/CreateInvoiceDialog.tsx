@@ -2170,20 +2170,21 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
           onClose();
         }
       }}>
-      <DialogContent className="w-screen h-screen max-w-none max-h-none m-0 rounded-none p-0 gap-0 overflow-hidden flex flex-col">
-        <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
-          <DialogTitle className="flex items-center gap-2 text-xs font-semibold">
+      <DialogContent className="w-screen h-[100dvh] max-w-none max-h-none m-0 rounded-none p-0 gap-0 overflow-hidden flex flex-col bg-[#f2f4f7]">
+        <DialogHeader className="px-5 py-4 sm:px-6 border-b border-slate-200 bg-white flex-shrink-0">
+          <DialogTitle className="flex items-center gap-2 text-sm font-semibold text-slate-800">
             <CreditCard className="h-4 w-4 text-purple-600" />
             {isEdit ? `${t("finance.editInvoice")} ${editData?.code ?? ""}` : t("finance.create.enterInvoice")}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="relative flex flex-1 overflow-hidden">
-        <div className="flex flex-1 overflow-hidden">
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
           {/* LEFT PANEL */}
-          <div className="flex-1 overflow-y-auto px-6 py-4 border-r space-y-4 min-w-0">
+          <div className="min-w-0 flex-shrink-0 space-y-4 bg-[#f2f4f7] px-4 py-4 sm:px-6 md:flex-1 md:overflow-y-auto md:border-r md:border-slate-200">
 
-            <div className="flex items-center gap-1 p-1 rounded-lg border bg-muted/30 w-fit">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-1 p-1 rounded-lg border border-slate-200 bg-slate-50 w-fit">
               <button
                 onClick={() => { setInvoiceType("income"); setProducts(prev => prev.map(p => ({ ...p, categoryId: "" }))); }}
                 className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${invoiceType === "income" ? "bg-purple-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
@@ -2201,7 +2202,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             </div>
 
             {/* Row 1: Cơ sở, Tên, Lớp */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">{t("finance.create.branchRequired")} <span className="text-red-500">*</span></label>
               <Select value={locationId} onValueChange={v => { setLocationId(v); setStudentId(null); setSubjectName(""); setClassId(""); clearSelectedVouchers(); setProducts(prev => prev.map(p => ({ ...p, packageId: null }))); }}>
@@ -2313,7 +2314,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             </div>
 
             {/* Row 2: Tài khoản thu/chi, Tài khoản đối ứng, Hạn Thanh toán */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">{invoiceType === "income" ? t("finance.invoiceTypeIncome") : t("finance.invoiceTypeExpense")} <span className="text-red-500">*</span></label>
                 <SearchableSelect
@@ -2349,11 +2350,12 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                 />
               </div>
             </div>
+            </div>
 
             {/* Product list */}
-            <div>
-              <div className="mb-2">
-                <span className="text-sm font-semibold">{t("finance.create.products")}</span>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-3">
+                <span className="text-sm font-semibold text-slate-800">{t("finance.create.products")}</span>
               </div>
 
               <div className="rounded-lg border overflow-x-auto">
@@ -3406,7 +3408,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             </div>
 
             {/* Note */}
-            <div className={isPaidInvoiceLocked ? "relative z-30 space-y-1" : "space-y-1"}>
+            <div className={isPaidInvoiceLocked ? "relative z-30 space-y-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm" : "space-y-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"}>
               <label className="text-xs font-medium text-muted-foreground">{t("finance.note")}</label>
               <Textarea
                 placeholder={t("finance.notePlaceholder")}
@@ -3419,7 +3421,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             </div>
 
             {/* Commission / Doanh thu tính hoa hồng */}
-            <div className="space-y-2">
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div>
                 <label className="text-xs font-medium text-muted-foreground">{t("finance.commissionRevenue")}</label>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
@@ -3535,8 +3537,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
           </div>
 
           {/* RIGHT PANEL */}
-          <div className="w-[400px] flex-shrink-0 overflow-y-auto px-5 py-4 space-y-4 bg-muted/20">
-            <div className="rounded-xl border bg-card p-4 space-y-3 shadow-sm">
+          <div className="w-full flex-shrink-0 space-y-4 bg-[#f2f4f7] px-4 py-4 sm:px-6 md:w-[400px] md:overflow-y-auto md:px-5">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm">
               <div className="space-y-1.5 text-sm">
                  <div className="flex justify-between text-muted-foreground">
                    <span>{t("finance.create.amount")}:</span>
@@ -3762,7 +3764,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
             </div>
 
             {/* Payment schedule */}
-            <div className="space-y-2">
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between">
                  <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">{t("finance.create.paymentSchedule")}</span>
                 <Button
@@ -4067,7 +4069,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         </div>
 
         {/* Footer actions */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 border-t bg-muted/20 flex-shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 border-t border-slate-200 bg-white flex-shrink-0">
           {isPaidInvoiceLocked && (
             <div
               className="text-sm text-destructive font-medium"
