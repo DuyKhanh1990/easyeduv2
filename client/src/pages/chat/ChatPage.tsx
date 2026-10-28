@@ -771,17 +771,13 @@ function ChannelSidebar({
   function renderTopicItem(topic: UseTinodeResult["topics"][0], isCustom = false) {
     const isActive = currentTopic === topic.topic;
     const fullTopicName = topic.name || topic.topic;
-    const topicNameCharacters = Array.from(fullTopicName);
-    const displayTopicName = topicNameCharacters.length > 25
-      ? `${topicNameCharacters.slice(0, 25).join("").trimEnd()}...`
-      : fullTopicName;
     return (
       <button
         key={topic.topic}
         onClick={() => onSelect(topic.topic)}
         data-testid={`chat-topic-${topic.topic}`}
         className={cn(
-          "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left group",
+          "w-full min-w-0 flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left group",
           isActive ? "bg-primary/10 ring-1 ring-primary/20" : "hover:bg-muted/60"
         )}
       >
@@ -798,30 +794,27 @@ function ChannelSidebar({
           {getInitials(topic.name || topic.topic)}
         </div>
 
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-1">
+        <div className="w-0 flex-1 min-w-0">
+          <div className="flex w-full min-w-0 items-center justify-between gap-1">
             <p className={cn(
-              "text-sm min-w-0 flex-1",
+              "text-sm w-0 min-w-0 flex-1 truncate",
               isActive ? "text-primary font-semibold" :
               topic.unread > 0 ? "font-semibold text-foreground" : "font-medium text-foreground"
-            )}
-              title={topic.name || topic.topic}
-              style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-            >
-              {displayTopicName}
+            )} title={fullTopicName}>
+              {fullTopicName}
             </p>
             {topic.lastTs && (
               <span className={cn(
-                "text-[10px] shrink-0",
+                "text-[10px] shrink-0 whitespace-nowrap",
                 topic.unread > 0 ? "text-primary font-semibold" : "text-muted-foreground"
               )}>
                 {formatTime(topic.lastTs)}
               </span>
             )}
           </div>
-          <div className="flex items-center justify-between gap-1 mt-0.5">
+          <div className="flex w-full min-w-0 items-center justify-between gap-1 mt-0.5">
             <p className={cn(
-              "text-xs truncate min-w-0",
+              "text-xs w-0 flex-1 truncate min-w-0",
               topic.unread > 0 ? "text-foreground/80 font-medium" : "text-muted-foreground"
             )}>
               {topic.lastContent ?? "Nhấn để xem chat"}
@@ -838,7 +831,7 @@ function ChannelSidebar({
   }
 
   return (
-    <div className="w-[280px] shrink-0 flex flex-col border-r border-border/50 bg-card h-full">
+    <div className="w-[280px] md:w-[340px] shrink-0 flex flex-col border-r border-border/50 bg-card h-full">
       {/* Header */}
       <div className="px-5 pt-4 pb-3 border-b border-border/50">
         <div className="flex items-center justify-between mb-3">
