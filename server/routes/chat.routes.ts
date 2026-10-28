@@ -269,21 +269,41 @@ export function registerChatRoutes(app: Express): void {
         .map(g => ({ topicId: g.tinodeTopicId!, className: g.name, classId: null, groupId: g.id, isCustomGroup: true, isDirectMessage: false }));
 
       // ── Also include DM (direct message) channels ────────────────────────────
-      const dmMemberScope = permissions.canViewAll
-        ? sql``
-        : sql`AND m1.user_id = ${userId} AND m2.user_id <> ${userId}`;
       const dmRows = await db.execute(sql`
-        SELECT g.id, g.tinode_topic_id,
-               STRING_AGG(DISTINCT COALESCE(s.full_name, st.full_name, u.username), ' · ' ORDER BY COALESCE(s.full_name, st.full_name, u.username)) AS other_name
+        SELECT g.id, g.tinode_topic_id, participants.other_name
         FROM chat_groups g
-        INNER JOIN chat_group_members m1 ON m1.group_id = g.id
-        INNER JOIN chat_group_members m2 ON m2.group_id = g.id
-        ${dmMemberScope}
-        INNER JOIN users u ON u.id = m2.user_id
-        LEFT JOIN staff s ON s.user_id = u.id
-        LEFT JOIN students st ON st.user_id = u.id
+        LEFT JOIN LATERAL (
+          SELECT STRING_AGG(participant.display_name, ' · ' ORDER BY participant.display_name) AS other_name
+          FROM (
+            SELECT COALESCE(s.full_name, st.full_name, u.username) AS display_name
+            FROM chat_group_members member
+            INNER JOIN users u ON u.id = member.user_id
+            LEFT JOIN staff s ON s.user_id = u.id
+            LEFT JOIN students st ON st.user_id = u.id
+            WHERE member.group_id = g.id
+              AND (
+                member.user_id <> ${userId}
+                OR NOT EXISTS (
+                  SELECT 1
+                  FROM chat_group_members own_member
+                  WHERE own_member.group_id = g.id
+                    AND own_member.user_id = ${userId}
+                )
+              )
+            ORDER BY COALESCE(s.full_name, st.full_name, u.username)
+            LIMIT 2
+          ) participant
+        ) participants ON TRUE
         WHERE g.is_direct_message = TRUE AND g.tinode_topic_id IS NOT NULL
-        GROUP BY g.id, g.tinode_topic_id
+          AND (
+            ${permissions.canViewAll}
+            OR EXISTS (
+              SELECT 1
+              FROM chat_group_members own_member
+              WHERE own_member.group_id = g.id
+                AND own_member.user_id = ${userId}
+            )
+          )
       `);
       const dmChannels = ((dmRows as any).rows ?? (dmRows as any) ?? [])
         .filter((r: any) => !!r.tinode_topic_id)
