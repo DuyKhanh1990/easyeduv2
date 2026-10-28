@@ -2170,7 +2170,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
           onClose();
         }
       }}>
-      <DialogContent className="w-screen h-[100dvh] max-w-none max-h-none m-0 rounded-none p-0 gap-0 overflow-hidden flex flex-col bg-[#f2f4f7]">
+      <DialogContent className="w-screen h-[100dvh] max-w-none max-h-none m-0 rounded-none p-0 gap-0 overflow-hidden flex flex-col bg-[#e5e7eb]">
         <DialogHeader className="px-5 py-4 sm:px-6 border-b border-slate-200 bg-white flex-shrink-0">
           <DialogTitle className="flex items-center gap-2 text-sm font-semibold text-slate-800">
             <CreditCard className="h-4 w-4 text-purple-600" />
@@ -2181,7 +2181,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
           {/* LEFT PANEL */}
-          <div className="min-w-0 flex-shrink-0 space-y-4 bg-[#f2f4f7] px-4 py-4 sm:px-6 md:flex-1 md:overflow-y-auto md:border-r md:border-slate-200">
+          <div className="min-w-0 flex-shrink-0 space-y-4 bg-[#e5e7eb] px-4 py-4 sm:px-6 md:flex-1 md:overflow-y-auto md:border-r md:border-slate-200">
 
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center gap-1 p-1 rounded-lg border border-slate-200 bg-slate-50 w-fit">
@@ -3537,7 +3537,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
           </div>
 
           {/* RIGHT PANEL */}
-          <div className="w-full flex-shrink-0 space-y-4 bg-[#f2f4f7] px-4 py-4 sm:px-6 md:w-[400px] md:overflow-y-auto md:px-5">
+          <div className="w-full flex-shrink-0 space-y-4 bg-[#e5e7eb] px-4 py-4 sm:px-6 md:w-[400px] md:overflow-y-auto md:px-5">
             <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm">
               <div className="space-y-1.5 text-sm">
                  <div className="flex justify-between text-muted-foreground">
