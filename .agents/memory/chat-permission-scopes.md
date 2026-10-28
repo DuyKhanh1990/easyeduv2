@@ -10,3 +10,9 @@ For group creation, View-only staff may choose classes where they are assigned a
 **Why:** the user chose chat permissions as the authority because teachers may not receive access to Education > Classes. Showing non-member conversations under ordinary View would expose chat channels unexpectedly.
 
 **How to apply:** enforce the same scope in both UI and server routes; never rely on hiding buttons alone. Treat DMs as two-member chat groups, not a separate visibility category.
+
+When changing Chat permissions, preserve existing conversation titles and group names unless the user explicitly asks to change them. View all may expand which conversations are visible, but must not turn ordinary group names into member-name lists.
+
+**Why:** the user asked to change permissions only and corrected an unintended title change that surfaced when View all exposed more direct-message channels.
+
+**How to apply:** keep permission-scope changes separate from display-name behavior; if a newly visible channel needs a label, retain the existing per-viewer DM naming convention and the group's saved name.

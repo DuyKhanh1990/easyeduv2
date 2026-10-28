@@ -913,7 +913,7 @@ function ChannelSidebar({
 // ─── Message Window ───────────────────────────────────────────────────────────
 
 function MessageWindow({
-  topic, messages, myUid, myLogin, userNames, onSend, onUploadFile, onOpenViewer, canEditMessages,
+  topic, messages, myUid, myLogin, userNames, onSend, onUploadFile, onOpenViewer, canEditMessages, canSendMessages, checkingMembership,
 }: {
   topic: UseTinodeResult["topics"][0] | undefined;
   messages: UseTinodeResult["messages"][string];
@@ -924,6 +924,8 @@ function MessageWindow({
   onUploadFile: (file: File) => Promise<{ ref: string; size: number; mime: string; name: string } | null>;
   onOpenViewer: (url: string, name: string) => void;
   canEditMessages: boolean;
+  canSendMessages: boolean;
+  checkingMembership: boolean;
 }) {
   const { toast } = useToast();
   const { tinodeUrl } = useTinodeContext();
@@ -993,6 +995,7 @@ function MessageWindow({
   }, [showEmojiPicker]);
 
   async function handleSend() {
+    if (!canSendMessages) return;
     const text = input.trim();
     if (!text && !pendingFile) return;
 
@@ -1430,6 +1433,8 @@ function MessageWindow({
 
       {/* Input area */}
       <div className="relative px-6 py-4 border-t border-border/50 bg-card/80 shrink-0">
+        {canSendMessages ? (
+        <>
         {/* Emoji picker popup */}
         {showEmojiPicker && (
           <div
@@ -1579,6 +1584,18 @@ function MessageWindow({
             {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </button>
         </div>
+        </>
+        ) : (
+          <div
+            className="rounded-xl border border-border/50 bg-muted/40 px-4 py-3 text-center text-sm text-muted-foreground"
+            role="status"
+            data-testid="chat-read-only-notice"
+          >
+            {checkingMembership
+              ? "Đang kiểm tra thành viên nhóm..."
+              : "Bạn đang xem ở chế độ chỉ đọc. Cần được thêm vào nhóm để gửi tin nhắn."}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1913,6 +1930,12 @@ export function ChatPage() {
     hasCreateChatPermission(rawChatPermissions)
   );
   const chatCanEdit = !!myPerms?.isSuperAdmin || !!rawChatPermissions?.canEdit;
+  const chatCanViewAll = !!myPerms?.isSuperAdmin || !!rawChatPermissions?.canViewAll;
+  const [currentTopicMembership, setCurrentTopicMembership] = useState<{
+    topicId: string;
+    isMember: boolean;
+    loading: boolean;
+  } | null>(null);
 
   const { toast } = useToast();
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -1920,6 +1943,44 @@ export function ChatPage() {
   const [viewerFile, setViewerFile] = useState<{ url: string; name: string } | null>(null);
   const canDownload = useCanDownloadFiles();
   const handleOpenViewer = useCallback((url: string, name: string) => setViewerFile({ url, name }), []);
+
+  useEffect(() => {
+    if (!chatCanViewAll || !currentTopic) {
+      setCurrentTopicMembership(null);
+      return;
+    }
+
+    let active = true;
+    setCurrentTopicMembership({ topicId: currentTopic, isMember: false, loading: true });
+    const token = getAuthToken();
+    fetch(`/api/chat/topics/${encodeURIComponent(currentTopic)}/members`, {
+      credentials: "include",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(async response => {
+        if (!response.ok) throw new Error("Không thể kiểm tra thành viên nhóm");
+        return response.json();
+      })
+      .then(data => {
+        if (!active) return;
+        const userId = myPerms?.userId;
+        const isMember = !!userId && (data.members ?? []).some((member: GroupMember) => member.userId === userId);
+        setCurrentTopicMembership({ topicId: currentTopic, isMember, loading: false });
+      })
+      .catch(() => {
+        if (active) setCurrentTopicMembership({ topicId: currentTopic, isMember: false, loading: false });
+      });
+
+    return () => { active = false; };
+  }, [chatCanViewAll, currentTopic, myPerms?.userId]);
+
+  const checkingMembership = chatCanViewAll && !!currentTopic && (
+    currentTopicMembership?.topicId !== currentTopic || !!currentTopicMembership?.loading
+  );
+  const isMemberOfCurrentTopic = !!currentTopic &&
+    currentTopicMembership?.topicId === currentTopic &&
+    currentTopicMembership.isMember;
+  const canSendCurrentTopic = !chatCanViewAll || isMemberOfCurrentTopic;
 
   // Reset currentTopic khi rời trang /chat để badge unread hoạt động đúng.
   // Nếu không reset, currentTopicRef vẫn trỏ vào topic cũ → tin nhắn mới bị
@@ -1946,7 +2007,7 @@ export function ChatPage() {
   }
 
   function handleSend(content: string | Record<string, any>, head?: Record<string, any>) {
-    if (!currentTopic) return;
+    if (!currentTopic || !canSendCurrentTopic) return;
     sendMessage(currentTopic, content, head);
   }
 
@@ -2074,7 +2135,9 @@ export function ChatPage() {
                   onSend={handleSend}
                   onUploadFile={uploadFile}
                   onOpenViewer={handleOpenViewer}
-                  canEditMessages={chatCanEdit}
+                  canEditMessages={chatCanEdit && canSendCurrentTopic}
+                  canSendMessages={canSendCurrentTopic}
+                  checkingMembership={checkingMembership}
                 />
 
                 <InfoPanel
