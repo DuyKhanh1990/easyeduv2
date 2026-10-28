@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
-import { eq, asc, ilike, inArray } from "drizzle-orm";
+import { eq, asc, ilike, inArray, desc } from "drizzle-orm";
 import {
   storeWarehouses,
   storeSuppliers,
@@ -10,6 +10,9 @@ import {
   storeColors,
   storeSizes,
   storeProducts,
+  activityLogs,
+  users,
+  staff,
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -33,6 +36,34 @@ async function hasProductInventoryHistory(productId: string, productCode: string
     ) AS has_history
   `);
   return Boolean((result.rows[0] as any)?.has_history);
+}
+
+async function productAuditSnapshot(row: any, executor: any = db) {
+  const [category, unit, supplier] = await Promise.all([
+    row.categoryId
+      ? executor.select({ name: storeCategories.name }).from(storeCategories).where(eq(storeCategories.id, row.categoryId)).limit(1)
+      : [],
+    row.unitId
+      ? executor.select({ name: storeUnits.name }).from(storeUnits).where(eq(storeUnits.id, row.unitId)).limit(1)
+      : [],
+    row.supplierId
+      ? executor.select({ name: storeSuppliers.name }).from(storeSuppliers).where(eq(storeSuppliers.id, row.supplierId)).limit(1)
+      : [],
+  ]);
+  return {
+    "Mã sản phẩm": row.code,
+    "Tên sản phẩm": row.name,
+    "Danh mục": category[0]?.name ?? null,
+    "Đơn vị": unit[0]?.name ?? null,
+    "Nhà cung cấp": supplier[0]?.name ?? null,
+    "Giá nhập": row.costPrice == null ? null : String(row.costPrice),
+    "Giá bán": row.salePrice == null ? null : String(row.salePrice),
+    "Giá sao": row.starPrice ?? null,
+    "Mô tả": row.description ?? null,
+    "URL hình ảnh": row.imageUrl ?? null,
+    "Có biến thể": row.hasVariants ? "Có" : "Không",
+    "Trạng thái": row.status === "active" ? "Đang bán" : "Ngừng bán",
+  };
 }
 
 async function ensureStoreTables() {
@@ -534,6 +565,38 @@ export async function registerStoreRoutes(app: Express) {
     }
   });
 
+  app.get("/api/store/products/history", async (req, res) => {
+    if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
+      const pageSize = Math.min(200, Math.max(1, Number.parseInt(String(req.query.pageSize ?? "50"), 10) || 50));
+      const actions = ["store.product.created", "store.product.updated", "store.product.deleted"];
+      const where = inArray(activityLogs.action, actions);
+      const [totalResult, events] = await Promise.all([
+        db.select({ total: sql<number>`count(*)::int` }).from(activityLogs).where(where),
+        db.select({
+          id: activityLogs.id,
+          action: activityLogs.action,
+          oldContent: activityLogs.oldContent,
+          newContent: activityLogs.newContent,
+          createdAt: activityLogs.createdAt,
+          userName: sql<string | null>`COALESCE(${staff.fullName}, ${users.username})`,
+        })
+          .from(activityLogs)
+          .leftJoin(users, eq(activityLogs.userId, users.id))
+          .leftJoin(staff, eq(staff.userId, activityLogs.userId))
+          .where(where)
+          .orderBy(desc(activityLogs.createdAt))
+          .limit(pageSize)
+          .offset((page - 1) * pageSize),
+      ]);
+      res.json({ events, total: Number(totalResult[0]?.total ?? 0) });
+    } catch (err) {
+      console.error("[Store] GET product history:", err);
+      res.status(500).json({ message: "Lỗi khi lấy nhật ký sản phẩm" });
+    }
+  });
+
   app.post("/api/store/products", async (req, res) => {
     try {
       const parsed = productCreateSchema.safeParse(req.body);
@@ -543,7 +606,16 @@ export async function registerStoreRoutes(app: Express) {
         costPrice: parsed.data.costPrice != null ? String(parsed.data.costPrice) : "0",
         salePrice: parsed.data.salePrice != null ? String(parsed.data.salePrice) : "0",
       };
-      const [row] = await db.insert(storeProducts).values(data).returning();
+      const actor = (req as any).user;
+      const [row] = await db.transaction(async tx => {
+        const [created] = await tx.insert(storeProducts).values(data).returning();
+        await tx.insert(activityLogs).values({
+          userId: actor?.id ?? null,
+          action: "store.product.created",
+          newContent: JSON.stringify(await productAuditSnapshot(created, tx)),
+        });
+        return [created];
+      });
       res.status(201).json(row);
     } catch (err: any) {
       if (err?.code === "23505") return res.status(409).json({ message: "Mã sản phẩm đã tồn tại" });
@@ -557,7 +629,7 @@ export async function registerStoreRoutes(app: Express) {
       const parsed = productCreateSchema.partial().safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0].message });
       const [existing] = await db
-        .select({ id: storeProducts.id, code: storeProducts.code })
+        .select()
         .from(storeProducts)
         .where(eq(storeProducts.id, req.params.id))
         .limit(1);
@@ -570,7 +642,18 @@ export async function registerStoreRoutes(app: Express) {
       const data: any = { ...parsed.data, updatedAt: new Date() };
       if (parsed.data.costPrice != null) data.costPrice = String(parsed.data.costPrice);
       if (parsed.data.salePrice != null) data.salePrice = String(parsed.data.salePrice);
-      const [row] = await db.update(storeProducts).set(data).where(eq(storeProducts.id, req.params.id)).returning();
+      const actor = (req as any).user;
+      const [row] = await db.transaction(async tx => {
+        const [updated] = await tx.update(storeProducts).set(data).where(eq(storeProducts.id, req.params.id)).returning();
+        if (!updated) return [null];
+        await tx.insert(activityLogs).values({
+          userId: actor?.id ?? null,
+          action: "store.product.updated",
+          oldContent: JSON.stringify(await productAuditSnapshot(existing, tx)),
+          newContent: JSON.stringify(await productAuditSnapshot(updated, tx)),
+        });
+        return [updated];
+      });
       if (!row) return res.status(404).json({ message: "Không tìm thấy sản phẩm" });
       res.json(row);
     } catch (err: any) {
@@ -583,7 +666,7 @@ export async function registerStoreRoutes(app: Express) {
   app.delete("/api/store/products/:id", async (req, res) => {
     try {
       const [existing] = await db
-        .select({ id: storeProducts.id, code: storeProducts.code })
+        .select()
         .from(storeProducts)
         .where(eq(storeProducts.id, req.params.id))
         .limit(1);
@@ -593,7 +676,15 @@ export async function registerStoreRoutes(app: Express) {
           message: "Sản phẩm đã có phiếu hoặc phát sinh tồn kho, không thể xoá.",
         });
       }
-      await db.delete(storeProducts).where(eq(storeProducts.id, req.params.id));
+      const actor = (req as any).user;
+      await db.transaction(async tx => {
+        await tx.delete(storeProducts).where(eq(storeProducts.id, req.params.id));
+        await tx.insert(activityLogs).values({
+          userId: actor?.id ?? null,
+          action: "store.product.deleted",
+          oldContent: JSON.stringify(await productAuditSnapshot(existing, tx)),
+        });
+      });
       res.json({ message: "Đã xoá sản phẩm" });
     } catch (err) {
       console.error("[Store] DELETE product:", err);

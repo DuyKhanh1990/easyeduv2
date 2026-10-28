@@ -11,8 +11,9 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, Package, ImageOff, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Package, ImageOff, Search, History } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { StoreProductHistoryDialog } from "./StoreProductHistoryDialog";
 
 const PAGE_SIZE_OPTIONS = [20, 30, 50, 100];
 
@@ -70,6 +71,7 @@ export function StoreProductTab() {
   const [openDialog, setOpenDialog] = useState(false);
   const [editItem, setEditItem] = useState<Product | null>(null);
   const [deleteItem, setDeleteItem] = useState<Product | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [form, setForm] = useState({ ...EMPTY_FORM });
 
   useEffect(() => { setPage(1); }, [search]);
@@ -195,9 +197,14 @@ export function StoreProductTab() {
               {search.trim() ? `${total} kết quả tìm kiếm` : `${total} sản phẩm`}
             </p>
           </div>
-          <Button size="sm" onClick={openAdd} className="flex items-center gap-1.5 h-8">
-            <Plus className="w-3.5 h-3.5" /> Thêm mới sản phẩm
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setHistoryOpen(true)} className="flex items-center gap-1.5 h-8">
+              <History className="w-3.5 h-3.5" /> Nhật ký
+            </Button>
+            <Button size="sm" onClick={openAdd} className="flex items-center gap-1.5 h-8">
+              <Plus className="w-3.5 h-3.5" /> Thêm mới sản phẩm
+            </Button>
+          </div>
         </div>
         <div className="relative max-w-sm">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
@@ -548,6 +555,8 @@ export function StoreProductTab() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <StoreProductHistoryDialog open={historyOpen} onOpenChange={setHistoryOpen} />
     </div>
   );
 }
