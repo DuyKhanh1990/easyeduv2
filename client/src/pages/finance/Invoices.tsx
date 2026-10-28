@@ -2269,7 +2269,7 @@ export default function Invoices() {
                 </button>
               );
             })}
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-2" data-page-guide-anchor>
               {TABS.filter(tab => tab.key === "history").map(tab => {
                  const isActive = historyDialogOpen;
                 return (

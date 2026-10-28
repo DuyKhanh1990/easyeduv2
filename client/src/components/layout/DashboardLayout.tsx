@@ -80,6 +80,9 @@ export function DashboardLayout({ children, fullscreen }: { children: ReactNode;
     if (!content) return;
 
     const findActionGroup = () => {
+      const explicitAnchor = content.querySelector<HTMLElement>("[data-page-guide-anchor]");
+      if (explicitAnchor) return explicitAnchor;
+
       const visibleButtons = Array.from(content.querySelectorAll("button")).filter((button) => {
         if (guideMountRef.current?.contains(button)) return false;
         const rect = button.getBoundingClientRect();
