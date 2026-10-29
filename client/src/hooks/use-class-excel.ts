@@ -12,6 +12,14 @@ interface UseClassExcelOptions {
 const WEEKDAY_MAP: Record<number, string> = { 1: "T2", 2: "T3", 3: "T4", 4: "T5", 5: "T6", 6: "T7", 0: "CN" };
 const TYPE_LABEL: Record<string, string> = { group: "Nhóm", tutor: "Cá nhân 1-1" };
 
+function feePackageOptionLabel(pkg: any): string {
+  const courseName = String(pkg.courseName || "Chưa gắn khóa học").trim();
+  const packageName = String(pkg.name || "").trim();
+  const sessions = Number(pkg.sessions);
+  const sessionLabel = Number.isFinite(sessions) && sessions > 0 ? ` — ${sessions} buổi` : "";
+  return `${courseName} — ${packageName}${sessionLabel}`;
+}
+
 // Same logic as getComputedStatus in use-class-list.ts:
 // "closed" (admin-forced) → "Đã đóng"; else compare today vs startDate/endDate
 function computeExportStatus(cls: any): string {
@@ -340,6 +348,10 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
     queryKey: ["/api/staff?minimal=true"],
   });
 
+  const { data: feePackages } = useQuery<any[]>({
+    queryKey: ["/api/fee-packages"],
+  });
+
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -366,6 +378,15 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
       setImportProgress(30);
 
       const worksheet = workbook.getWorksheet(1);
+      const headerText = Array.from({ length: worksheet!.columnCount }, (_, index) =>
+        worksheet!.getCell(1, index + 1).text?.toString().trim().toLowerCase() || ""
+      );
+      const endSessionsColumn = headerText.findIndex((value) => value === "số buổi kết thúc") + 1;
+      const feePackageColumn = headerText.findIndex((value) => value === "gói học phí") + 1;
+      const teacherColumns = headerText
+        .map((value, index) => ({ value, column: index + 1 }))
+        .filter(({ value }) => /^giáo viên\s*[1-4]$/.test(value))
+        .map(({ column }) => column);
 
       const locationMap = new Map((locations || []).map((l: any) => [l.name.trim().toLowerCase(), l.id]));
       const shiftMap = new Map<string, string>();
@@ -376,6 +397,10 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
         }
       });
       const teacherMap = new Map((staff || []).map((s: any) => [s.fullName.trim().toLowerCase(), s.id]));
+      const feePackageMap = new Map((feePackages || []).map((pkg: any) => [
+        feePackageOptionLabel(pkg).toLowerCase(),
+        pkg,
+      ]));
 
       const weekdayMap: Record<string, number> = {
         "t2": 1, "t3": 2, "t4": 3, "t5": 4, "t6": 5, "t7": 6, "cn": 0,
@@ -405,9 +430,11 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
 
       const classGroups = new Map<string, {
         name: string; locationId: string; maxStudents?: number; learningFormat?: string;
-        startDate?: string; endDate?: string;
+        startDate?: string; endDate?: string; endSessions?: number;
+        feePackageId?: string; courseId?: string; packageSessions?: number;
         scheduleRows: { weekday: number; shiftId: string; teacherIds: string[] }[];
       }>();
+      const importIssues: string[] = [];
 
       worksheet!.eachRow((row: any, rowNum: number) => {
         if (rowNum === 1) return;
@@ -425,8 +452,21 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
         const shiftName = row.getCell(7).text?.toString().trim();
         const startDate = parseDateCell(row.getCell(8));
         const endDate = parseDateCell(row.getCell(9));
+        const endSessionsText = endSessionsColumn ? row.getCell(endSessionsColumn).text?.toString().trim() : "";
+        const endSessions = endSessionsText
+          ? Number(row.getCell(endSessionsColumn).value ?? endSessionsText)
+          : undefined;
+        const feePackageLabel = feePackageColumn ? row.getCell(feePackageColumn).text?.toString().trim() : "";
+        const feePackage = feePackageLabel ? feePackageMap.get(feePackageLabel.toLowerCase()) : undefined;
 
-        const teacherCells = [10, 11, 12, 13]
+        if (endSessionsText && (!Number.isInteger(endSessions) || Number(endSessions) <= 0)) {
+          importIssues.push(`Dòng ${rowNum}: Số buổi kết thúc phải là số nguyên dương.`);
+        }
+        if (feePackageLabel && !feePackage) {
+          importIssues.push(`Dòng ${rowNum}: Không tìm thấy gói học phí "${feePackageLabel}" trong danh sách hệ thống.`);
+        }
+
+        const teacherCells = (teacherColumns.length ? teacherColumns : [10, 11, 12, 13])
           .map((c: number) => row.getCell(c).text?.toString().trim())
           .filter(Boolean);
 
@@ -440,11 +480,34 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
         if (!locationId) return;
 
         if (!classGroups.has(classCode)) {
-          classGroups.set(classCode, { name: className, locationId, maxStudents, learningFormat, startDate, endDate, scheduleRows: [] });
+          classGroups.set(classCode, {
+            name: className, locationId, maxStudents, learningFormat, startDate, endDate,
+            endSessions: endSessionsText && Number.isInteger(endSessions) && Number(endSessions) > 0 ? Number(endSessions) : undefined,
+            feePackageId: feePackage?.id,
+            courseId: feePackage?.courseId,
+            packageSessions: feePackage?.sessions ? Number(feePackage.sessions) : undefined,
+            scheduleRows: [],
+          });
         } else {
           const grp = classGroups.get(classCode)!;
           if (!grp.startDate && startDate) grp.startDate = startDate;
           if (!grp.endDate && endDate) grp.endDate = endDate;
+          if (endSessionsText && Number.isInteger(endSessions) && Number(endSessions) > 0) {
+            if (grp.endSessions != null && grp.endSessions !== Number(endSessions)) {
+              importIssues.push(`Mã lớp ${classCode}: các dòng đang nhập số buổi kết thúc khác nhau.`);
+            } else if (grp.endSessions == null) {
+              grp.endSessions = Number(endSessions);
+            }
+          }
+          if (feePackage) {
+            if (grp.feePackageId && grp.feePackageId !== feePackage.id) {
+              importIssues.push(`Mã lớp ${classCode}: các dòng đang chọn nhiều gói học phí khác nhau.`);
+            } else if (!grp.feePackageId) {
+              grp.feePackageId = feePackage.id;
+              grp.courseId = feePackage.courseId;
+              grp.packageSessions = feePackage.sessions ? Number(feePackage.sessions) : undefined;
+            }
+          }
         }
 
         const grp = classGroups.get(classCode)!;
@@ -453,22 +516,40 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
         }
       });
 
+      for (const [classCode, grp] of classGroups) {
+        if (grp.endDate && grp.endSessions != null) {
+          importIssues.push(`Mã lớp ${classCode}: chỉ nhập Ngày kết thúc hoặc Số buổi kết thúc, không nhập cả hai.`);
+        }
+      }
+      if (importIssues.length > 0) {
+        setImportStatus("error");
+        toast({
+          title: "File có thông tin chưa hợp lệ",
+          description: importIssues.slice(0, 4).join(" "),
+          variant: "destructive",
+        });
+        return;
+      }
+
       setImportProgress(50);
 
       const parsedRows: ParsedClassRow[] = [];
       for (const [classCode, grp] of Array.from(classGroups.entries())) {
+        const endSessions = grp.endSessions ?? (!grp.endDate ? grp.packageSessions : undefined);
         if (grp.scheduleRows.length === 0) {
           parsedRows.push({
             classCode, className: grp.name, locationId: grp.locationId,
             maxStudents: grp.maxStudents, learningFormat: grp.learningFormat as any,
-            startDate: grp.startDate, endDate: grp.endDate,
+            startDate: grp.startDate, endDate: grp.endDate, endSessions,
+            feePackageId: grp.feePackageId, courseId: grp.courseId,
           });
         } else {
           for (const sr of grp.scheduleRows) {
             parsedRows.push({
               classCode, className: grp.name, locationId: grp.locationId,
               maxStudents: grp.maxStudents, learningFormat: grp.learningFormat as any,
-              startDate: grp.startDate, endDate: grp.endDate,
+              startDate: grp.startDate, endDate: grp.endDate, endSessions,
+              feePackageId: grp.feePackageId, courseId: grp.courseId,
               weekday: sr.weekday, shiftId: sr.shiftId, teacherIds: sr.teacherIds,
             });
           }
@@ -514,7 +595,7 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
       const headers = [
         "Mã lớp học (*)", "Tên lớp (*)", "Cơ sở (*)", "Số học viên tối đa",
         "Hình thức học", "Chu kỳ học", "Ca học", "Ngày bắt đầu", "Ngày kết thúc",
-        "Giáo viên 1", "Giáo viên 2", "Giáo viên 3", "Giáo viên 4",
+        "Số buổi kết thúc", "Gói học phí", "Giáo viên 1", "Giáo viên 2", "Giáo viên 3", "Giáo viên 4",
       ];
 
       const headerRow = worksheet.addRow(headers);
@@ -530,7 +611,7 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
       worksheet.columns = [
         { width: 16 }, { width: 20 }, { width: 18 }, { width: 18 },
         { width: 16 }, { width: 14 }, { width: 18 },
-        { width: 15 }, { width: 15 },
+        { width: 15 }, { width: 15 }, { width: 16 }, { width: 38 },
         { width: 20 }, { width: 20 }, { width: 20 }, { width: 20 },
       ];
 
@@ -552,6 +633,7 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
           )
         )
         .map((member: any) => member.fullName));
+      const feePackageLabels = uniqueNames((feePackages || []).map(feePackageOptionLabel));
 
       const weekdays = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
       if (!locationNames.length || !shiftNames.length || !teacherNames.length) {
@@ -566,9 +648,9 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
       const sampleEndDate = new Date(2026, 11, 31);
 
       const sampleRows = [
-        ["A1", "Lớp A1", locationNames[0] || "Cơ sở chính", 20, "Offline", "T2", shiftNames[0] || "Ca 1", sampleStartDate, sampleEndDate, teacherNames[0] || "", teacherNames[1] || "", "", ""],
-        ["A1", "Lớp A1", locationNames[0] || "Cơ sở chính", "", "Offline", "T4", shiftNames[1] || "Ca 2", null, null, teacherNames[0] || "", "", "", ""],
-        ["A2", "Lớp A2", locationNames[0] || "Cơ sở chính", 15, "Online", "T3", shiftNames[0] || "Ca 1", sampleStartDate, sampleEndDate, teacherNames[1] || "", "", "", ""],
+        ["A1", "Lớp A1", locationNames[0] || "Cơ sở chính", 20, "Offline", "T2", shiftNames[0] || "Ca 1", sampleStartDate, sampleEndDate, "", feePackageLabels[0] || "", teacherNames[0] || "", teacherNames[1] || "", "", ""],
+        ["A1", "Lớp A1", locationNames[0] || "Cơ sở chính", "", "Offline", "T4", shiftNames[1] || "Ca 2", null, null, "", feePackageLabels[0] || "", teacherNames[0] || "", "", "", ""],
+        ["A2", "Lớp A2", locationNames[0] || "Cơ sở chính", 15, "Online", "T3", shiftNames[0] || "Ca 1", sampleStartDate, null, 20, feePackageLabels[0] || "", teacherNames[1] || "", "", "", ""],
       ];
 
       sampleRows.forEach(row => {
@@ -600,6 +682,7 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
       const weekdayFormula = addNamedOptions("WeekdayOptions", weekdays, 3);
       const shiftFormula = addNamedOptions("ShiftOptions", shiftNames, 4);
       const teacherFormula = addNamedOptions("TeacherOptions", teacherNames, 5);
+      const feePackageFormula = addNamedOptions("FeePackageOptions", feePackageLabels, 6);
 
       for (let i = 2; i <= 201; i++) {
         worksheet.getCell(`C${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [locationFormula] };
@@ -618,7 +701,13 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
         iCell.numFmt = "dd/mm/yyyy";
         hCell.dataValidation = dateValidation;
         iCell.dataValidation = dateValidation;
-        ["J", "K", "L", "M"].forEach(col => {
+        worksheet.getCell(`J${i}`).dataValidation = {
+          type: "whole", allowBlank: true, operator: "greaterThan", formulae: [0],
+          showErrorMessage: true, errorTitle: "Số buổi không hợp lệ",
+          error: "Vui lòng nhập số buổi kết thúc là số nguyên dương.",
+        };
+        worksheet.getCell(`K${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [feePackageFormula] };
+        ["L", "M", "N", "O"].forEach(col => {
           worksheet.getCell(`${col}${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [teacherFormula] };
         });
         worksheet.getCell(`D${i}`).dataValidation = { type: "whole", allowBlank: true, operator: "greaterThan", formulae: [0] };
@@ -639,12 +728,16 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
         ["CA HỌC: Chọn từ danh sách ca học trong hệ thống"],
         ["NGÀY BẮT ĐẦU / NGÀY KẾT THÚC: Nhập dạng DD/MM/YYYY (vd: 14/3/2026). Chỉ cần nhập ở dòng đầu tiên của mỗi lớp."],
         ["GIÁO VIÊN 1-4: Chọn từ danh sách giáo viên"],
+        ["SỐ BUỔI KẾT THÚC: Nhập số nguyên dương; chỉ dùng thay cho Ngày kết thúc."],
+        ["GÓI HỌC PHÍ: Không bắt buộc; chọn theo tên khóa học và tên gói."],
         [""],
         ["LƯU Ý QUAN TRỌNG:"],
         ["Một lớp có thể học nhiều ngày/tuần với các ca khác nhau."],
         ["Mỗi dòng = 1 chu kỳ học (1 ngày + 1 ca)."],
         ["Các dòng có cùng Mã lớp học sẽ được gộp thành 1 lớp khi import."],
-        ["Ngày bắt đầu và kết thúc: nhập ở dòng đầu tiên của mỗi lớp, các dòng còn lại có thể bỏ trống."],
+        ["Ngày bắt đầu, Ngày kết thúc, Số buổi kết thúc và Gói học phí: chỉ cần nhập ở một dòng của mỗi lớp."],
+        ["Chỉ nhập Ngày kết thúc hoặc Số buổi kết thúc; nếu nhập cả hai, lớp đó sẽ bị báo lỗi."],
+        ["Nếu bỏ trống cả Ngày kết thúc và Số buổi kết thúc, hệ thống dùng số buổi của Gói học phí nếu gói có cấu hình."],
         ["Giáo viên nhập ở dòng nào sẽ được gán cho chu kỳ + ca của dòng đó."],
       ];
       notes.forEach((row, idx) => {
