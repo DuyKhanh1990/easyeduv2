@@ -178,8 +178,8 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
             }
             colorClass="bg-indigo-50 text-indigo-700 border-indigo-100"
           />
-          <StatCard label="HỦY XUẤT" title="Hủy phiếu xuất — hoàn hàng vào kho" value={formatSigned(cancelExportQty)} colorClass="bg-cyan-50 text-cyan-700 border-cyan-100" />
-          <StatCard label="HỦY NHẬP" title="Hủy phiếu nhập — trừ hàng khỏi kho" value={formatSigned(cancelImportQty)} colorClass="bg-orange-50 text-orange-700 border-orange-100" />
+          <StatCard label="HOÀN HỦY" title="Hủy phiếu xuất — hoàn hàng vào kho" value={formatSigned(cancelExportQty)} colorClass="bg-cyan-50 text-cyan-700 border-cyan-100" />
+          <StatCard label="HỦY NHẬP KHO" title="Hủy phiếu nhập — trừ hàng khỏi kho" value={formatSigned(cancelImportQty)} colorClass="bg-orange-50 text-orange-700 border-orange-100" />
           <StatCard label="ĐC TĂNG" title="Điều chỉnh tăng" value={formatSigned(adjustmentInQty)} colorClass="bg-teal-50 text-teal-700 border-teal-100" />
           <StatCard label="ĐC GIẢM" title="Điều chỉnh giảm" value={formatSigned(adjustmentOutQty)} colorClass="bg-rose-50 text-rose-700 border-rose-100" />
           <StatCard label="TỒN KHO" value={row.actualStock} colorClass="bg-blue-50 text-blue-700 border-blue-100" />
