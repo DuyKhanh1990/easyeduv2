@@ -15,7 +15,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useTinodeContext, UseTinodeResult } from "@/hooks/use-tinode";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getAuthToken } from "@/lib/queryClient";
@@ -1667,9 +1667,6 @@ function MessageWindow({
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>Lịch sử sửa tin nhắn</DialogTitle>
-            <DialogDescription>
-              Nội dung được lưu trước mỗi lần sửa tin nhắn.
-            </DialogDescription>
           </DialogHeader>
           {editHistoryLoading ? (
             <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
@@ -1684,16 +1681,11 @@ function MessageWindow({
             </p>
           ) : (
             <div className="max-h-[55vh] space-y-3 overflow-y-auto pr-1" data-testid="chat-edit-history-list">
-              {editHistory.map((revision, index) => (
+              {editHistory.map((revision) => (
                 <section key={revision.id} className="rounded-xl border border-border bg-muted/30 p-3">
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <p className="text-xs font-semibold text-foreground">
-                      {index === 0 ? "Trước lần sửa gần nhất" : `Lần sửa trước ${index + 1}`}
-                    </p>
-                    <time className="shrink-0 text-[11px] text-muted-foreground">
-                      {new Date(revision.editedAt).toLocaleString("vi-VN")}
-                    </time>
-                  </div>
+                  <time className="mb-2 block text-right text-[11px] text-muted-foreground">
+                    {new Date(revision.editedAt).toLocaleString("vi-VN", { timeZone: "Asia/Bangkok" })}
+                  </time>
                   <p className="whitespace-pre-wrap break-words text-sm text-foreground">
                     {revision.previousContent || "(Tin nhắn trống)"}
                   </p>

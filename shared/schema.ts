@@ -2414,7 +2414,7 @@ export const chatMessageEditHistory = pgTable("chat_message_edit_history", {
   messageSeq: integer("message_seq").notNull(),
   previousContent: text("previous_content").notNull(),
   editedBy: uuid("edited_by").references(() => users.id, { onDelete: "set null" }),
-  editedAt: timestamp("edited_at").defaultNow().notNull(),
+  editedAt: timestamp("edited_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   messageHistoryIdx: index("chat_message_edit_history_message_idx")
     .on(table.topicId, table.messageSeq, table.editedAt),

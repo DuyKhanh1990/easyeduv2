@@ -34,3 +34,9 @@ Before sending a Tinode text replacement, persist the previous message content. 
 **Why:** the user requested an audit trail for edited messages without changing the existing edit flow.
 
 **How to apply:** use the existing Chat Edit permission to save revisions and the conversation's read scope to retrieve them; keep the normal Tinode replacement payload unchanged.
+
+Store chat edit timestamps with a timezone and render them explicitly in Asia/Bangkok. The database session uses Asia/Ho_Chi_Minh, so naive timestamps can be interpreted as UTC by Node and displayed seven hours ahead.
+
+**Why:** a naive timestamp was serialized as UTC and then shifted again in the browser.
+
+**How to apply:** when converting existing naive history timestamps, interpret their stored wall time as Asia/Ho_Chi_Minh before changing the column to timezone-aware.
