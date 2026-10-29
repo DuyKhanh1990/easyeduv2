@@ -17,6 +17,7 @@ import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
 import { Calendar } from "@/components/ui/calendar";
+import { Checkbox } from "@/components/ui/checkbox";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -25,6 +26,7 @@ import {
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { groupRowsByClassCode, submitClassGroups, type ParsedClassRow } from "@/hooks/use-class-bulk-submit";
+import { getStaffRoleOptions, resolveTeacherRoleId } from "@/lib/staff-role-options";
 
 const MAX_CLASSES_PER_SUBMIT = 15;
 
@@ -41,7 +43,9 @@ interface InlineRow {
   startDate: string | null;
   endDate: string | null;
   endSessions: number | null;
+  skipHolidays: boolean;
   teacherIds: string[];
+  teacherRoleIds: Record<string, string>;
   studentIds: string[];
   courseId: string | null;
   feePackageId: string | null;
@@ -67,7 +71,8 @@ const newRow = (): InlineRow => ({
   learningFormat: "offline", onlineLink: "",
   weekday: null, shiftId: null,
   startDate: null, endDate: null, endSessions: null,
-  teacherIds: [], studentIds: [],
+  skipHolidays: false,
+  teacherIds: [], teacherRoleIds: {}, studentIds: [],
   courseId: null, feePackageId: null,
 });
 
@@ -130,13 +135,40 @@ export function InlineClassEntry({ locations, onSuccess }: InlineClassEntryProps
     setRows(prev => prev.map(r => {
       if (r.id !== id) return r;
       const next = { ...r, ...patch };
+      if ("locationId" in patch && patch.locationId !== r.locationId) {
+        next.teacherRoleIds = Object.fromEntries(r.teacherIds.map((teacherId) => {
+          const member = staff?.find((item: any) => item.id === teacherId);
+          const roleOptions = getStaffRoleOptions(member, next.locationId || undefined);
+          return [teacherId, resolveTeacherRoleId({ role_id: r.teacherRoleIds[teacherId] }, roleOptions)];
+        }));
+      }
       // If course changes, reset fee package
       if ("courseId" in patch && patch.courseId !== r.courseId) {
         next.feePackageId = null;
       }
       return next;
     }));
-  }, []);
+  }, [staff]);
+
+  const updateTeachers = (row: InlineRow, teacherIds: string[]) => {
+    const roleIds = { ...row.teacherRoleIds };
+    for (const teacherId of Object.keys(roleIds)) {
+      if (!teacherIds.includes(teacherId)) delete roleIds[teacherId];
+    }
+    for (const teacherId of teacherIds) {
+      if (!roleIds[teacherId]) {
+        const member = staff?.find((item: any) => item.id === teacherId);
+        roleIds[teacherId] = resolveTeacherRoleId({}, getStaffRoleOptions(member, row.locationId || undefined));
+      }
+    }
+    updateRow(row.id, { teacherIds, teacherRoleIds: roleIds });
+  };
+
+  const updateTeacherRole = (row: InlineRow, teacherId: string, roleId: string) => {
+    updateRow(row.id, {
+      teacherRoleIds: { ...row.teacherRoleIds, [teacherId]: roleId },
+    });
+  };
 
   const addRows = (n: number) => setRows(prev => [...prev, ...Array.from({ length: n }, newRow)]);
   const deleteRow = (id: string) => setRows(prev => prev.length > 1 ? prev.filter(r => r.id !== id) : prev);
@@ -192,6 +224,24 @@ export function InlineClassEntry({ locations, onSuccess }: InlineClassEntryProps
       toast({ title: "Không có dòng hợp lệ", description: "Vui lòng nhập đầy đủ Mã lớp, Tên lớp, Cơ sở, Khoá học, Gói học phí.", variant: "destructive" });
       return;
     }
+    const roleByClassAndTeacher = new Map<string, string>();
+    for (const row of validRows) {
+      for (const teacherId of row.teacherIds) {
+        const roleId = row.teacherRoleIds[teacherId];
+        if (!roleId) continue;
+        const key = `${row.classCode.trim()}:${teacherId}`;
+        const previousRoleId = roleByClassAndTeacher.get(key);
+        if (previousRoleId && previousRoleId !== roleId) {
+          toast({
+            title: "Vai trò giáo viên chưa thống nhất",
+            description: `Giáo viên trong lớp ${row.classCode.trim()} cần dùng cùng một vai trò ở tất cả các chu kỳ.`,
+            variant: "destructive",
+          });
+          return;
+        }
+        roleByClassAndTeacher.set(key, roleId);
+      }
+    }
     if (distinctClassCount > MAX_CLASSES_PER_SUBMIT) {
       toast({
         title: "Vượt quá giới hạn",
@@ -203,6 +253,11 @@ export function InlineClassEntry({ locations, onSuccess }: InlineClassEntryProps
     setSubmitting(true);
     setProgress(10);
     try {
+      const skipHolidaysByClass = new Map<string, boolean>();
+      for (const row of validRows) {
+        const classCode = row.classCode.trim();
+        skipHolidaysByClass.set(classCode, (skipHolidaysByClass.get(classCode) ?? false) || row.skipHolidays);
+      }
       const parsed: ParsedClassRow[] = validRows.map(r => ({
         classCode: r.classCode.trim(),
         className: r.className.trim(),
@@ -213,9 +268,11 @@ export function InlineClassEntry({ locations, onSuccess }: InlineClassEntryProps
         startDate: r.startDate ?? undefined,
         endDate: r.endDate ?? undefined,
         endSessions: r.endSessions ?? undefined,
+        skipHolidays: skipHolidaysByClass.get(r.classCode.trim()) === true,
         weekday: r.weekday ?? undefined,
         shiftId: r.shiftId ?? undefined,
         teacherIds: r.teacherIds,
+        teacherRoleIds: r.teacherRoleIds,
         studentIds: r.studentIds,
         courseId: r.courseId ?? undefined,
         feePackageId: r.feePackageId ?? undefined,
@@ -280,11 +337,12 @@ export function InlineClassEntry({ locations, onSuccess }: InlineClassEntryProps
         Mỗi dòng = 1 chu kỳ học. Các dòng có cùng <span className="font-medium">Mã lớp</span> sẽ được gộp thành 1 lớp khi tạo.
         Ngày bắt đầu/kết thúc chỉ cần điền ở dòng đầu tiên của mỗi mã lớp.
         <span className="ml-1">Cột <span className="font-medium">Kết thúc (ngày)</span> và <span className="font-medium">Kết thúc sau (số buổi)</span> loại trừ lẫn nhau — chỉ nhập 1 trong 2.</span>
+        <span className="ml-1">Vai trò của cùng một giáo viên phải thống nhất trong các dòng cùng lớp; chọn bỏ qua ngày lễ ở một dòng sẽ áp dụng cho cả lớp.</span>
       </p>
 
       {/* Grid */}
       <div className="rounded-md border overflow-x-auto overflow-y-auto max-h-[70vh] min-w-0 w-full">
-        <Table className="min-w-[2830px] w-[2830px] table-fixed">
+        <Table className="min-w-[2980px] w-[2980px] table-fixed">
           <TableHeader className="sticky top-0 bg-muted/50 backdrop-blur z-20">
             <TableRow>
               <TableHead className="w-10 text-center text-[11px] sticky left-0 bg-muted/95 backdrop-blur z-30">#</TableHead>
@@ -299,6 +357,7 @@ export function InlineClassEntry({ locations, onSuccess }: InlineClassEntryProps
               <TableHead className="w-[160px] text-[11px]">Bắt đầu</TableHead>
               <TableHead className="w-[160px] text-[11px]">Kết thúc (ngày)</TableHead>
               <TableHead className="w-[140px] text-[11px]">Kết thúc sau (buổi)</TableHead>
+              <TableHead className="w-[150px] text-[11px]">Bỏ qua ngày nghỉ lễ</TableHead>
               <TableHead className="w-[260px] text-[11px]">Giáo viên</TableHead>
               <TableHead className="w-[260px] text-[11px]">Học viên</TableHead>
               <TableHead className="w-[220px] text-[11px]">Khoá học <span className="text-rose-500">*</span></TableHead>
@@ -391,14 +450,58 @@ export function InlineClassEntry({ locations, onSuccess }: InlineClassEntryProps
                     />
                   </TableCell>
                   <TableCell className="py-1">
+                    <label className="flex items-center gap-2 text-xs">
+                      <Checkbox
+                        checked={r.skipHolidays}
+                        onCheckedChange={(checked) => updateRow(r.id, { skipHolidays: checked === true })}
+                        aria-label={`Bỏ qua ngày nghỉ lễ cho dòng ${idx + 1}`}
+                        data-testid={`checkbox-skip-holidays-${idx}`}
+                      />
+                      <span>Có</span>
+                    </label>
+                    <span className="text-[10px] text-muted-foreground">Áp dụng cho cả lớp</span>
+                  </TableCell>
+                  <TableCell className="py-1">
                     <SearchableMultiSelect
                       options={teacherOptions}
                       value={r.teacherIds}
-                      onChange={ids => updateRow(r.id, { teacherIds: ids })}
+                      onChange={ids => updateTeachers(r, ids)}
                       placeholder="Chọn giáo viên..."
                       data-testid={`select-teachers-${idx}`}
                       className="h-8 text-xs"
                     />
+                    {r.teacherIds.map((teacherId) => {
+                      const member = staff?.find((item: any) => item.id === teacherId);
+                      const roleOptions = getStaffRoleOptions(member, r.locationId || undefined);
+                      const selectedRoleId = resolveTeacherRoleId(
+                        { role_id: r.teacherRoleIds[teacherId] },
+                        roleOptions,
+                      );
+                      return (
+                        <div key={teacherId} className="mt-1 flex items-center gap-1">
+                          <span className="max-w-[100px] truncate text-[10px] text-muted-foreground" title={member?.fullName}>
+                            {member?.fullName || "Giáo viên"}
+                          </span>
+                          {roleOptions.length > 0 ? (
+                            <Select
+                              value={selectedRoleId}
+                              onValueChange={(roleId) => updateTeacherRole(r, teacherId, roleId)}
+                            >
+                              <SelectTrigger className="h-7 min-w-0 flex-1 text-[10px]" aria-label={`Vai trò của ${member?.fullName || "giáo viên"}`}>
+                                <SelectValue placeholder="Chọn vai trò" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {roleOptions.map((role) => (
+                                  <SelectItem key={role.id} value={role.id}>{role.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <span className="text-[10px] text-amber-700">Không có vai trò tại cơ sở</span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </TableCell>
                   <TableCell className="py-1">
                     <StudentSelectCell
