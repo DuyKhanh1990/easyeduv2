@@ -9,7 +9,7 @@ import { runSecurityTests } from "../middleware/security-test";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/simple-cache";
 import { db } from "../db";
 import { invoices, invoiceItems, studentSessions, invoicePaymentSchedule, students, classes, attendanceFeeRules, users, staff, staffAssignments, locations, roles, departments, classGradeBooks, classGradeBookScores, scoreCategories, scoreSheetItems, sessionContents, studentSessionContents, classSessions, scoreSheetAssessmentStudentAttempts, systemSettings, studentRelationshipHistory, crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools, crmCustomFields, crmRequiredFields, evaluationCriteria, evaluationSubCriteria, shiftTemplates, tasks } from "@shared/schema";
-import { eq, and, isNotNull, sql, inArray, desc, gte, lte, ne } from "drizzle-orm";
+import { eq, and, isNotNull, sql, inArray, desc, gte, lte, ne, between, asc } from "drizzle-orm";
 import { resolveScoreSheetAssessmentDeadlineAt, scoreSheetAssessmentSchema } from "@shared/score-sheet-assessment";
 import {
   scoreSheetAssessmentAttemptResultSchema,
@@ -55,6 +55,23 @@ const customerExportTokens = new Map<string, {
   createdAt: number;
 }>();
 let activeCustomerExports = 0;
+
+const classRosterAttendanceLabels: Record<string, string> = {
+  present: "Có học",
+  absent: "Nghỉ",
+  makeup_wait: "Chờ bù",
+  makeup_scheduled: "Đã xếp bù",
+  makeup_done: "Học bù",
+  paused: "Bảo lưu",
+  pending: "Chưa điểm danh",
+};
+const classRosterLearningStatusLabels: Record<string, string> = {
+  dang_hoc: "Đang học",
+  chua_co_lich: "Chưa có lịch",
+  cho_lich: "Chờ lịch",
+  bao_luu: "Bảo lưu",
+  da_nghi: "Đã nghỉ",
+};
 
 // Field display names for activity log
 const STUDENT_FIELD_LABELS: Record<string, string> = {
@@ -608,6 +625,138 @@ export function registerStudentsRoutes(app: Express): void {
       else res.status(500).json({ message: "Không thể tạo file Excel." });
     } finally {
       activeCustomerExports--;
+    }
+  });
+
+  app.get("/api/students/class-roster-export.xlsx", async (req, res) => {
+    if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+    const classId = typeof req.query.classId === "string" ? req.query.classId : "";
+    const month = typeof req.query.month === "string" ? req.query.month : "";
+    const parsedClassId = z.string().uuid().safeParse(classId);
+    const parsedMonth = /^(\d{4})-(\d{2})$/.exec(month);
+    if (!parsedClassId.success || !parsedMonth || Number(parsedMonth[2]) < 1 || Number(parsedMonth[2]) > 12) {
+      return res.status(400).json({ message: "Lớp hoặc tháng không hợp lệ." });
+    }
+
+    let exportHeadersSent = false;
+    try {
+      const permissions = await getCrmPermissions(req);
+      if (!permissions.canView && !permissions.canViewAll) {
+        return res.status(403).json({ message: "Bạn không có quyền xem danh sách khách hàng." });
+      }
+      const scope = {
+        allowedLocationIds: req.allowedLocationIds || [],
+        isSuperAdmin: !!req.isSuperAdmin,
+        viewScope: permissions.canViewAll ? "all" as const : "own" as const,
+        viewerStaffId: req.staffId ?? undefined,
+      };
+      const classRows = await db.select({ name: classes.name, classCode: classes.classCode })
+        .from(classes).where(eq(classes.id, classId)).limit(1);
+      const classInfo = classRows[0];
+      if (!classInfo) return res.status(404).json({ message: "Không tìm thấy lớp." });
+
+      const rosterCount = await storage.getStudents({
+        ...scope, classTabId: classId, limit: 1, offset: 0,
+      });
+      if (!rosterCount.total) return res.status(404).json({ message: "Lớp chưa có học viên phù hợp để tải." });
+      if (rosterCount.total > CUSTOMER_EXPORT_MAX_ROWS) {
+        return res.status(413).json({ message: `Danh sách vượt giới hạn ${CUSTOMER_EXPORT_MAX_ROWS.toLocaleString("vi-VN")} dòng.` });
+      }
+
+      const year = Number(parsedMonth[1]);
+      const monthNumber = Number(parsedMonth[2]);
+      const startDate = `${parsedMonth[1]}-${parsedMonth[2]}-01`;
+      const endDate = `${parsedMonth[1]}-${parsedMonth[2]}-${String(new Date(Date.UTC(year, monthNumber, 0)).getUTCDate()).padStart(2, "0")}`;
+      const attendanceRows = await db.select({
+        studentId: studentSessions.studentId,
+        sessionDate: classSessions.sessionDate,
+        attendanceStatus: studentSessions.attendanceStatus,
+      })
+        .from(studentSessions)
+        .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+        .where(and(
+          eq(studentSessions.classId, classId),
+          eq(classSessions.classId, classId),
+          between(classSessions.sessionDate, startDate, endDate),
+          ne(classSessions.status, "cancelled"),
+          ne(studentSessions.status, "cancelled"),
+          ne(studentSessions.status, "transferred"),
+        ))
+        .orderBy(asc(classSessions.sessionDate), asc(studentSessions.studentId));
+
+      const dateKeys = [...new Set(attendanceRows.map((item) => String(item.sessionDate).slice(0, 10)))].sort();
+      const attendanceByStudentDate = new Map<string, string[]>();
+      for (const item of attendanceRows) {
+        const date = String(item.sessionDate).slice(0, 10);
+        const key = `${item.studentId}:${date}`;
+        const statuses = attendanceByStudentDate.get(key) ?? [];
+        statuses.push(classRosterAttendanceLabels[item.attendanceStatus || "pending"] || classRosterAttendanceLabels.pending);
+        attendanceByStudentDate.set(key, statuses);
+      }
+
+      const weekdayNames = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
+      const dateHeader = (date: string) => {
+        const [y, m, d] = date.split("-").map(Number);
+        const weekday = weekdayNames[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+        return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")} ${weekday}`;
+      };
+      const worksheetHeaders = [
+        "STT", "Họ và tên", "Mã học viên", "Cơ sở", "Số điện thoại", "Ngày sinh",
+        "Bắt đầu", "Kết thúc", "Số buổi (Tổng - Đã học - Còn lại)", "Trạng thái học",
+        ...dateKeys.map(dateHeader),
+      ];
+
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="class_${classId}_${month}.xlsx"; filename*=UTF-8''${encodeURIComponent(`Danh_sach_${classInfo.name || classInfo.classCode}_${month}.xlsx`)}`,
+      );
+      res.setHeader("Cache-Control", "no-store");
+      res.flushHeaders();
+      exportHeadersSent = true;
+
+      const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: res, useStyles: false, useSharedStrings: false });
+      const worksheet = workbook.addWorksheet("Danh sach lop");
+      worksheet.addRow(worksheetHeaders).commit();
+      const formatDate = (value: any) => {
+        if (!value) return "";
+        const datePart = String(value).slice(0, 10);
+        const [y, m, d] = datePart.split("-");
+        return y && m && d ? `${d}/${m}/${y}` : "";
+      };
+      for (let offset = 0, index = 1; offset < rosterCount.total;) {
+        const batch = await storage.getStudents({
+          ...scope, classTabId: classId, limit: CUSTOMER_EXPORT_BATCH_SIZE, offset,
+        });
+        if (!batch.students.length) break;
+        for (const student of batch.students) {
+          const classDetail = student.classDetails?.find((detail: any) => detail.classId === classId);
+          const locations = (student.locations || [])
+            .map((item: any) => item.location?.name)
+            .filter(Boolean);
+          const locationNames = [...new Set(locations)].join(", ") || student.location?.name || "";
+          worksheet.addRow([
+            index++,
+            student.fullName || "",
+            student.code || "",
+            locationNames,
+            student.phone || "",
+            formatDate(student.dateOfBirth),
+            formatDate(classDetail?.startDate),
+            formatDate(classDetail?.endDate),
+            `${classDetail?.totalSessions ?? 0} - ${classDetail?.attendedSessions ?? 0} - ${classDetail?.remainingSessions ?? 0}`,
+            classRosterLearningStatusLabels[classDetail?.learningStatus || ""] || classDetail?.learningStatus || "",
+            ...dateKeys.map((date) => (attendanceByStudentDate.get(`${student.id}:${date}`) || []).join(" / ")),
+          ]).commit();
+        }
+        offset += batch.students.length;
+      }
+      await workbook.commit();
+    } catch (error: any) {
+      console.error("[customers-class-export] failed:", error);
+      if (exportHeadersSent) res.destroy(error);
+      else res.status(500).json({ message: error?.message || "Không thể xuất danh sách lớp." });
     }
   });
 

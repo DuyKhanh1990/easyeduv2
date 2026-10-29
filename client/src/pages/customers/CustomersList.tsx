@@ -730,6 +730,42 @@ export function CustomersList() {
     }
   };
 
+  const startClassRosterExport = async () => {
+    if (!classRosterViewActive) return;
+    setIsPreparingCustomerExport(true);
+    try {
+      const response = await fetch(
+        `/api/students/class-roster-export.xlsx?classId=${encodeURIComponent(activeClassTab)}&month=${encodeURIComponent(classScheduleMonth)}`,
+        { credentials: "include" },
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.message || "Không thể tải danh sách lớp.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `danh_sach_lop_${classScheduleMonth}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast({
+        title: "Đã tải danh sách lớp",
+        description: `Bao gồm chuyên cần tháng ${classScheduleMonth}.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Không thể tải danh sách lớp",
+        description: error?.message || "Vui lòng thử lại.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPreparingCustomerExport(false);
+    }
+  };
+
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -1243,6 +1279,14 @@ export function CustomersList() {
                     >
                       Tải danh sách đã chọn{selectedIds.length ? ` (${selectedIds.length})` : ""}
                     </DropdownMenuItem>
+                    {classRosterViewActive && (
+                      <DropdownMenuItem
+                        disabled={isPreparingCustomerExport}
+                        onSelect={() => void startClassRosterExport()}
+                      >
+                        Tải danh sách lớp đang chọn
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem
                       disabled={isPreparingCustomerExport}
                       onSelect={() => void startCustomerExport("all")}
