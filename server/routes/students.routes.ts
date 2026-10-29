@@ -716,9 +716,47 @@ export function registerStudentsRoutes(app: Express): void {
       res.flushHeaders();
       exportHeadersSent = true;
 
-      const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: res, useStyles: false, useSharedStrings: false });
+      const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: res, useStyles: true, useSharedStrings: true });
       const worksheet = workbook.addWorksheet("Danh sach lop");
-      worksheet.addRow(worksheetHeaders).commit();
+      const fixedWidths = [7, 26, 16, 22, 17, 14, 14, 14, 28, 18];
+      worksheet.columns = worksheetHeaders.map((header, index) => ({
+        header,
+        key: `column${index + 1}`,
+        width: fixedWidths[index] ?? 18,
+      }));
+      worksheet.views = [{ state: "frozen", xSplit: 3, ySplit: 3, topLeftCell: "D4" }];
+      worksheet.properties.defaultRowHeight = 26;
+      worksheet.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+      worksheet.autoFilter = {
+        from: { row: 3, column: 1 },
+        to: { row: 3, column: worksheetHeaders.length },
+      };
+
+      worksheet.mergeCells(1, 1, 1, worksheetHeaders.length);
+      const titleRow = worksheet.addRow([`DANH SÁCH HỌC VIÊN · ${classInfo.name || classInfo.classCode}`]);
+      titleRow.height = 30;
+      titleRow.getCell(1).font = { name: "Arial", size: 15, bold: true, color: { argb: "FFFFFFFF" } };
+      titleRow.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF155E75" } };
+      titleRow.getCell(1).alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+      titleRow.commit();
+
+      worksheet.mergeCells(2, 1, 2, worksheetHeaders.length);
+      const subtitleRow = worksheet.addRow([`Lớp: ${classInfo.classCode || ""} · Tháng chuyên cần: ${month}`]);
+      subtitleRow.height = 23;
+      subtitleRow.getCell(1).font = { name: "Arial", size: 10, color: { argb: "FF334155" } };
+      subtitleRow.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+      subtitleRow.getCell(1).alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+      subtitleRow.commit();
+
+      const headerRow = worksheet.addRow(worksheetHeaders);
+      headerRow.height = 36;
+      headerRow.eachCell((cell) => {
+        cell.font = { name: "Arial", size: 9, bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } };
+        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        cell.border = { bottom: { style: "medium", color: { argb: "FF1D4ED8" } } };
+      });
+      headerRow.commit();
       const formatDate = (value: any) => {
         if (!value) return "";
         const datePart = String(value).slice(0, 10);
@@ -736,7 +774,7 @@ export function registerStudentsRoutes(app: Express): void {
             .map((item: any) => item.location?.name)
             .filter(Boolean);
           const locationNames = [...new Set(locations)].join(", ") || student.location?.name || "";
-          worksheet.addRow([
+          const row = worksheet.addRow([
             index++,
             student.fullName || "",
             student.code || "",
@@ -748,7 +786,38 @@ export function registerStudentsRoutes(app: Express): void {
             `${classDetail?.totalSessions ?? 0} - ${classDetail?.attendedSessions ?? 0} - ${classDetail?.remainingSessions ?? 0}`,
             classRosterLearningStatusLabels[classDetail?.learningStatus || ""] || classDetail?.learningStatus || "",
             ...dateKeys.map((date) => (attendanceByStudentDate.get(`${student.id}:${date}`) || []).join(" / ")),
-          ]).commit();
+          ]);
+          row.height = 30;
+          row.eachCell((cell, columnNumber) => {
+            cell.font = { name: "Arial", size: 10, color: { argb: "FF1E293B" } };
+            cell.alignment = {
+              vertical: "middle",
+              horizontal: columnNumber === 1 || columnNumber >= 11 ? "center" : "left",
+              wrapText: columnNumber >= 9,
+            };
+            cell.border = { bottom: { style: "thin", color: { argb: "FFE2E8F0" } } };
+            if (index % 2 === 1) {
+              cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+            }
+            if (columnNumber >= 11 && typeof cell.value === "string" && cell.value) {
+              const statusFill: Record<string, string> = {
+                "Có học": "FFDCFCE7",
+                "Nghỉ": "FFFEE2E2",
+                "Chờ bù": "FFFFEDD5",
+                "Đã xếp bù": "FFEDE9FE",
+                "Học bù": "FFDBEAFE",
+                "Bảo lưu": "FFFEF3C7",
+                "Chưa điểm danh": "FFF1F5F9",
+              };
+              const labels = cell.value.split(" / ");
+              const fill = labels.length === 1 ? statusFill[labels[0]] : undefined;
+              if (fill) {
+                cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
+                cell.font = { name: "Arial", size: 9, bold: true, color: { argb: "FF334155" } };
+              }
+            }
+          });
+          row.commit();
         }
         offset += batch.students.length;
       }
