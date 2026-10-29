@@ -58,6 +58,7 @@
 - [Harbor npm lockfile URLs](harbor-npm-lockfile-urls.md) — Docker build ngoài Replit phải đổi cả package-firewall.replit.local và .internal về npmjs.org trước npm ci.
 - [Password display](staff-password-display.md) — giữ hash đăng nhập và ciphertext riêng; chỉ tự khôi phục mật khẩu cũ nếu hash xác nhận mặc định.
 - [HRM account cap on Excel import](staff-account-limit-import.md) — reject an active-staff import batch before creating records if it exceeds remaining account capacity.
+- [Class Excel import parity](class-excel-import-parity.md) — imported teacher roles and holiday skipping must flow into class creation exactly like the normal create form.
 - [Student self-service leave](student-self-leave-request.md) — luồng học viên/phụ huynh tự gửi đơn phải tự suy ra học viên/cơ sở và tách bản ghi theo từng cơ sở.
 - [Staff leave notification routing](staff-leave-notification-routing.md) — đơn nghỉ phép nhân sự dùng deeplink quản lý riêng; đơn nghỉ học dùng deeplink learning overview.
 - [Grade-book view/edit consistency](grade-book-view-edit-consistency.md) — dialog xem phải chờ active students, map enrollment sau khi đủ dữ liệu và lọc cùng tập học viên có dữ liệu như dialog sửa.

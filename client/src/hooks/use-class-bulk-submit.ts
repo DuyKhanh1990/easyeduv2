@@ -10,9 +10,11 @@ export interface ParsedClassRow {
   startDate?: string;
   endDate?: string;
   endSessions?: number;
+  skipHolidays?: boolean;
   weekday?: number;
   shiftId?: string;
   teacherIds?: string[];
+  teacherRoleIds?: Record<string, string>;
   studentIds?: string[];
   courseId?: string;
   feePackageId?: string;
@@ -35,10 +37,11 @@ export function groupRowsByClassCode(rows: ParsedClassRow[]) {
     startDate?: string;
     endDate?: string;
     endSessions?: number;
+    skipHolidays?: boolean;
     courseId?: string;
     feePackageId?: string;
     studentIds: string[];
-    scheduleRows: { weekday: number; shiftId: string; teacherIds: string[]; studentIds: string[] }[];
+    scheduleRows: { weekday: number; shiftId: string; teacherIds: string[]; teacherRoleIds?: Record<string, string>; studentIds: string[] }[];
   }>();
 
   for (const r of rows) {
@@ -53,6 +56,7 @@ export function groupRowsByClassCode(rows: ParsedClassRow[]) {
         startDate: r.startDate,
         endDate: r.endDate,
         endSessions: r.endSessions,
+        skipHolidays: r.skipHolidays,
         courseId: r.courseId,
         feePackageId: r.feePackageId,
         studentIds: [],
@@ -63,6 +67,7 @@ export function groupRowsByClassCode(rows: ParsedClassRow[]) {
       if (!g.startDate && r.startDate) g.startDate = r.startDate;
       if (!g.endDate && r.endDate) g.endDate = r.endDate;
       if (g.endSessions == null && r.endSessions != null) g.endSessions = r.endSessions;
+      if (g.skipHolidays == null && r.skipHolidays != null) g.skipHolidays = r.skipHolidays;
       if (g.maxStudents == null && r.maxStudents != null) g.maxStudents = r.maxStudents;
       if (!g.onlineLink && r.onlineLink) g.onlineLink = r.onlineLink;
       if (!g.courseId && r.courseId) g.courseId = r.courseId;
@@ -80,6 +85,7 @@ export function groupRowsByClassCode(rows: ParsedClassRow[]) {
         weekday: r.weekday,
         shiftId: r.shiftId,
         teacherIds: r.teacherIds ?? [],
+        teacherRoleIds: r.teacherRoleIds ?? {},
         studentIds: r.studentIds ?? [],
       });
     }
@@ -107,14 +113,19 @@ export async function submitClassGroups(
     try {
       const scheduleByWeekday = new Map<number, string[]>();
       const teacherShiftKeys = new Map<string, string[]>();
+      const teacherRoleIds = new Map<string, string>();
       void classCode;
 
       for (const row of grp.scheduleRows) {
         if (!scheduleByWeekday.has(row.weekday)) scheduleByWeekday.set(row.weekday, []);
-        scheduleByWeekday.get(row.weekday)!.push(row.shiftId);
+        const dayShiftIds = scheduleByWeekday.get(row.weekday)!;
+        if (!dayShiftIds.includes(row.shiftId)) dayShiftIds.push(row.shiftId);
 
-        const shiftKey = `${row.weekday}_shift0`;
+        const shiftIndex = dayShiftIds.indexOf(row.shiftId);
+        const shiftKey = `${row.weekday}_shift${shiftIndex}`;
         for (const id of row.teacherIds) {
+          const roleId = row.teacherRoleIds?.[id];
+          if (roleId) teacherRoleIds.set(id, roleId);
           if (!teacherShiftKeys.has(id)) teacherShiftKeys.set(id, []);
           if (!teacherShiftKeys.get(id)!.includes(shiftKey)) {
             teacherShiftKeys.get(id)!.push(shiftKey);
@@ -131,7 +142,12 @@ export async function submitClassGroups(
       const teachers_config = allTeacherIds.map(id => {
         const keys = teacherShiftKeys.get(id)!;
         const isAll = keys.length >= totalScheduleRows;
-        return { teacher_id: id, mode: isAll ? "all" : "specific", shift_keys: isAll ? [] : keys };
+        return {
+          teacher_id: id,
+          role_id: teacherRoleIds.get(id),
+          mode: isAll ? "all" : "specific",
+          shift_keys: isAll ? [] : keys,
+        };
       });
       void classCode;
 
@@ -150,6 +166,7 @@ export async function submitClassGroups(
         endDate: useSessions ? undefined : grp.endDate,
         endType: useSessions ? "sessions" : "date",
         sessionCount: useSessions ? grp.endSessions : undefined,
+        skipHolidays: grp.skipHolidays === true,
         teacherIds: allTeacherIds,
         weekdays: Array.from(scheduleByWeekday.keys()),
         schedule_config,

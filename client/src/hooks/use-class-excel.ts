@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ExcelJS from "exceljs";
 import { useToast } from "@/hooks/use-toast";
-import { isDefaultTrainingDepartmentStaff } from "@/lib/staff-role-options";
+import { getStaffRoleOptions, isDefaultTrainingDepartmentStaff, resolveTeacherRoleId } from "@/lib/staff-role-options";
 import { groupRowsByClassCode, submitClassGroups, type ParsedClassRow } from "@/hooks/use-class-bulk-submit";
 
 interface UseClassExcelOptions {
@@ -18,6 +18,34 @@ function feePackageOptionLabel(pkg: any): string {
   const sessions = Number(pkg.sessions);
   const sessionLabel = Number.isFinite(sessions) && sessions > 0 ? ` — ${sessions} buổi` : "";
   return `${courseName} — ${packageName}${sessionLabel}`;
+}
+
+function buildTeacherRoleOptions(staff: any[] = [], locations: any[] = []) {
+  const locationNames = new Map(locations.map((location) => [String(location.id), String(location.name || "")]));
+  const options: { id: string; roleId: string; locationId?: string; label: string; fullName: string }[] = [];
+  for (const member of staff) {
+    if (member.status === "Không hoạt động" || !isDefaultTrainingDepartmentStaff(member)) continue;
+    for (const assignment of member.assignments || []) {
+      const roleId = String(assignment?.roleId ?? assignment?.role?.id ?? "");
+      const roleName = String(assignment?.role?.name ?? assignment?.roleName ?? "").trim();
+      const locationId = String(assignment?.locationId ?? "");
+      if (
+        assignment?.department?.isSystem !== true ||
+        assignment?.department?.name !== "Phòng Đào tạo" ||
+        !roleId ||
+        !/giáo viên|trợ giảng/i.test(roleName)
+      ) continue;
+      const locationLabel = locationNames.get(locationId);
+      options.push({
+        id: String(member.id),
+        roleId,
+        locationId: locationId || undefined,
+        fullName: String(member.fullName || "").trim(),
+        label: `${String(member.fullName || "").trim()} — ${roleName}${locationLabel ? ` (${locationLabel})` : ""}`,
+      });
+    }
+  }
+  return [...new Map(options.map((option) => [option.label.toLowerCase(), option])).values()];
 }
 
 // Same logic as getComputedStatus in use-class-list.ts:
@@ -383,6 +411,7 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
       );
       const endSessionsColumn = headerText.findIndex((value) => value === "số buổi kết thúc") + 1;
       const feePackageColumn = headerText.findIndex((value) => value === "gói học phí") + 1;
+      const skipHolidaysColumn = headerText.findIndex((value) => value === "bỏ qua ngày nghỉ lễ") + 1;
       const teacherColumns = headerText
         .map((value, index) => ({ value, column: index + 1 }))
         .filter(({ value }) => /^giáo viên\s*[1-4]$/.test(value))
@@ -397,6 +426,8 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
         }
       });
       const teacherMap = new Map((staff || []).map((s: any) => [s.fullName.trim().toLowerCase(), s.id]));
+      const teacherOptionMap = new Map(buildTeacherRoleOptions(staff, locations)
+        .map((option) => [option.label.toLowerCase(), option]));
       const feePackageMap = new Map((feePackages || []).map((pkg: any) => [
         feePackageOptionLabel(pkg).toLowerCase(),
         pkg,
@@ -432,7 +463,9 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
         name: string; locationId: string; maxStudents?: number; learningFormat?: string;
         startDate?: string; endDate?: string; endSessions?: number;
         feePackageId?: string; courseId?: string; packageSessions?: number;
-        scheduleRows: { weekday: number; shiftId: string; teacherIds: string[] }[];
+        skipHolidays?: boolean;
+        teacherRoleIds: Record<string, string>;
+        scheduleRows: { weekday: number; shiftId: string; teacherIds: string[]; teacherRoleIds: Record<string, string> }[];
       }>();
       const importIssues: string[] = [];
 
@@ -458,9 +491,16 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
           : undefined;
         const feePackageLabel = feePackageColumn ? row.getCell(feePackageColumn).text?.toString().trim() : "";
         const feePackage = feePackageLabel ? feePackageMap.get(feePackageLabel.toLowerCase()) : undefined;
+        const skipHolidaysText = skipHolidaysColumn
+          ? row.getCell(skipHolidaysColumn).text?.toString().trim().toLowerCase()
+          : "";
+        const skipHolidays = skipHolidaysText ? ["có", "co", "yes"].includes(skipHolidaysText) : undefined;
 
         if (endSessionsText && (!Number.isInteger(endSessions) || Number(endSessions) <= 0)) {
           importIssues.push(`Dòng ${rowNum}: Số buổi kết thúc phải là số nguyên dương.`);
+        }
+        if (skipHolidaysText && !["có", "co", "yes", "không", "khong", "no"].includes(skipHolidaysText)) {
+          importIssues.push(`Dòng ${rowNum}: Bỏ qua ngày nghỉ lễ chỉ nhận Có hoặc Không.`);
         }
         if (feePackageLabel && !feePackage) {
           importIssues.push(`Dòng ${rowNum}: Không tìm thấy gói học phí "${feePackageLabel}" trong danh sách hệ thống.`);
@@ -473,9 +513,33 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
         const locationId = locationMap.get(locationName.toLowerCase());
         const shiftId = shiftMap.get(shiftName?.toLowerCase());
         const weekday = weekdayMap[weekdayStr];
-        const teacherIds = teacherCells
-          .map((t: string) => teacherMap.get(t.toLowerCase()))
-          .filter(Boolean) as string[];
+        const teacherSelections = teacherCells.flatMap((teacherText: string) => {
+          const option = teacherOptionMap.get(teacherText.toLowerCase());
+          if (option) {
+            if (option.locationId && option.locationId !== locationId) {
+              importIssues.push(`Dòng ${rowNum}: Vai trò của ${option.fullName} không thuộc cơ sở đã chọn.`);
+              return [];
+            }
+            return [{ teacherId: option.id, roleId: option.roleId }];
+          }
+          const teacherId = teacherMap.get(teacherText.toLowerCase());
+          const member = (staff || []).find((item: any) => item.id === teacherId);
+          if (!member) {
+            importIssues.push(`Dòng ${rowNum}: Không tìm thấy giáo viên "${teacherText}" trong hệ thống.`);
+            return [];
+          }
+          const roleOptions = getStaffRoleOptions(member, locationId);
+          const roleId = resolveTeacherRoleId({}, roleOptions);
+          if (roleOptions.length > 1 && !roleId) {
+            importIssues.push(`Dòng ${rowNum}: Cần chọn vai trò cho ${member.fullName} trong file mẫu mới.`);
+            return [];
+          }
+          return [{ teacherId, roleId }];
+        });
+        const teacherIds = teacherSelections.map((selection) => selection.teacherId);
+        const teacherRoleIds: Record<string, string> = Object.fromEntries(
+          teacherSelections.filter((selection) => selection.roleId).map((selection) => [selection.teacherId, selection.roleId]),
+        );
 
         if (!locationId) return;
 
@@ -486,12 +550,28 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
             feePackageId: feePackage?.id,
             courseId: feePackage?.courseId,
             packageSessions: feePackage?.sessions ? Number(feePackage.sessions) : undefined,
+            skipHolidays,
+            teacherRoleIds,
             scheduleRows: [],
           });
         } else {
           const grp = classGroups.get(classCode)!;
           if (!grp.startDate && startDate) grp.startDate = startDate;
           if (!grp.endDate && endDate) grp.endDate = endDate;
+          if (skipHolidaysColumn && skipHolidays !== undefined) {
+            if (grp.skipHolidays !== undefined && grp.skipHolidays !== skipHolidays) {
+              importIssues.push(`Mã lớp ${classCode}: các dòng có lựa chọn bỏ qua ngày nghỉ lễ khác nhau.`);
+            } else {
+              grp.skipHolidays = skipHolidays;
+            }
+          }
+          for (const [teacherId, roleId] of Object.entries(teacherRoleIds)) {
+            if (grp.teacherRoleIds[teacherId] && grp.teacherRoleIds[teacherId] !== roleId) {
+              importIssues.push(`Mã lớp ${classCode}: vai trò của cùng một giáo viên không thống nhất giữa các dòng.`);
+            } else if (roleId) {
+              grp.teacherRoleIds[teacherId] = roleId;
+            }
+          }
           if (endSessionsText && Number.isInteger(endSessions) && Number(endSessions) > 0) {
             if (grp.endSessions != null && grp.endSessions !== Number(endSessions)) {
               importIssues.push(`Mã lớp ${classCode}: các dòng đang nhập số buổi kết thúc khác nhau.`);
@@ -512,7 +592,7 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
 
         const grp = classGroups.get(classCode)!;
         if (weekday !== undefined && shiftId) {
-          grp.scheduleRows.push({ weekday, shiftId, teacherIds });
+          grp.scheduleRows.push({ weekday, shiftId, teacherIds, teacherRoleIds });
         }
       });
 
@@ -542,6 +622,7 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
             maxStudents: grp.maxStudents, learningFormat: grp.learningFormat as any,
             startDate: grp.startDate, endDate: grp.endDate, endSessions,
             feePackageId: grp.feePackageId, courseId: grp.courseId,
+            skipHolidays: grp.skipHolidays,
           });
         } else {
           for (const sr of grp.scheduleRows) {
@@ -550,7 +631,9 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
               maxStudents: grp.maxStudents, learningFormat: grp.learningFormat as any,
               startDate: grp.startDate, endDate: grp.endDate, endSessions,
               feePackageId: grp.feePackageId, courseId: grp.courseId,
+              skipHolidays: grp.skipHolidays,
               weekday: sr.weekday, shiftId: sr.shiftId, teacherIds: sr.teacherIds,
+              teacherRoleIds: { ...grp.teacherRoleIds, ...sr.teacherRoleIds },
             });
           }
         }
@@ -595,7 +678,7 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
       const headers = [
         "Mã lớp học (*)", "Tên lớp (*)", "Cơ sở (*)", "Số học viên tối đa",
         "Hình thức học", "Chu kỳ học", "Ca học", "Ngày bắt đầu", "Ngày kết thúc",
-        "Số buổi kết thúc", "Gói học phí", "Giáo viên 1", "Giáo viên 2", "Giáo viên 3", "Giáo viên 4",
+        "Số buổi kết thúc", "Gói học phí", "Bỏ qua ngày nghỉ lễ", "Giáo viên 1", "Giáo viên 2", "Giáo viên 3", "Giáo viên 4",
       ];
 
       const headerRow = worksheet.addRow(headers);
@@ -611,8 +694,8 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
       worksheet.columns = [
         { width: 16 }, { width: 20 }, { width: 18 }, { width: 18 },
         { width: 16 }, { width: 14 }, { width: 18 },
-        { width: 15 }, { width: 15 }, { width: 16 }, { width: 38 },
-        { width: 20 }, { width: 20 }, { width: 20 }, { width: 20 },
+        { width: 15 }, { width: 15 }, { width: 16 }, { width: 38 }, { width: 20 },
+        { width: 26 }, { width: 26 }, { width: 26 }, { width: 26 },
       ];
 
       const cleanName = (name: string) => (name || "").trim();
@@ -622,17 +705,7 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
         const time = s.startTime && s.endTime ? ` (${s.startTime}-${s.endTime})` : "";
         return cleanName(`${s.name}${time}`);
       }));
-      const teacherNames = uniqueNames((staff || [])
-        .filter((member: any) =>
-          isDefaultTrainingDepartmentStaff(member) &&
-          member.status !== "Không hoạt động" &&
-          member.assignments?.some((assignment: any) =>
-            assignment?.department?.isSystem === true &&
-            assignment?.department?.name === "Phòng Đào tạo" &&
-            /giáo viên|trợ giảng/i.test(assignment?.role?.name ?? assignment?.roleName ?? "")
-          )
-        )
-        .map((member: any) => member.fullName));
+      const teacherNames = uniqueNames(buildTeacherRoleOptions(staff, locations).map((option) => option.label));
       const feePackageLabels = uniqueNames((feePackages || []).map(feePackageOptionLabel));
 
       const weekdays = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
@@ -648,9 +721,9 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
       const sampleEndDate = new Date(2026, 11, 31);
 
       const sampleRows = [
-        ["A1", "Lớp A1", locationNames[0] || "Cơ sở chính", 20, "Offline", "T2", shiftNames[0] || "Ca 1", sampleStartDate, sampleEndDate, "", feePackageLabels[0] || "", teacherNames[0] || "", teacherNames[1] || "", "", ""],
-        ["A1", "Lớp A1", locationNames[0] || "Cơ sở chính", "", "Offline", "T4", shiftNames[1] || "Ca 2", null, null, "", feePackageLabels[0] || "", teacherNames[0] || "", "", "", ""],
-        ["A2", "Lớp A2", locationNames[0] || "Cơ sở chính", 15, "Online", "T3", shiftNames[0] || "Ca 1", sampleStartDate, null, 20, feePackageLabels[0] || "", teacherNames[1] || "", "", "", ""],
+        ["A1", "Lớp A1", locationNames[0] || "Cơ sở chính", 20, "Offline", "T2", shiftNames[0] || "Ca 1", sampleStartDate, sampleEndDate, "", feePackageLabels[0] || "", "Không", teacherNames[0] || "", teacherNames[1] || "", "", ""],
+        ["A1", "Lớp A1", locationNames[0] || "Cơ sở chính", "", "Offline", "T4", shiftNames[1] || "Ca 2", null, null, "", feePackageLabels[0] || "", "Không", teacherNames[0] || "", "", "", ""],
+        ["A2", "Lớp A2", locationNames[0] || "Cơ sở chính", 15, "Online", "T3", shiftNames[0] || "Ca 1", sampleStartDate, null, 20, feePackageLabels[0] || "", "Có", teacherNames[1] || "", "", "", ""],
       ];
 
       sampleRows.forEach(row => {
@@ -683,6 +756,7 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
       const shiftFormula = addNamedOptions("ShiftOptions", shiftNames, 4);
       const teacherFormula = addNamedOptions("TeacherOptions", teacherNames, 5);
       const feePackageFormula = addNamedOptions("FeePackageOptions", feePackageLabels, 6);
+      const skipHolidaysFormula = addNamedOptions("SkipHolidayOptions", ["Không", "Có"], 7);
 
       for (let i = 2; i <= 201; i++) {
         worksheet.getCell(`C${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [locationFormula] };
@@ -707,7 +781,8 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
           error: "Vui lòng nhập số buổi kết thúc là số nguyên dương.",
         };
         worksheet.getCell(`K${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [feePackageFormula] };
-        ["L", "M", "N", "O"].forEach(col => {
+        worksheet.getCell(`L${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [skipHolidaysFormula] };
+        ["M", "N", "O", "P"].forEach(col => {
           worksheet.getCell(`${col}${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [teacherFormula] };
         });
         worksheet.getCell(`D${i}`).dataValidation = { type: "whole", allowBlank: true, operator: "greaterThan", formulae: [0] };
@@ -730,6 +805,8 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
         ["GIÁO VIÊN 1-4: Chọn từ danh sách giáo viên"],
         ["SỐ BUỔI KẾT THÚC: Nhập số nguyên dương; chỉ dùng thay cho Ngày kết thúc."],
         ["GÓI HỌC PHÍ: Không bắt buộc; chọn theo tên khóa học và tên gói."],
+        ["BỎ QUA NGÀY NGHỈ LỄ: Chọn Có để không xếp lịch vào ngày nghỉ đã khai báo; để trống tương đương Không."],
+        ["GIÁO VIÊN: Chọn mục có dạng Họ tên — Vai trò (Cơ sở) để import kèm đúng vai trò."],
         [""],
         ["LƯU Ý QUAN TRỌNG:"],
         ["Một lớp có thể học nhiều ngày/tuần với các ca khác nhau."],
