@@ -670,10 +670,27 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
     }
   };
 
-  const downloadSample = async () => {
+  const downloadSample = async (selectedLocationId = "all") => {
     try {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet("Mau_Lop_Hoc");
+      const selectedLocation = selectedLocationId === "all"
+        ? undefined
+        : (locations || []).find((location: any) => String(location.id) === selectedLocationId);
+      if (selectedLocationId !== "all" && !selectedLocation) {
+        toast({ title: "Không tìm thấy cơ sở", description: "Vui lòng chọn lại cơ sở để tải file mẫu.", variant: "destructive" });
+        return;
+      }
+
+      let templateFeePackages = feePackages || [];
+      if (selectedLocation) {
+        const feePackageResponse = await fetch(
+          `/api/fee-packages?locationId=${encodeURIComponent(selectedLocation.id)}`,
+          { credentials: "include" },
+        );
+        if (!feePackageResponse.ok) throw new Error("Không tải được gói học phí theo cơ sở.");
+        templateFeePackages = await feePackageResponse.json();
+      }
 
       const headers = [
         "Mã lớp học (*)", "Tên lớp (*)", "Cơ sở (*)", "Số học viên tối đa",
@@ -700,19 +717,27 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
 
       const cleanName = (name: string) => (name || "").trim();
       const uniqueNames = (values: string[]) => [...new Set(values.map(cleanName).filter(Boolean))];
-      const locationNames = uniqueNames((locations || []).map((l: any) => l.name));
-      const shiftNames = uniqueNames((shiftTemplates || []).map((s: any) => {
+      const locationNames = selectedLocation
+        ? [cleanName(selectedLocation.name)]
+        : uniqueNames((locations || []).map((l: any) => l.name));
+      const availableShifts = (shiftTemplates || []).filter((shift: any) =>
+        !selectedLocation || String(shift.locationId) === String(selectedLocation.id),
+      );
+      const shiftNames = uniqueNames(availableShifts.map((s: any) => {
         const time = s.startTime && s.endTime ? ` (${s.startTime}-${s.endTime})` : "";
         return cleanName(`${s.name}${time}`);
       }));
-      const teacherNames = uniqueNames(buildTeacherRoleOptions(staff, locations).map((option) => option.label));
-      const feePackageLabels = uniqueNames((feePackages || []).map(feePackageOptionLabel));
+      const availableTeacherOptions = buildTeacherRoleOptions(staff, locations).filter((option) =>
+        !selectedLocation || option.locationId === String(selectedLocation.id),
+      );
+      const teacherNames = uniqueNames(availableTeacherOptions.map((option) => option.label));
+      const feePackageLabels = uniqueNames(templateFeePackages.map(feePackageOptionLabel));
 
       const weekdays = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
-      if (!locationNames.length || !shiftNames.length || !teacherNames.length) {
+      if (!locationNames.length) {
         toast({
           title: "Chưa thể tạo file mẫu",
-          description: "Không tìm thấy đủ danh sách Cơ sở, Ca học hoặc Giáo viên/Trợ giảng thuộc Phòng Đào tạo. Vui lòng kiểm tra cấu hình hệ thống rồi thử lại.",
+          description: "Không tìm thấy danh sách cơ sở trong hệ thống.",
           variant: "destructive",
         });
         return;
@@ -721,9 +746,9 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
       const sampleEndDate = new Date(2026, 11, 31);
 
       const sampleRows = [
-        ["A1", "Lớp A1", locationNames[0] || "Cơ sở chính", 20, "Offline", "T2", shiftNames[0] || "Ca 1", sampleStartDate, sampleEndDate, "", feePackageLabels[0] || "", "Không", teacherNames[0] || "", teacherNames[1] || "", "", ""],
-        ["A1", "Lớp A1", locationNames[0] || "Cơ sở chính", "", "Offline", "T4", shiftNames[1] || "Ca 2", null, null, "", feePackageLabels[0] || "", "Không", teacherNames[0] || "", "", "", ""],
-        ["A2", "Lớp A2", locationNames[0] || "Cơ sở chính", 15, "Online", "T3", shiftNames[0] || "Ca 1", sampleStartDate, null, 20, feePackageLabels[0] || "", "Có", teacherNames[1] || "", "", "", ""],
+        ["A1", "Lớp A1", locationNames[0], 20, "Offline", "T2", shiftNames[0] || "", sampleStartDate, sampleEndDate, "", feePackageLabels[0] || "", "Không", teacherNames[0] || "", teacherNames[1] || "", "", ""],
+        ["A1", "Lớp A1", locationNames[0], "", "Offline", "T4", shiftNames[1] || "", null, null, "", feePackageLabels[0] || "", "Không", teacherNames[0] || "", "", "", ""],
+        ["A2", "Lớp A2", locationNames[0], 15, "Online", "T3", shiftNames[0] || "", sampleStartDate, null, 20, feePackageLabels[0] || "", "Có", teacherNames[1] || "", "", "", ""],
       ];
 
       sampleRows.forEach(row => {
@@ -791,6 +816,7 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
       const noteSheet = workbook.addWorksheet("Hướng dẫn");
       const notes = [
         ["HƯỚNG DẪN NHẬP LIỆU - FILE MẪU LỚP HỌC"],
+        [selectedLocation ? `Phạm vi file mẫu: ${selectedLocation.name}` : "Phạm vi file mẫu: Tất cả cơ sở"],
         [""],
         ["(*) = Bắt buộc nhập"],
         [""],
@@ -832,7 +858,10 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "file_mau_lop_hoc.xlsx";
+      const filenameScope = selectedLocation
+        ? String(selectedLocation.name).replace(/[\\/:*?"<>|]/g, "_")
+        : "tat_ca_co_so";
+      link.download = `file_mau_lop_hoc_${filenameScope}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

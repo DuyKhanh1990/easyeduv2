@@ -24,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -43,6 +44,8 @@ import { TestSessionsTab } from "./TestSessionsTab";
 
 export function ClassList() {
   const [isActivityLogOpen, setIsActivityLogOpen] = useState(false);
+  const [isTemplateLocationDialogOpen, setIsTemplateLocationDialogOpen] = useState(false);
+  const [templateLocationId, setTemplateLocationId] = useState("all");
   const [importTab, setImportTab] = useState<string>("excel");
 
   const { data: myPerms } = useMyPermissions();
@@ -416,7 +419,10 @@ export function ClassList() {
                     size="sm"
                     className="mt-2 gap-1.5 h-8 text-xs"
                     data-testid="button-download-template"
-                    onClick={downloadSample}
+                    onClick={() => {
+                      setTemplateLocationId("all");
+                      setIsTemplateLocationDialogOpen(true);
+                    }}
                   >
                     <Download className="h-3.5 w-3.5" />
                     Tải file mẫu
@@ -522,6 +528,41 @@ export function ClassList() {
               />
             </TabsContent>
           </Tabs>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={isTemplateLocationDialogOpen} onOpenChange={setIsTemplateLocationDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Chọn phạm vi cơ sở cho file mẫu</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <p className="text-sm text-muted-foreground">
+              Chọn một cơ sở để chỉ đưa ca học, giáo viên và gói học phí phù hợp vào file.
+            </p>
+            <Select value={templateLocationId} onValueChange={setTemplateLocationId}>
+              <SelectTrigger aria-label="Phạm vi cơ sở">
+                <SelectValue placeholder="Chọn cơ sở" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tất cả cơ sở</SelectItem>
+                {(locations || []).map((location: any) => (
+                  <SelectItem key={location.id} value={String(location.id)}>{location.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsTemplateLocationDialogOpen(false)}>Hủy</Button>
+            <Button
+              onClick={async () => {
+                await downloadSample(templateLocationId);
+                setIsTemplateLocationDialogOpen(false);
+              }}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Tải file mẫu
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
       {/* Class type selection dialog */}
