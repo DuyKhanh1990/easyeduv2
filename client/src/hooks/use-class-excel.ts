@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ExcelJS from "exceljs";
 import { useToast } from "@/hooks/use-toast";
+import { isDefaultTrainingDepartmentStaff } from "@/lib/staff-role-options";
 import { groupRowsByClassCode, submitClassGroups, type ParsedClassRow } from "@/hooks/use-class-bulk-submit";
 
 interface UseClassExcelOptions {
@@ -533,15 +534,34 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
         { width: 20 }, { width: 20 }, { width: 20 }, { width: 20 },
       ];
 
-      const cleanName = (name: string) => (name || "").replace(/,/g, " ").trim();
-      const locationNames = (locations || []).map((l: any) => cleanName(l.name)).filter(Boolean);
-      const shiftNames = (shiftTemplates || []).map((s: any) => {
+      const cleanName = (name: string) => (name || "").trim();
+      const uniqueNames = (values: string[]) => [...new Set(values.map(cleanName).filter(Boolean))];
+      const locationNames = uniqueNames((locations || []).map((l: any) => l.name));
+      const shiftNames = uniqueNames((shiftTemplates || []).map((s: any) => {
         const time = s.startTime && s.endTime ? ` (${s.startTime}-${s.endTime})` : "";
         return cleanName(`${s.name}${time}`);
-      }).filter(Boolean);
-      const teacherNames = (staff || []).map((s: any) => cleanName(s.fullName)).filter(Boolean);
+      }));
+      const teacherNames = uniqueNames((staff || [])
+        .filter((member: any) =>
+          isDefaultTrainingDepartmentStaff(member) &&
+          member.status !== "Không hoạt động" &&
+          member.assignments?.some((assignment: any) =>
+            assignment?.department?.isSystem === true &&
+            assignment?.department?.name === "Phòng Đào tạo" &&
+            /giáo viên|trợ giảng/i.test(assignment?.role?.name ?? assignment?.roleName ?? "")
+          )
+        )
+        .map((member: any) => member.fullName));
 
       const weekdays = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+      if (!locationNames.length || !shiftNames.length || !teacherNames.length) {
+        toast({
+          title: "Chưa thể tạo file mẫu",
+          description: "Không tìm thấy đủ danh sách Cơ sở, Ca học hoặc Giáo viên/Trợ giảng thuộc Phòng Đào tạo. Vui lòng kiểm tra cấu hình hệ thống rồi thử lại.",
+          variant: "destructive",
+        });
+        return;
+      }
       const sampleStartDate = new Date(2026, 3, 1);
       const sampleEndDate = new Date(2026, 11, 31);
 
@@ -560,15 +580,32 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
         });
       });
 
+      const optionsSheet = workbook.addWorksheet("DanhSach");
+      optionsSheet.state = "veryHidden";
+      const addNamedOptions = (name: string, values: string[], columnNumber: number) => {
+        const column = optionsSheet.getColumn(columnNumber);
+        values.forEach((value, index) => {
+          optionsSheet.getCell(index + 1, columnNumber).value = value;
+        });
+        const lastRow = Math.max(values.length, 1);
+        if (values.length === 0) optionsSheet.getCell(1, columnNumber).value = "";
+        workbook.definedNames.add(
+          `'DanhSach'!$${column.letter}$1:$${column.letter}$${lastRow}`,
+          name,
+        );
+        return `=${name}`;
+      };
+      const locationFormula = addNamedOptions("LocationOptions", locationNames, 1);
+      const learningFormatFormula = addNamedOptions("LearningFormatOptions", ["Offline", "Online"], 2);
+      const weekdayFormula = addNamedOptions("WeekdayOptions", weekdays, 3);
+      const shiftFormula = addNamedOptions("ShiftOptions", shiftNames, 4);
+      const teacherFormula = addNamedOptions("TeacherOptions", teacherNames, 5);
+
       for (let i = 2; i <= 201; i++) {
-        if (locationNames.length > 0) {
-          worksheet.getCell(`C${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${locationNames.join(",")}"`] };
-        }
-        worksheet.getCell(`E${i}`).dataValidation = { type: "list", allowBlank: true, formulae: ['"Offline,Online"'] };
-        worksheet.getCell(`F${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${weekdays.join(",")}"`] };
-        if (shiftNames.length > 0) {
-          worksheet.getCell(`G${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${shiftNames.join(",")}"`] };
-        }
+        worksheet.getCell(`C${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [locationFormula] };
+        worksheet.getCell(`E${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [learningFormatFormula] };
+        worksheet.getCell(`F${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [weekdayFormula] };
+        worksheet.getCell(`G${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [shiftFormula] };
         const hCell = worksheet.getCell(`H${i}`);
         const iCell = worksheet.getCell(`I${i}`);
         const dateValidation = {
@@ -581,12 +618,9 @@ export function useClassExcel({ locations }: UseClassExcelOptions) {
         iCell.numFmt = "dd/mm/yyyy";
         hCell.dataValidation = dateValidation;
         iCell.dataValidation = dateValidation;
-        if (teacherNames.length > 0) {
-          const formula = `"${teacherNames.join(",")}"`;
-          ["J", "K", "L", "M"].forEach(col => {
-            worksheet.getCell(`${col}${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [formula] };
-          });
-        }
+        ["J", "K", "L", "M"].forEach(col => {
+          worksheet.getCell(`${col}${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [teacherFormula] };
+        });
         worksheet.getCell(`D${i}`).dataValidation = { type: "whole", allowBlank: true, operator: "greaterThan", formulae: [0] };
       }
 
