@@ -743,6 +743,9 @@ export function CustomersList() {
         throw new Error(payload?.message || "Không thể tải danh sách lớp.");
       }
       const blob = await response.blob();
+      if (blob.size === 0 || !blob.type.includes("spreadsheetml")) {
+        throw new Error("File tải xuống không đúng định dạng Excel. Vui lòng thử lại.");
+      }
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -750,7 +753,7 @@ export function CustomersList() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
       toast({
         title: "Đã tải danh sách lớp",
         description: `Bao gồm chuyên cần tháng ${classScheduleMonth}.`,

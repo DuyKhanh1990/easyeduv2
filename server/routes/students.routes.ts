@@ -713,39 +713,53 @@ export function registerStudentsRoutes(app: Express): void {
         `attachment; filename="class_${classId}_${month}.xlsx"; filename*=UTF-8''${encodeURIComponent(`Danh_sach_${classInfo.name || classInfo.classCode}_${month}.xlsx`)}`,
       );
       res.setHeader("Cache-Control", "no-store");
-      res.flushHeaders();
-      exportHeadersSent = true;
 
       const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: res, useStyles: true, useSharedStrings: true });
-      const worksheet = workbook.addWorksheet("Danh sach lop");
+      const worksheet = workbook.addWorksheet("Danh sach lop", {
+        views: [{ state: "frozen", xSplit: 3, ySplit: 3, topLeftCell: "D4" }],
+        pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+        autoFilter: {
+          from: { row: 3, column: 1 },
+          to: { row: 3, column: worksheetHeaders.length },
+        },
+      });
       const fixedWidths = [7, 26, 16, 22, 17, 14, 14, 14, 28, 18];
       worksheet.columns = worksheetHeaders.map((header, index) => ({
         header,
         key: `column${index + 1}`,
         width: fixedWidths[index] ?? 18,
       }));
-      worksheet.views = [{ state: "frozen", xSplit: 3, ySplit: 3, topLeftCell: "D4" }];
       worksheet.properties.defaultRowHeight = 26;
-      worksheet.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
-      worksheet.autoFilter = {
-        from: { row: 3, column: 1 },
-        to: { row: 3, column: worksheetHeaders.length },
-      };
+      res.flushHeaders();
+      exportHeadersSent = true;
 
-      worksheet.mergeCells(1, 1, 1, worksheetHeaders.length);
-      const titleRow = worksheet.addRow([`DANH SÁCH HỌC VIÊN · ${classInfo.name || classInfo.classCode}`]);
+      const titleRow = worksheet.addRow([
+        `DANH SÁCH HỌC VIÊN · ${classInfo.name || classInfo.classCode}`,
+        ...Array(worksheetHeaders.length - 1).fill(""),
+      ]);
       titleRow.height = 30;
-      titleRow.getCell(1).font = { name: "Arial", size: 15, bold: true, color: { argb: "FFFFFFFF" } };
-      titleRow.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF155E75" } };
-      titleRow.getCell(1).alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+      titleRow.eachCell((cell, columnNumber) => {
+        cell.font = {
+          name: "Arial",
+          size: columnNumber === 1 ? 15 : 10,
+          bold: columnNumber === 1,
+          color: { argb: "FFFFFFFF" },
+        };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF155E75" } };
+        cell.alignment = { vertical: "middle", horizontal: columnNumber === 1 ? "left" : "center", indent: columnNumber === 1 ? 1 : 0 };
+      });
       titleRow.commit();
 
-      worksheet.mergeCells(2, 1, 2, worksheetHeaders.length);
-      const subtitleRow = worksheet.addRow([`Lớp: ${classInfo.classCode || ""} · Tháng chuyên cần: ${month}`]);
+      const subtitleRow = worksheet.addRow([
+        `Lớp: ${classInfo.classCode || ""} · Tháng chuyên cần: ${month}`,
+        ...Array(worksheetHeaders.length - 1).fill(""),
+      ]);
       subtitleRow.height = 23;
-      subtitleRow.getCell(1).font = { name: "Arial", size: 10, color: { argb: "FF334155" } };
-      subtitleRow.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
-      subtitleRow.getCell(1).alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+      subtitleRow.eachCell((cell, columnNumber) => {
+        cell.font = { name: "Arial", size: 10, color: { argb: "FF334155" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+        cell.alignment = { vertical: "middle", horizontal: columnNumber === 1 ? "left" : "center", indent: columnNumber === 1 ? 1 : 0 };
+      });
       subtitleRow.commit();
 
       const headerRow = worksheet.addRow(worksheetHeaders);
