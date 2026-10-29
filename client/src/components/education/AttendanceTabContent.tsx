@@ -296,6 +296,81 @@ function AttendanceOverviewModal({
 
   const totalTableWidth = COL_STT + COL_NAME + totalSessions * COL_SESSION + COL_TOTAL_DD + COL_TOTAL_HV;
 
+  const downloadOverviewExcel = () => {
+    const sessionContents = (session: any) => {
+      const grouped: Record<string, any[]> = {};
+      for (const content of session.sessionContents ?? []) {
+        if (!grouped[content.contentType]) grouped[content.contentType] = [];
+        grouped[content.contentType].push(content);
+      }
+      const sortedTypes = Object.keys(grouped).sort(
+        (a, b) => CONTENT_TYPE_ORDER.indexOf(a) - CONTENT_TYPE_ORDER.indexOf(b)
+      );
+      if (sortedTypes.length === 0) return "—";
+      return sortedTypes.flatMap((type) => {
+        const label = CONTENT_TYPE_LABELS[type]?.label ?? type;
+        return grouped[type].map((content) => `${label}: ${content.title ?? ""}`);
+      }).join("\n");
+    };
+    const sessionTeachers = (session: any) =>
+      (session.teachers ?? []).map((teacher: any) => teacher.fullName).filter(Boolean).join(", ");
+    const statusLabel = (studentId: string, sessionId: string) => {
+      const status = getStatus(studentId, sessionId);
+      if (status === null) return "—";
+      return ATTENDANCE_STATUS_CONFIG[status]?.label ?? status;
+    };
+
+    const rows: (string | number)[][] = [
+      ["Tổng quan điểm danh"],
+      ["Lớp học", classData?.name ?? "—"],
+      ["Thời gian", weekdayLabel(classData?.scheduleDays ?? classData?.weekdays) || "—"],
+      ["Ngày bắt đầu", classData?.startDate ? format(new Date(classData.startDate), "dd-MM-yyyy") : "—"],
+      [],
+      ["", "Lịch học", ...sortedSessions.map((session) => `Buổi ${session.sessionIndex ?? "?"}`), "Đã điểm danh", "Đã học"],
+      ["", "Bài học", ...sortedSessions.map(sessionContents), "", ""],
+      ["", "Giáo viên", ...sortedSessions.map(sessionTeachers), "", ""],
+      ["STT", "Tên", ...sortedSessions.map((session) => format(new Date(session.sessionDate), "dd/MM")), "Đã điểm danh", "Đã học"],
+    ];
+
+    students.forEach((student, index) => {
+      rows.push([
+        index + 1,
+        student.code ? `${student.name} (${student.code})` : student.name,
+        ...sortedSessions.map((session) => statusLabel(student.id, session.id)),
+        getDiemDanhCount(student.id),
+        `${getAttendedCount(student.id)}/${totalSessions}`,
+      ]);
+    });
+
+    rows.push([
+      "",
+      "Sĩ số",
+      ...sortedSessions.map((session) => getSiSo(session.id)),
+      "",
+      "",
+    ]);
+
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+    worksheet["!cols"] = [
+      { wch: 8 },
+      { wch: 30 },
+      ...sortedSessions.map(() => ({ wch: 30 })),
+      { wch: 16 },
+      { wch: 12 },
+    ];
+    worksheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: sortedSessions.length + 3 } }];
+    worksheet["!autofilter"] = {
+      ref: `A9:${XLSX.utils.encode_col(sortedSessions.length + 3)}${students.length + 9}`,
+    };
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Tổng quan điểm danh");
+    const safeClassName = String(classData?.name ?? "Lop")
+      .replace(/[\\/:*?"<>|]/g, "_")
+      .trim();
+    XLSX.writeFile(workbook, `Tong_quan_diem_danh_${safeClassName || "Lop"}.xlsx`);
+  };
+
   // ── Shared cell class helpers ─────────────────────────────────────────────
   const borderCell = "border-r border-b border-gray-200";
   const headerBg1 = "#ffffff";   // row 1 – Lịch học
@@ -329,6 +404,18 @@ function AttendanceOverviewModal({
               <span className="font-medium text-gray-700">Ngày bắt đầu:</span>{" "}
               {classData?.startDate ? format(new Date(classData.startDate), "dd-MM-yyyy") : "—"}
             </span>
+          </div>
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              data-testid="btn-download-attendance-overview"
+              onClick={downloadOverviewExcel}
+            >
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              Tải xuống Excel
+            </Button>
           </div>
         </DialogHeader>
 
