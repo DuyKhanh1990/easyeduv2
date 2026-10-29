@@ -400,6 +400,20 @@ function AttendanceOverviewModal({
         cell.border = thinBorder;
       });
     };
+    const fitWrappedRowHeight = (rowNumber: number, minHeight: number) => {
+      const row = worksheet.getRow(rowNumber);
+      let maxLines = 1;
+      row.eachCell({ includeEmpty: true }, (cell, columnNumber) => {
+        const text = String(cell.value ?? "");
+        const width = Math.max(8, (worksheet.getColumn(columnNumber).width ?? 12) - 2);
+        const lines = text.split(/\r?\n/).reduce(
+          (total, line) => total + Math.max(1, Math.ceil(line.length / width)),
+          0,
+        );
+        maxLines = Math.max(maxLines, lines);
+      });
+      row.height = Math.min(409, Math.max(minHeight, maxLines * 16 + 8));
+    };
 
     worksheet.mergeCells(`A1:${lastColumn}1`);
     worksheet.getRow(1).height = 32;
@@ -418,14 +432,14 @@ function AttendanceOverviewModal({
     worksheet.getRow(5).height = 8;
 
     worksheet.getRow(6).height = 24;
-    worksheet.getRow(7).height = 66;
-    worksheet.getRow(8).height = 42;
     styleRow(6, { bg: "FFDBEAFE", fontColor: "FF1E3A8A", bold: true, align: "center", wrap: true });
     styleRow(7, { bg: "FFF8FAFC", fontColor: "FF334155", wrap: true });
     styleRow(8, { bg: "FFF8FAFC", fontColor: "FF334155", wrap: true });
     worksheet.getRow(6).getCell(2).alignment = { vertical: "middle", horizontal: "left", wrapText: true };
     worksheet.getRow(7).getCell(2).font = { name: "Arial", size: 10, bold: true, color: { argb: "FF334155" } };
     worksheet.getRow(8).getCell(2).font = { name: "Arial", size: 10, bold: true, color: { argb: "FF334155" } };
+    fitWrappedRowHeight(7, 30);
+    fitWrappedRowHeight(8, 30);
 
     const headerRowNumber = 9;
     worksheet.getRow(headerRowNumber).height = 30;
