@@ -408,11 +408,17 @@ export async function registerStoreInventoryRoutes(app: Express) {
             COALESCE(SUM(quantity_delta) FILTER (WHERE type = 'transfer_in'), 0)::int AS transfer_in_qty,
             COALESCE(SUM(quantity_delta) FILTER (WHERE type = 'transfer_out'), 0)::int AS transfer_out_qty,
             COALESCE(SUM(quantity_delta) FILTER (
-              WHERE type IN ('edit_import', 'edit_export', 'cancel_import', 'cancel_export')
+              WHERE type = 'cancel_export' AND quantity_delta > 0
+            ), 0)::int AS cancel_export_qty,
+            COALESCE(SUM(quantity_delta) FILTER (
+              WHERE type = 'cancel_import' AND quantity_delta < 0
+            ), 0)::int AS cancel_import_qty,
+            COALESCE(SUM(quantity_delta) FILTER (
+              WHERE type IN ('edit_import', 'edit_export')
                 AND quantity_delta > 0
             ), 0)::int AS adjustment_in_qty,
             COALESCE(SUM(quantity_delta) FILTER (
-              WHERE type IN ('edit_import', 'edit_export', 'cancel_import', 'cancel_export')
+              WHERE type IN ('edit_import', 'edit_export')
                 AND quantity_delta < 0
             ), 0)::int AS adjustment_out_qty
           FROM store_stock_transactions

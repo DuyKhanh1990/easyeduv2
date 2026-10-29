@@ -47,6 +47,7 @@
 - [Bulk finance child-first behavior](bulk-child-first-finance.md) — bulk phải nhắm đúng ID từng hóa đơn con; cha chỉ dùng để nhóm/liên kết, không phải nguồn tài chính.
 - [Inventory availability expiry](inventory-availability-expiry.md) — tồn thực tách khỏi giữ chỗ; khả dụng trừ đúng reservation và phiếu xuất nháp còn hạn, không ghi giữ chỗ vào ledger.
 - [Store audit quantity deltas](store-audit-quantity-deltas.md) — nhật ký nhập/xuất hiển thị tăng giảm số lượng tính từ Trước/Sau; không đổi nghiệp vụ tồn kho.
+- [Store cancellation vs adjustments](store-cancellation-adjustments.md) — hủy nhập/xuất là luồng hoàn tác riêng, không gộp với nhập/xuất thông thường hay sửa phiếu trong thẻ tóm tắt.
 - [Student discussion edit audit](student-discussion-edit-audit.md) — giữ tác giả gốc và lưu riêng người sửa/thời điểm sửa để hiển thị lịch sử minh bạch.
 - [Admin Hub connection testing](admin-hub-connection-testing.md) — cross-domain claim cần endpoint public và mã được sinh trong cùng môi trường/database.
 - [Class session ordering](class-session-ordering.md) — thao tác từ lịch dùng ID/vị trí buổi lớp, không dùng sessionOrder riêng của học viên.

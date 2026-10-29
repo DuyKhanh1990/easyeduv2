@@ -44,6 +44,8 @@ type InventoryHistoryResponse = {
     export_qty: number;
     transfer_in_qty: number;
     transfer_out_qty: number;
+    cancel_export_qty: number;
+    cancel_import_qty: number;
     adjustment_in_qty: number;
     adjustment_out_qty: number;
   };
@@ -124,6 +126,8 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
   const exportQty = Number(summary?.export_qty ?? 0);
   const transferInQty = Number(summary?.transfer_in_qty ?? 0);
   const transferOutQty = Number(summary?.transfer_out_qty ?? 0);
+  const cancelExportQty = Number(summary?.cancel_export_qty ?? 0);
+  const cancelImportQty = Number(summary?.cancel_import_qty ?? 0);
   const adjustmentInQty = Number(summary?.adjustment_in_qty ?? 0);
   const adjustmentOutQty = Number(summary?.adjustment_out_qty ?? 0);
   const transferNet = transferInQty + transferOutQty;
@@ -160,7 +164,7 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
 
         {/* Stat cards */}
         <div className="px-6 pt-3 pb-2 shrink-0 overflow-x-auto">
-          <div className="grid grid-cols-8 min-w-[900px] gap-2">
+          <div className="grid grid-cols-10 min-w-[900px] gap-1">
           <StatCard label="NHẬP" value={formatSigned(importQty)} colorClass="bg-emerald-50 text-emerald-700 border-emerald-100" />
           <StatCard label="XUẤT" value={formatSigned(exportQty)} colorClass="bg-gray-50 text-gray-700 border-gray-100" />
           <StatCard
@@ -174,8 +178,10 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
             }
             colorClass="bg-indigo-50 text-indigo-700 border-indigo-100"
           />
-          <StatCard label="ĐIỀU CHỈNH TĂNG" value={formatSigned(adjustmentInQty)} colorClass="bg-teal-50 text-teal-700 border-teal-100" />
-          <StatCard label="ĐIỀU CHỈNH GIẢM" value={formatSigned(adjustmentOutQty)} colorClass="bg-rose-50 text-rose-700 border-rose-100" />
+          <StatCard label="HỦY XUẤT" title="Hủy phiếu xuất — hoàn hàng vào kho" value={formatSigned(cancelExportQty)} colorClass="bg-cyan-50 text-cyan-700 border-cyan-100" />
+          <StatCard label="HỦY NHẬP" title="Hủy phiếu nhập — trừ hàng khỏi kho" value={formatSigned(cancelImportQty)} colorClass="bg-orange-50 text-orange-700 border-orange-100" />
+          <StatCard label="ĐC TĂNG" title="Điều chỉnh tăng" value={formatSigned(adjustmentInQty)} colorClass="bg-teal-50 text-teal-700 border-teal-100" />
+          <StatCard label="ĐC GIẢM" title="Điều chỉnh giảm" value={formatSigned(adjustmentOutQty)} colorClass="bg-rose-50 text-rose-700 border-rose-100" />
           <StatCard label="TỒN KHO" value={row.actualStock} colorClass="bg-blue-50 text-blue-700 border-blue-100" />
           <StatCard label="GIỮ CHỖ" value={row.reservedQty} colorClass="bg-amber-50 text-amber-600 border-amber-100" />
           <StatCard label="KHẢ DỤNG" value={row.availableQty} colorClass="bg-indigo-50 text-indigo-700 border-indigo-100" />
@@ -260,11 +266,11 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
   );
 }
 
-function StatCard({ label, value, detail, colorClass }: { label: string; value: number | string; detail?: ReactNode; colorClass: string }) {
+function StatCard({ label, title, value, detail, colorClass }: { label: string; title?: string; value: number | string; detail?: ReactNode; colorClass: string }) {
   return (
-    <div className={cn("rounded-lg border p-2 flex flex-col items-center gap-0.5 min-w-0", colorClass)}>
-      <span className="text-[9px] font-bold tracking-wide uppercase opacity-70 whitespace-nowrap">{label}</span>
-      <span className="text-xl font-bold tabular-nums">{value}</span>
+    <div title={title ?? label} className={cn("rounded-lg border px-1.5 py-2 flex flex-col items-center gap-0.5 min-w-0", colorClass)}>
+      <span className="text-[8px] font-bold tracking-tight uppercase opacity-70 whitespace-nowrap">{label}</span>
+      <span className="text-lg font-bold tabular-nums">{value}</span>
       {detail}
     </div>
   );
