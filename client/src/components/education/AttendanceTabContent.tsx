@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Eye, CheckCircle2, XCircle, Clock, RefreshCw, PauseCircle, Circle, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 interface AttendanceTabContentProps {
   classSessions: any[] | undefined;
@@ -296,7 +297,7 @@ function AttendanceOverviewModal({
 
   const totalTableWidth = COL_STT + COL_NAME + totalSessions * COL_SESSION + COL_TOTAL_DD + COL_TOTAL_HV;
 
-  const downloadOverviewExcel = () => {
+  const downloadOverviewExcel = async () => {
     const sessionContents = (session: any) => {
       const grouped: Record<string, any[]> = {};
       for (const content of session.sessionContents ?? []) {
@@ -350,25 +351,143 @@ function AttendanceOverviewModal({
       "",
     ]);
 
-    const worksheet = XLSX.utils.aoa_to_sheet(rows);
-    worksheet["!cols"] = [
-      { wch: 8 },
-      { wch: 30 },
-      ...sortedSessions.map(() => ({ wch: 30 })),
-      { wch: 16 },
-      { wch: 12 },
-    ];
-    worksheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: sortedSessions.length + 3 } }];
-    worksheet["!autofilter"] = {
-      ref: `A9:${XLSX.utils.encode_col(sortedSessions.length + 3)}${students.length + 9}`,
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Tổng quan điểm danh");
+    const columnCount = rows[8].length;
+    worksheet.columns = rows[8].map((_value, columnIndex) => ({
+      key: `column${columnIndex + 1}`,
+      width: columnIndex === 0 ? 8
+        : columnIndex === 1 ? 30
+          : columnIndex < columnCount - 2 ? 30
+            : columnIndex === columnCount - 2 ? 16 : 12,
+    }));
+    rows.forEach((row) => worksheet.addRow(row));
+
+    const lastColumn = worksheet.getColumn(columnCount).letter;
+    const thinBorder = {
+      top: { style: "thin" as const, color: { argb: "FFD1D5DB" } },
+      left: { style: "thin" as const, color: { argb: "FFD1D5DB" } },
+      bottom: { style: "thin" as const, color: { argb: "FFD1D5DB" } },
+      right: { style: "thin" as const, color: { argb: "FFD1D5DB" } },
+    };
+    const fill = (color: string): ExcelJS.Fill => ({
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: color },
+    });
+    const styleRow = (rowNumber: number, options: {
+      bg: string;
+      fontColor?: string;
+      bold?: boolean;
+      fontSize?: number;
+      align?: "left" | "center";
+      wrap?: boolean;
+    }) => {
+      const row = worksheet.getRow(rowNumber);
+      row.eachCell({ includeEmpty: true }, (cell) => {
+        cell.fill = fill(options.bg);
+        cell.font = {
+          name: "Arial",
+          size: options.fontSize ?? 10,
+          bold: options.bold ?? false,
+          color: { argb: options.fontColor ?? "FF1F2937" },
+        };
+        cell.alignment = {
+          vertical: "middle",
+          horizontal: options.align ?? "left",
+          wrapText: options.wrap ?? false,
+        };
+        cell.border = thinBorder;
+      });
     };
 
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Tổng quan điểm danh");
+    worksheet.mergeCells(`A1:${lastColumn}1`);
+    worksheet.getRow(1).height = 32;
+    styleRow(1, { bg: "FF155E75", fontColor: "FFFFFFFF", bold: true, fontSize: 15, align: "center" });
+    [2, 3, 4].forEach((rowNumber) => {
+      worksheet.mergeCells(rowNumber, 2, rowNumber, columnCount);
+      worksheet.getRow(rowNumber).height = 22;
+      styleRow(rowNumber, { bg: "FFF1F5F9" });
+      worksheet.getCell(rowNumber, 1).font = {
+        name: "Arial",
+        size: 10,
+        bold: true,
+        color: { argb: "FF334155" },
+      };
+    });
+    worksheet.getRow(5).height = 8;
+
+    worksheet.getRow(6).height = 24;
+    worksheet.getRow(7).height = 66;
+    worksheet.getRow(8).height = 42;
+    styleRow(6, { bg: "FFDBEAFE", fontColor: "FF1E3A8A", bold: true, align: "center", wrap: true });
+    styleRow(7, { bg: "FFF8FAFC", fontColor: "FF334155", wrap: true });
+    styleRow(8, { bg: "FFF8FAFC", fontColor: "FF334155", wrap: true });
+    worksheet.getRow(6).getCell(2).alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+    worksheet.getRow(7).getCell(2).font = { name: "Arial", size: 10, bold: true, color: { argb: "FF334155" } };
+    worksheet.getRow(8).getCell(2).font = { name: "Arial", size: 10, bold: true, color: { argb: "FF334155" } };
+
+    const headerRowNumber = 9;
+    worksheet.getRow(headerRowNumber).height = 30;
+    styleRow(headerRowNumber, { bg: "FF2563EB", fontColor: "FFFFFFFF", bold: true, align: "center", wrap: true });
+    worksheet.autoFilter = {
+      from: { row: headerRowNumber, column: 1 },
+      to: { row: students.length + headerRowNumber, column: columnCount },
+    };
+
+    const attendanceColors: Record<string, { bg: string; text: string }> = {
+      present: { bg: "FFDCFCE7", text: "FF15803D" },
+      absent: { bg: "FFFEE2E2", text: "FFB91C1C" },
+      makeup_wait: { bg: "FFFFEDD5", text: "FFC2410C" },
+      makeup_scheduled: { bg: "FFEDE9FE", text: "FF6D28D9" },
+      makeup_done: { bg: "FFDBEAFE", text: "FF1D4ED8" },
+      paused: { bg: "FFFEF3C7", text: "FFA16207" },
+      pending: { bg: "FFF1F5F9", text: "FF64748B" },
+    };
+    students.forEach((student, studentIndex) => {
+      const rowNumber = headerRowNumber + studentIndex + 1;
+      const row = worksheet.getRow(rowNumber);
+      row.height = 25;
+      row.eachCell({ includeEmpty: true }, (cell, columnNumber) => {
+        cell.fill = fill(studentIndex % 2 === 0 ? "FFFFFFFF" : "FFF8FAFC");
+        cell.font = { name: "Arial", size: 10, color: { argb: "FF1F2937" } };
+        cell.alignment = {
+          vertical: "middle",
+          horizontal: columnNumber === 1 || columnNumber >= 3 ? "center" : "left",
+          wrapText: columnNumber >= 3,
+        };
+        cell.border = thinBorder;
+      });
+      sortedSessions.forEach((session, sessionIndex) => {
+        const status = getStatus(student.id, session.id);
+        const colors = attendanceColors[status ?? "pending"] ?? attendanceColors.pending;
+        const cell = row.getCell(sessionIndex + 3);
+        cell.fill = fill(colors.bg);
+        cell.font = { name: "Arial", size: 9, bold: true, color: { argb: colors.text } };
+        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+      });
+    });
+
+    const totalRowNumber = students.length + headerRowNumber + 1;
+    worksheet.getRow(totalRowNumber).height = 26;
+    styleRow(totalRowNumber, { bg: "FFE2E8F0", fontColor: "FF334155", bold: true, align: "center" });
+    worksheet.getRow(totalRowNumber).getCell(2).alignment = { vertical: "middle", horizontal: "left" };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
     const safeClassName = String(classData?.name ?? "Lop")
       .replace(/[\\/:*?"<>|]/g, "_")
       .trim();
-    XLSX.writeFile(workbook, `Tong_quan_diem_danh_${safeClassName || "Lop"}.xlsx`);
+    link.download = `Tong_quan_diem_danh_${safeClassName || "Lop"}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   };
 
   // ── Shared cell class helpers ─────────────────────────────────────────────
