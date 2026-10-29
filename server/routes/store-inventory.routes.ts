@@ -404,8 +404,13 @@ export async function registerStoreInventoryRoutes(app: Express) {
     if (!req.user) return res.status(401).json({ message: "Unauthorized" });
     const { productId } = req.params;
     const { warehouseId } = req.query as { warehouseId?: string };
+    const requestedPageSize = Number.parseInt(String(req.query.pageSize ?? "50"), 10);
+    const pageSize = requestedPageSize === 100 ? 100 : 50;
+    const requestedPage = Number.parseInt(String(req.query.page ?? "1"), 10);
+    const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const offset = (page - 1) * pageSize;
     try {
-      const [rows, summary] = await Promise.all([
+      const [rows, count, summary] = await Promise.all([
         db.execute(sql`
           SELECT
             t.created_at    AS time,
@@ -418,8 +423,14 @@ export async function registerStoreInventoryRoutes(app: Express) {
           FROM store_stock_transactions t
           WHERE t.product_id = ${productId}
             AND ${warehouseId ? sql`t.warehouse_id = ${warehouseId}` : sql`TRUE`}
-          ORDER BY t.created_at DESC
-          LIMIT 200
+          ORDER BY t.created_at DESC, t.id DESC
+          LIMIT ${pageSize} OFFSET ${offset}
+        `),
+        db.execute(sql`
+          SELECT COUNT(*)::int AS total
+          FROM store_stock_transactions t
+          WHERE t.product_id = ${productId}
+            AND ${warehouseId ? sql`t.warehouse_id = ${warehouseId}` : sql`TRUE`}
         `),
         db.execute(sql`
           SELECT
@@ -446,7 +457,13 @@ export async function registerStoreInventoryRoutes(app: Express) {
             AND ${warehouseId ? sql`warehouse_id = ${warehouseId}` : sql`TRUE`}
         `),
       ]);
-      res.json({ history: rows.rows, summary: summary.rows[0] });
+      res.json({
+        history: rows.rows,
+        total: Number((count.rows[0] as any)?.total ?? 0),
+        page,
+        pageSize,
+        summary: summary.rows[0],
+      });
     } catch (err) {
       console.error("[Inventory] GET history error:", err);
       res.status(500).json({ message: "Lỗi khi lấy lịch sử tồn kho" });

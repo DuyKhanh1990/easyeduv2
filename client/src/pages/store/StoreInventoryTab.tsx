@@ -5,7 +5,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Clock, X, FileDown, Loader2 } from "lucide-react";
+import { Clock, X, FileDown, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -39,6 +39,9 @@ type HistoryRow = {
 
 type InventoryHistoryResponse = {
   history: HistoryRow[];
+  total: number;
+  page: number;
+  pageSize: number;
   summary: {
     import_qty: number;
     export_qty: number;
@@ -112,15 +115,21 @@ function formatSigned(value: number) {
 
 function DetailPopup({ row, onClose }: DetailPopupProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const { data, isLoading } = useQuery<InventoryHistoryResponse>({
-    queryKey: ["/api/store/inventory", row.productId, "history", row.warehouseId, "summary"],
+    queryKey: ["/api/store/inventory", row.productId, "history", row.warehouseId, page, pageSize],
     queryFn: () =>
-      apiRequest("GET", `/api/store/inventory/${row.productId}/history?warehouseId=${row.warehouseId}`)
+      apiRequest("GET", `/api/store/inventory/${row.productId}/history?warehouseId=${row.warehouseId}&page=${page}&pageSize=${pageSize}`)
         .then(r => r.json()),
     staleTime: 15000,
   });
   const history = data?.history ?? [];
+  const totalHistory = Number(data?.total ?? 0);
+  const totalPages = Math.max(1, Math.ceil(totalHistory / pageSize));
+  const firstVisibleRow = totalHistory === 0 ? 0 : (page - 1) * pageSize + 1;
+  const lastVisibleRow = Math.min(page * pageSize, totalHistory);
   const summary = data?.summary;
   const importQty = Number(summary?.import_qty ?? 0);
   const exportQty = Number(summary?.export_qty ?? 0);
@@ -131,6 +140,10 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
   const adjustmentInQty = Number(summary?.adjustment_in_qty ?? 0);
   const adjustmentOutQty = Number(summary?.adjustment_out_qty ?? 0);
   const transferNet = transferInQty + transferOutQty;
+
+  useEffect(() => {
+    if (data && page > totalPages) setPage(totalPages);
+  }, [data, page, totalPages]);
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -189,11 +202,12 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
         </div>
 
         {/* History */}
-        <div className="flex-1 min-h-0 overflow-auto px-6 pb-6">
-          <p className="text-xs font-bold tracking-wide text-muted-foreground uppercase mb-3 mt-2">
+        <div className="flex-1 min-h-0 flex flex-col px-6 pb-4">
+          <p className="text-xs font-bold tracking-wide text-muted-foreground uppercase mb-3 mt-2 shrink-0">
             Lịch sử biến động kho
           </p>
 
+          <div className="flex-1 min-h-0 overflow-auto">
           <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-sm">
             <thead>
@@ -259,6 +273,54 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
               )}
             </tbody>
           </table>
+          </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-3 mt-3">
+            <span className="text-xs text-muted-foreground">
+              {totalHistory === 0
+                ? "0 dòng lịch sử"
+                : `Hiển thị ${firstVisibleRow}–${lastVisibleRow} / ${totalHistory} dòng`}
+            </span>
+            <div className="flex items-center gap-2">
+              <Select
+                value={String(pageSize)}
+                onValueChange={(value) => {
+                  setPageSize(Number(value));
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="h-8 w-[130px] text-xs" aria-label="Số dòng mỗi trang">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="50">50 dòng/trang</SelectItem>
+                  <SelectItem value="100">100 dòng/trang</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={page <= 1 || isLoading}
+                aria-label="Trang trước"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="min-w-[52px] text-center text-xs tabular-nums">
+                {page} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                disabled={page >= totalPages || isLoading}
+                aria-label="Trang sau"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </div>
