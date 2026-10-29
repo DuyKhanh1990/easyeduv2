@@ -724,8 +724,7 @@ export function registerStudentsRoutes(app: Express): void {
         },
       });
       const fixedWidths = [7, 26, 16, 22, 17, 14, 14, 14, 28, 18];
-      worksheet.columns = worksheetHeaders.map((header, index) => ({
-        header,
+      worksheet.columns = worksheetHeaders.map((_header, index) => ({
         key: `column${index + 1}`,
         width: fixedWidths[index] ?? 18,
       }));
@@ -734,31 +733,33 @@ export function registerStudentsRoutes(app: Express): void {
       exportHeadersSent = true;
 
       const titleRow = worksheet.addRow([
-        `DANH SÁCH HỌC VIÊN · ${classInfo.name || classInfo.classCode}`,
+        "",
+        `DANH SÁCH LỚP · ${classInfo.name || classInfo.classCode}`,
         ...Array(worksheetHeaders.length - 1).fill(""),
       ]);
-      titleRow.height = 30;
+      titleRow.height = 36;
       titleRow.eachCell((cell, columnNumber) => {
         cell.font = {
           name: "Arial",
-          size: columnNumber === 1 ? 15 : 10,
-          bold: columnNumber === 1,
+          size: columnNumber === 2 ? 13 : 10,
+          bold: columnNumber === 2,
           color: { argb: "FFFFFFFF" },
         };
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF155E75" } };
-        cell.alignment = { vertical: "middle", horizontal: columnNumber === 1 ? "left" : "center", indent: columnNumber === 1 ? 1 : 0 };
+        cell.alignment = { vertical: "middle", horizontal: columnNumber === 2 ? "left" : "center", wrapText: columnNumber === 2, indent: columnNumber === 2 ? 1 : 0 };
       });
       titleRow.commit();
 
       const subtitleRow = worksheet.addRow([
+        "",
         `Lớp: ${classInfo.classCode || ""} · Tháng chuyên cần: ${month}`,
         ...Array(worksheetHeaders.length - 1).fill(""),
       ]);
-      subtitleRow.height = 23;
+      subtitleRow.height = 28;
       subtitleRow.eachCell((cell, columnNumber) => {
         cell.font = { name: "Arial", size: 10, color: { argb: "FF334155" } };
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
-        cell.alignment = { vertical: "middle", horizontal: columnNumber === 1 ? "left" : "center", indent: columnNumber === 1 ? 1 : 0 };
+        cell.alignment = { vertical: "middle", horizontal: columnNumber === 2 ? "left" : "center", wrapText: columnNumber === 2, indent: columnNumber === 2 ? 1 : 0 };
       });
       subtitleRow.commit();
 
