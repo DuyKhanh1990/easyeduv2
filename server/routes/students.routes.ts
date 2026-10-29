@@ -733,34 +733,27 @@ export function registerStudentsRoutes(app: Express): void {
       exportHeadersSent = true;
 
       const titleRow = worksheet.addRow([
-        "",
         `DANH SÁCH LỚP · ${classInfo.name || classInfo.classCode}`,
         ...Array(worksheetHeaders.length - 1).fill(""),
       ]);
+      worksheet.mergeCells(1, 1, 1, worksheetHeaders.length);
       titleRow.height = 36;
-      titleRow.eachCell((cell, columnNumber) => {
-        cell.font = {
-          name: "Arial",
-          size: columnNumber === 2 ? 13 : 10,
-          bold: columnNumber === 2,
-          color: { argb: "FFFFFFFF" },
-        };
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF155E75" } };
-        cell.alignment = { vertical: "middle", horizontal: columnNumber === 2 ? "left" : "center", wrapText: columnNumber === 2, indent: columnNumber === 2 ? 1 : 0 };
-      });
+      const titleCell = titleRow.getCell(1);
+      titleCell.font = { name: "Arial", size: 15, bold: true, color: { argb: "FFFFFFFF" } };
+      titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF155E75" } };
+      titleCell.alignment = { vertical: "middle", horizontal: "center" };
       titleRow.commit();
 
       const subtitleRow = worksheet.addRow([
-        "",
         `Lớp: ${classInfo.classCode || ""} · Tháng chuyên cần: ${month}`,
         ...Array(worksheetHeaders.length - 1).fill(""),
       ]);
+      worksheet.mergeCells(2, 1, 2, worksheetHeaders.length);
       subtitleRow.height = 28;
-      subtitleRow.eachCell((cell, columnNumber) => {
-        cell.font = { name: "Arial", size: 10, color: { argb: "FF334155" } };
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
-        cell.alignment = { vertical: "middle", horizontal: columnNumber === 2 ? "left" : "center", wrapText: columnNumber === 2, indent: columnNumber === 2 ? 1 : 0 };
-      });
+      const subtitleCell = subtitleRow.getCell(1);
+      subtitleCell.font = { name: "Arial", size: 10, color: { argb: "FF334155" } };
+      subtitleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
+      subtitleCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
       subtitleRow.commit();
 
       const headerRow = worksheet.addRow(worksheetHeaders);
