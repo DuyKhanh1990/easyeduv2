@@ -286,8 +286,28 @@ export async function registerStoreInventoryRoutes(app: Express) {
         stock_totals AS (
           SELECT t.product_id, t.warehouse_id,
             COALESCE(SUM(t.quantity_delta), 0)::int AS actual_stock,
-            COALESCE(SUM(t.quantity_delta) FILTER (WHERE t.quantity_delta > 0), 0)::int AS total_import,
-            COALESCE(SUM(-t.quantity_delta) FILTER (WHERE t.quantity_delta < 0), 0)::int AS total_export
+            (
+              COALESCE(SUM(t.quantity_delta) FILTER (
+                WHERE t.type IN ('import', 'transfer_in') AND t.quantity_delta > 0
+              ), 0)
+              + COALESCE(SUM(t.quantity_delta) FILTER (
+                WHERE t.type IN ('edit_import', 'edit_export') AND t.quantity_delta > 0
+              ), 0)
+              + COALESCE(SUM(t.quantity_delta) FILTER (
+                WHERE t.type = 'cancel_import' AND t.quantity_delta < 0
+              ), 0)
+            )::int AS total_import,
+            (
+              COALESCE(SUM(-t.quantity_delta) FILTER (
+                WHERE t.type IN ('export', 'transfer_out') AND t.quantity_delta < 0
+              ), 0)
+              + COALESCE(SUM(-t.quantity_delta) FILTER (
+                WHERE t.type IN ('edit_import', 'edit_export') AND t.quantity_delta < 0
+              ), 0)
+              - COALESCE(SUM(t.quantity_delta) FILTER (
+                WHERE t.type = 'cancel_export' AND t.quantity_delta > 0
+              ), 0)
+            )::int AS total_export
           FROM store_stock_transactions t
           WHERE EXISTS (
             SELECT 1 FROM inventory_scope scope
