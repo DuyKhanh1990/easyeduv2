@@ -48,6 +48,7 @@ import {
 import { emitToAll } from "../lib/ws-hub";
 import { cacheGet, cacheSet, cacheInvalidate } from "../lib/simple-cache";
 import { notificationService } from "../application/notification/services/NotificationService";
+import { formatClassLabel } from "../lib/class-label";
 import {
   getAttendanceFeeRules,
   upsertAttendanceFeeRule,
@@ -2022,7 +2023,7 @@ export function registerConfigRoutes(app: Express): void {
                 ));
 
               for (const cls of affectedClasses) {
-                const className = cls.classCode || cls.name;
+                const className = formatClassLabel(cls.name, cls.classCode);
                 const activeStudents = await db
                   .select({ studentId: studentClasses.studentId, studentName: students.fullName })
                   .from(studentClasses)

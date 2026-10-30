@@ -3,6 +3,7 @@ import { studentSessions, classSessions, classes, students, staff, shiftTemplate
 import { eq, and, sql } from "drizzle-orm";
 import { sendNotification, sendNotificationToMany } from "./notification";
 import { notificationService } from "../application/notification/services/NotificationService";
+import { formatClassLabel } from "./class-label";
 
 const ATTENDANCE_STATUS_LABELS: Record<string, string> = {
   present: "Có học",
@@ -70,7 +71,7 @@ async function resolveSessionContext(studentSessionId: string) {
     .limit(1);
 
   const [cls] = await db
-    .select({ classCode: classes.classCode })
+    .select({ name: classes.name, classCode: classes.classCode })
     .from(classes)
     .where(eq(classes.id, ss.classId))
     .limit(1);
@@ -119,7 +120,7 @@ async function resolveSessionContext(studentSessionId: string) {
 
   const totalSessions = countRow?.total ?? 0;
   const sessionOrder = ss.sessionOrder ?? csRow?.sessionIndex ?? 1;
-  const className = cls?.classCode || "Lớp học";
+  const className = formatClassLabel(cls?.name, cls?.classCode);
   const weekdayLabel = WEEKDAY_LABELS[csRow?.weekday ?? 0] || "";
   const dateLabel = csRow?.sessionDate ? formatDate(csRow.sessionDate) : "";
   const sessionLabel = totalSessions > 0
@@ -281,11 +282,11 @@ export async function sendContentNotification(
     if (!csRow) return;
 
     const [cls] = await db
-      .select({ classCode: classes.classCode })
+      .select({ name: classes.name, classCode: classes.classCode })
       .from(classes)
       .where(eq(classes.id, csRow.classId))
       .limit(1);
-    const className = cls?.classCode || "Lớp học";
+    const className = formatClassLabel(cls?.name, cls?.classCode);
 
     let startTime = "";
     let endTime = "";
@@ -495,7 +496,7 @@ export async function sendHomeworkScoreNotification(
       .from(classes)
       .where(eq(classes.id, csRow.classId))
       .limit(1);
-    const className = cls?.classCode || cls?.name || "";
+    const className = formatClassLabel(cls?.name, cls?.classCode, "");
 
     let startTime = "";
     if (csRow.shiftTemplateId) {

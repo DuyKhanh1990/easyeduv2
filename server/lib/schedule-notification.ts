@@ -3,6 +3,7 @@ import { classes, studentSessions, students, shiftTemplates, centerConfig } from
 import { eq, and, ne } from "drizzle-orm";
 import { notificationService } from "../application/notification/services/NotificationService";
 import { NotificationTypes } from "../domain/notification/types/NotificationTypes";
+import { formatClassLabel } from "./class-label";
 
 const WEEKDAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 
@@ -58,7 +59,7 @@ async function getClassCode(classId: string): Promise<string> {
     .from(classes)
     .where(eq(classes.id, classId))
     .limit(1);
-  return cls?.classCode || cls?.name || "Lớp học";
+  return formatClassLabel(cls?.name, cls?.classCode);
 }
 
 async function getShiftStartTime(shiftTemplateId: string | null | undefined): Promise<string> {

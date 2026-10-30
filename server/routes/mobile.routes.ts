@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getEffectivePermissions } from "../storage/permissions.storage";
 import { db, pool } from "../db";
 import { sendNotificationToMany } from "../lib/notification";
+import { formatClassLabel } from "../lib/class-label";
 import { resolveZaloAuth } from "../services/zalo-auth.service";
 import {
   students,
@@ -4397,11 +4398,11 @@ export function registerMobileRoutes(app: Express) {
     const uniqueIds = [...new Set(studentIds)].filter(Boolean);
     if (!uniqueIds.length) return;
     const [classRow] = await db
-      .select({ name: classes.name })
+      .select({ name: classes.name, classCode: classes.classCode })
       .from(classes)
       .where(eq(classes.id, classId))
       .limit(1);
-    const classLabel = classRow?.name ?? "";
+    const classLabel = formatClassLabel(classRow?.name, classRow?.classCode, "");
     let teacherLabel = "Giáo viên";
     if (creatorUserId) {
       const [sr] = await db.select({ fullName: staff.fullName, code: staff.code })

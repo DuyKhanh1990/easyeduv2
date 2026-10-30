@@ -28,6 +28,7 @@ import { sendUpdateSessionNotification, sendCancelSessionNotification, sendUpdat
 import { notificationService } from "../application/notification/services/NotificationService";
 import { buildClassVisibilityCondition, buildClassVisibilitySql, canViewClass, resolveClassViewAccess, type ClassViewScope } from "../lib/class-access";
 import { sendInvoiceCreatedNotification } from "../lib/invoice-notification";
+import { formatClassLabel } from "../lib/class-label";
 import { getBusinessDateString } from "../lib/business-date";
 import { getNextLocationCode } from "../storage/finance.storage";
 import { recordFreeClassWalletTransition } from "../storage/free-class-wallet.storage";
@@ -750,7 +751,7 @@ async function sendGradeBookPublishedNotification(
 
   const [classRow] = await db.select({ name: classes.name, classCode: classes.classCode })
     .from(classes).where(eq(classes.id, classId)).limit(1);
-  const className = classRow?.classCode || classRow?.name || "";
+  const className = formatClassLabel(classRow?.name, classRow?.classCode, "");
 
   let teacherLabel = "Giáo viên";
   if (creatorUserId) {
@@ -4900,14 +4901,14 @@ export function registerClassesRoutes(app: Express): void {
 
             let content = "";
             if (validatedData.deleteType === "single") {
-              content = `Lịch học Lớp ${classInfo.name}, Buổi ${idx1}, ${wd1} ${d1} được xoá`;
+              content = `Lịch học Lớp ${formatClassLabel(classInfo.name, classInfo.classCode)}, Buổi ${idx1}, ${wd1} ${d1} được xoá`;
             } else if (validatedData.deleteType === "next" && toSession) {
               const wd2 = SCHEDULE_WEEKDAY_LABELS[toSession.weekday ?? 0] ?? "";
               const d2 = formatScheduleDate(toSession.sessionDate);
               const idx2 = toSession.sessionIndex;
-              content = `Lịch học Lớp ${classInfo.name}, được xoá từ Buổi ${idx1}, ${wd1} ${d1} - Buổi ${idx2}, ${wd2} ${d2}`;
+              content = `Lịch học Lớp ${formatClassLabel(classInfo.name, classInfo.classCode)}, được xoá từ Buổi ${idx1}, ${wd1} ${d1} - Buổi ${idx2}, ${wd2} ${d2}`;
             } else {
-              content = `Toàn bộ Lịch học Lớp ${classInfo.name} vừa được xoá`;
+              content = `Toàn bộ Lịch học Lớp ${formatClassLabel(classInfo.name, classInfo.classCode)} vừa được xoá`;
             }
 
             await sendNotificationToMany(staffUserIds, {
@@ -5132,7 +5133,7 @@ export function registerClassesRoutes(app: Express): void {
             const newWdLabels = sortOrder.filter(d => newWdArr.includes(d)).map(d => SCHEDULE_WEEKDAY_LABELS[d]);
 
             const rangeLabel = `Từ buổi ${fromIdx}, ${fromWd} ${fromDate} - Buổi ${toIdx}, ${toWd} ${toDate}`;
-            const generalContent = `Lớp ${className} (${classCode}) vừa được cập nhật thay đổi chu kỳ học từ ${oldWdLabels.join(",")} sang ${newWdLabels.join(",")} ${rangeLabel}`;
+            const generalContent = `Lớp ${formatClassLabel(className, classCode)} vừa được cập nhật thay đổi chu kỳ học từ ${oldWdLabels.join(",")} sang ${newWdLabels.join(",")} ${rangeLabel}`;
 
             // Collect all new teacher IDs from weekdayConfigs
             const newAllTeacherIds = new Set<string>();
@@ -5184,7 +5185,7 @@ export function registerClassesRoutes(app: Express): void {
             if (th2UserIds.length > 0) {
               await sendNotificationToMany(th2UserIds, {
                 title: "Thông báo xếp lịch dạy",
-                content: `Bạn vừa được xếp lịch dạy cho lớp ${className} (${classCode}) trong khoảng thời gian lịch: ${rangeLabel}`,
+                content: `Bạn vừa được xếp lịch dạy cho lớp ${formatClassLabel(className, classCode)} trong khoảng thời gian lịch: ${rangeLabel}`,
                 category: "schedule",
                 referenceId: classId,
                 referenceType: "class",
@@ -5546,7 +5547,7 @@ export function registerClassesRoutes(app: Express): void {
 
         if (classInfo) {
           const rangeLabels = sorted.map(r => `Buổi ${r.fromIndex}–${r.toIndex}`).join(", ");
-          const content = `Lớp ${classInfo.name ?? ""} (${classInfo.classCode ?? ""}) vừa được cập nhật loại trừ lịch học: ${rangeLabels}. Lý do: ${reason ?? ""}`;
+          const content = `Lớp ${formatClassLabel(classInfo.name, classInfo.classCode)} vừa được cập nhật loại trừ lịch học: ${rangeLabels}. Lý do: ${reason ?? ""}`;
           const staffUserIds = await resolveStaffUserIds([...new Set([...oldTeacherIdsSet, ...(classInfo.managerIds ?? [])])]);
           const allRecipients = [...new Set([...staffUserIds, ...allStudentUserIds])];
 
@@ -6694,7 +6695,7 @@ export function registerClassesRoutes(app: Express): void {
             if (th2UserIds.length > 0) {
               await sendNotificationToMany(th2UserIds, {
                 title: "Thông báo xếp lịch dạy",
-                content: `Bạn vừa được xếp lịch dạy lớp ${className} (${classCode}), Buổi ${newSessionIdx}: ${newWd} ${newDateLabel}`,
+                content: `Bạn vừa được xếp lịch dạy lớp ${formatClassLabel(className, classCode)}, Buổi ${newSessionIdx}: ${newWd} ${newDateLabel}`,
                 category: "schedule",
                 referenceId: classId,
                 referenceType: "class",
@@ -8407,6 +8408,7 @@ export function registerClassesRoutes(app: Express): void {
 
           const [classInfo] = await db.select({
             name: classes.name,
+            classCode: classes.classCode,
             managerIds: classes.managerIds,
             teacherIds: classes.teacherIds,
           }).from(classes).where(eq(classes.id, classId)).limit(1);
@@ -8442,7 +8444,7 @@ export function registerClassesRoutes(app: Express): void {
           ].filter(Boolean);
 
           const staffUserIds = await resolveStaffUserIds(staffIds);
-          const className = classInfo?.name ?? "";
+          const className = formatClassLabel(classInfo?.name, classInfo?.classCode);
 
           notificationClosure = async () => {
             for (const student of studentRows) {
