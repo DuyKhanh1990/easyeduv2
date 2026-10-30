@@ -112,6 +112,21 @@ function getScheduleTeacherDisplayNames(session: ScheduleSession): string[] {
   return session.teacherDisplayNames ?? session.teachers ?? [];
 }
 
+function getScheduleClassDisplayName(session: ScheduleSession): string {
+  if (session.isTestSession) return session.className;
+  return session.className || session.classCode || "Lớp học";
+}
+
+function getScheduleClassTooltipLabel(session: ScheduleSession): string {
+  if (session.isTestSession) return session.className;
+  const className = session.className?.trim() ?? "";
+  const classCode = session.classCode?.trim() ?? "";
+  if (className && classCode && className !== classCode) {
+    return `${className} (${classCode})`;
+  }
+  return className || classCode || "Lớp học";
+}
+
 function getTeacherViewSession(session: ScheduleSession, teacherId: string): ScheduleSession {
   const range = getAssignedTeacherTimeRange(
     session.teacherTimeAssignments ?? [],
@@ -1407,7 +1422,7 @@ function SessionCard({
           <span className="font-semibold">Lớp TEST</span>
         </div>
       )}
-      <div className="flex gap-2"><span className="text-muted-foreground shrink-0">{s.isTestSession ? "Tên kỳ thi:" : "Tên lịch:"}</span><span className="font-medium">{s.isTestSession ? s.className : s.classCode}</span></div>
+      <div className="flex gap-2"><span className="text-muted-foreground shrink-0">{s.isTestSession ? "Tên kỳ thi:" : "Tên lớp:"}</span><span className="font-medium">{getScheduleClassTooltipLabel(s)}</span></div>
       {formatLabel && <div className="flex gap-2"><span className="text-muted-foreground shrink-0">Hình thức:</span><span className="font-medium">{formatLabel}</span></div>}
       <div className="flex gap-2"><span className="text-muted-foreground shrink-0">Thời gian:</span><span className="font-medium">{timeStr}</span></div>
       {s.enrolledCount > 0 && <div className="flex gap-2"><span className="text-muted-foreground shrink-0">Sĩ số:</span><span className="font-medium">{s.enrolledCount}</span></div>}
@@ -1426,7 +1441,7 @@ function SessionCard({
         <div className="flex items-center justify-between gap-1 min-w-0">
           <span className="flex items-center gap-0.5 font-bold text-[10px] min-w-0">
             {s.isTestSession && <ClipboardList className="w-2.5 h-2.5 shrink-0" />}
-            <span className="truncate">{s.isTestSession ? s.className : s.classCode}</span>
+            <span className="truncate">{getScheduleClassDisplayName(s)}</span>
           </span>
           {formatLabel && <span className="text-[9px] font-semibold opacity-80 shrink-0">{formatLabel}</span>}
         </div>
@@ -1467,7 +1482,7 @@ function SessionCard({
             <div className="flex items-center justify-between gap-1 min-w-0">
               <span className="flex items-center gap-1 font-bold text-xs min-w-0">
                 {s.isTestSession && <ClipboardList className="w-3 h-3 shrink-0" />}
-                <span className="truncate">{s.isTestSession ? s.className : s.classCode}</span>
+                <span className="truncate">{getScheduleClassDisplayName(s)}</span>
               </span>
               {formatLabel && <span className="text-[10px] font-semibold opacity-85 shrink-0">{formatLabel}</span>}
             </div>
@@ -1769,7 +1784,7 @@ function RoomView({
                                         <div className="flex items-center gap-0.5 min-w-0 mt-0.5">
                                           {s.isTestSession && <ClipboardList className="w-3 h-3 shrink-0" />}
                                           <span className="font-bold text-xs leading-tight truncate">
-                                            {s.isTestSession ? s.className : s.classCode}
+                                            {getScheduleClassDisplayName(s)}
                                           </span>
                                         </div>
                                         {s.teachers.length > 0 && (
@@ -1782,7 +1797,7 @@ function RoomView({
                                     <TooltipContent side="top" className="max-w-[260px] p-3 space-y-1.5 text-xs">
                                       <div className="font-bold text-sm leading-tight">
                                         {s.isTestSession && <ClipboardList className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />}
-                                        {s.isTestSession ? s.className : `${s.classCode} – ${s.className}`}
+                                        {getScheduleClassTooltipLabel(s)}
                                       </div>
                                       <div className="flex items-center gap-1.5 text-muted-foreground">
                                         <span>🕐</span>
@@ -2008,7 +2023,7 @@ function RoomView({
                                   <div className="flex items-start gap-0.5 min-w-0">
                                     {s.isTestSession && <ClipboardList className="w-3 h-3 shrink-0 mt-0.5" />}
                                     <span className="font-bold text-xs leading-tight truncate">
-                                      {s.isTestSession ? s.className : s.classCode}
+                                      {getScheduleClassDisplayName(s)}
                                     </span>
                                   </div>
                                   {cardHeight > 50 && s.teachers.length > 0 && (
@@ -2027,7 +2042,7 @@ function RoomView({
                               <TooltipContent side="top" className="max-w-[260px] p-3 space-y-1.5 text-xs">
                                 <div className="font-bold text-sm leading-tight">
                                   {s.isTestSession && <ClipboardList className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />}
-                                  {s.isTestSession ? s.className : `${s.classCode} – ${s.className}`}
+                                  {getScheduleClassTooltipLabel(s)}
                                 </div>
                                 <div className="flex items-center gap-1.5 text-muted-foreground">
                                   <span>🕐</span>
@@ -2284,7 +2299,7 @@ function TeacherView({
                                         <div className="flex items-center gap-0.5 min-w-0 mt-0.5">
                                           {s.isTestSession && <ClipboardList className="w-3 h-3 shrink-0" />}
                                           <span className="font-bold text-xs leading-tight truncate">
-                                            {s.isTestSession ? s.className : s.classCode}
+                                            {getScheduleClassDisplayName(s)}
                                           </span>
                                         </div>
                                         {s.locationName && (
@@ -2302,7 +2317,7 @@ function TeacherView({
                                     <TooltipContent side="top" className="max-w-[260px] p-3 space-y-1.5 text-xs">
                                       <div className="font-bold text-sm leading-tight">
                                         {s.isTestSession && <ClipboardList className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />}
-                                        {s.isTestSession ? s.className : `${s.classCode} – ${s.className}`}
+                                        {getScheduleClassTooltipLabel(s)}
                                       </div>
                                       <div className="flex items-center gap-1.5 text-muted-foreground">
                                         <span>🕐</span>
@@ -2506,7 +2521,7 @@ function TeacherView({
                                     <div className="flex items-start gap-0.5 min-w-0 flex-1">
                                       {s.isTestSession && <ClipboardList className="w-3 h-3 shrink-0 mt-0.5" />}
                                       <span className="font-bold text-xs leading-tight truncate">
-                                        {s.isTestSession ? s.className : s.classCode}
+                                        {getScheduleClassDisplayName(s)}
                                       </span>
                                     </div>
                                     {s.learningFormat && cardHeight > 36 && (
@@ -2536,7 +2551,7 @@ function TeacherView({
                               <TooltipContent side="top" className="max-w-[260px] p-3 space-y-1.5 text-xs">
                                 <div className="font-bold text-sm leading-tight">
                                   {s.isTestSession && <ClipboardList className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />}
-                                  {s.isTestSession ? s.className : `${s.classCode} – ${s.className}`}
+                                  {getScheduleClassTooltipLabel(s)}
                                 </div>
                                 <div className="flex items-center gap-1.5 text-muted-foreground">
                                   <span>🕐</span>
