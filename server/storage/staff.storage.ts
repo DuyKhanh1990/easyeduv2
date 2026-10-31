@@ -698,7 +698,10 @@ export async function updateStaff(id: string, updates: any, allowedLocationIds: 
       }
     }
 
-    const [updated] = await tx.update(staff).set(staffUpdates).where(eq(staff.id, id)).returning();
+    const [updated] = await tx.update(staff)
+      .set({ ...staffUpdates, updatedAt: new Date() })
+      .where(eq(staff.id, id))
+      .returning();
     return updated;
   });
 }

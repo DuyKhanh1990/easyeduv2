@@ -232,9 +232,19 @@ export function StaffList() {
       return true;
     });
 
+    const compareRecentEdits = (a: any, b: any) => {
+      const updatedAtDifference =
+        new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime();
+      if (updatedAtDifference !== 0) return updatedAtDifference;
+
+      const createdAtDifference =
+        new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime();
+      return createdAtDifference || String(a.id).localeCompare(String(b.id));
+    };
+
     return [
-      ...matches.filter((s: any) => s.status === "Hoạt động"),
-      ...matches.filter((s: any) => s.status !== "Hoạt động"),
+      ...matches.filter((s: any) => s.status === "Hoạt động").sort(compareRecentEdits),
+      ...matches.filter((s: any) => s.status !== "Hoạt động").sort(compareRecentEdits),
     ];
   }, [staff, searchKeyword, filterLocationIds, filterDepartmentIds, filterRoleIds]);
 
