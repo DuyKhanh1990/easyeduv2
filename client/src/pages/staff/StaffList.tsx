@@ -7,7 +7,7 @@ import { useDepartments } from "@/hooks/use-departments";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Settings2, Edit2, Trash2, AlertCircle, Download, Upload, X, CheckCircle, TriangleAlert, Search, Users, UserCheck, UserX, ChevronLeft, ChevronRight, History } from "lucide-react";
+import { Plus, Settings2, Edit2, Trash2, AlertCircle, Download, Upload, X, CheckCircle, TriangleAlert, Search, Users, UserCheck, UserX, ChevronLeft, ChevronRight, History, LayoutGrid, Table2, Briefcase, Building2, MapPin, CalendarDays, MoreVertical } from "lucide-react";
 import { StaffDialog } from "./StaffDialog";
 import { StaffHistoryTab } from "./StaffHistoryTab";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -195,6 +195,7 @@ export function StaffList() {
   const [filterKey, setFilterKey] = useState(0);
   const [staffPage, setStaffPage] = useState(1);
   const [staffPageSize, setStaffPageSize] = useState(20);
+  const [viewMode, setViewMode] = useState<"table" | "cards">("table");
   const [historyOpen, setHistoryOpen] = useState(false);
 
   const staffDepartments = useMemo(() =>
@@ -627,6 +628,18 @@ export function StaffList() {
     return names.join(", ") || "-";
   };
 
+  const assignmentNameList = (assignments: any[], key: string) => {
+    const seen = new Set<string>();
+    return (assignments ?? []).reduce((names: string[], assignment: any) => {
+      const name = assignment[key]?.name;
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        names.push(name);
+      }
+      return names;
+    }, []);
+  };
+
   const activeCount = useMemo(() => (staff ?? []).filter((s: any) => s.status === "Hoạt động").length, [staff]);
   const inactiveCount = useMemo(() => (staff ?? []).filter((s: any) => s.status !== "Hoạt động").length, [staff]);
   const totalCount = (staff ?? []).length;
@@ -821,9 +834,34 @@ export function StaffList() {
                 <X className="w-3.5 h-3.5 mr-1" /> Xóa bộ lọc
               </Button>
             )}
+            <div className="ml-auto inline-flex h-9 items-center rounded-xl border border-border bg-white p-1 shadow-sm" role="group" aria-label="Kiểu hiển thị nhân sự">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-pressed={viewMode === "table"}
+                onClick={() => setViewMode("table")}
+                className={cn("h-7 rounded-lg px-2.5 text-xs", viewMode === "table" && "bg-violet-100 text-violet-800 hover:bg-violet-100")}
+                data-testid="button-staff-table-view"
+              >
+                <Table2 className="mr-1.5 h-3.5 w-3.5" /> Bảng
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-pressed={viewMode === "cards"}
+                onClick={() => setViewMode("cards")}
+                className={cn("h-7 rounded-lg px-2.5 text-xs", viewMode === "cards" && "bg-violet-100 text-violet-800 hover:bg-violet-100")}
+                data-testid="button-staff-card-view"
+              >
+                <LayoutGrid className="mr-1.5 h-3.5 w-3.5" /> Thẻ
+              </Button>
+            </div>
           </div>
 
-          {/* Table */}
+          {/* Table / card view */}
+          {viewMode === "table" ? (
           <div className="flex-1 overflow-auto">
             <table className="w-full caption-bottom text-sm border-collapse">
               <thead className="sticky top-0 z-20">
@@ -1017,6 +1055,171 @@ export function StaffList() {
               </tbody>
             </table>
           </div>
+          ) : (
+            <div className="flex-1 min-h-0 overflow-auto px-4 py-4">
+              {isLoading ? (
+                <div className="flex h-40 flex-col items-center justify-center gap-3 text-sm text-slate-400">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
+                  <span>Đang tải dữ liệu...</span>
+                </div>
+              ) : !filteredStaff.length ? (
+                <div className="flex h-40 flex-col items-center justify-center gap-2 text-sm text-slate-400">
+                  <Users className="h-10 w-10 text-slate-200" />
+                  <span>{staff?.length ? "Không tìm thấy nhân sự phù hợp." : "Chưa có dữ liệu nhân sự."}</span>
+                </div>
+              ) : (
+                <>
+                  <div className="mb-3 flex items-center gap-2 text-xs text-slate-500">
+                    <Checkbox
+                      checked={!!filteredStaff.length && selectedIds.length === filteredStaff.length}
+                      onCheckedChange={toggleSelectAll}
+                      aria-label="Chọn tất cả nhân sự đã lọc"
+                    />
+                    <span>Chọn tất cả nhân sự đã lọc</span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {pagedStaff.map((s: any) => {
+                      const assignmentRows = [
+                        { key: "role", icon: Briefcase, names: assignmentNameList(s.assignments, "role") },
+                        { key: "department", icon: Users, names: assignmentNameList(s.assignments, "department") },
+                        { key: "location", icon: MapPin, names: assignmentNameList(s.assignments, "location") },
+                      ];
+                      const active = s.status === "Hoạt động";
+
+                      return (
+                        <article
+                          key={s.id}
+                          className={cn(
+                            "flex min-h-[190px] flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition-colors",
+                            selectedIds.includes(s.id) ? "border-violet-300 ring-2 ring-violet-100" : "border-slate-200 hover:border-slate-300",
+                          )}
+                        >
+                          <div className="flex flex-1 gap-3 p-4 pb-3">
+                            <div className="relative mt-1 h-20 w-20 shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-slate-100 to-slate-200">
+                              <div className={cn(
+                                "flex h-full w-full items-center justify-center bg-gradient-to-br text-xl font-bold text-white",
+                                getAvatarColor(s.fullName || "?"),
+                              )}>
+                                {getInitials(s.fullName || "?")}
+                              </div>
+                              {s.avatarUrl && (
+                                <img
+                                  src={s.avatarUrl}
+                                  alt={`Ảnh đại diện ${s.fullName || "nhân sự"}`}
+                                  className="absolute inset-0 h-full w-full object-cover"
+                                  onError={(event) => event.currentTarget.remove()}
+                                />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="mb-1 flex items-start justify-between gap-2">
+                                {canEditRow ? (
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <button
+                                        type="button"
+                                        className={cn(
+                                          "inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold",
+                                          active ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700",
+                                        )}
+                                      >
+                                        <span className={cn("h-1.5 w-1.5 rounded-full", active ? "bg-emerald-500" : "bg-amber-500")} />
+                                        {active ? "Đang làm việc" : "Ngừng hoạt động"}
+                                      </button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="start">
+                                      <DropdownMenuItem onClick={() => s.status !== "Hoạt động" && handleToggleStatus(s)} className="gap-2 text-xs">
+                                        <span className="h-2 w-2 rounded-full bg-emerald-500" /> Đang làm việc
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => s.status === "Hoạt động" && handleToggleStatus(s)} className="gap-2 text-xs">
+                                        <span className="h-2 w-2 rounded-full bg-amber-500" /> Ngừng hoạt động
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                ) : (
+                                  <span className={cn(
+                                    "inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold",
+                                    active ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700",
+                                  )}>
+                                    <span className={cn("h-1.5 w-1.5 rounded-full", active ? "bg-emerald-500" : "bg-amber-500")} />
+                                    {active ? "Đang làm việc" : "Ngừng hoạt động"}
+                                  </span>
+                                )}
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <Checkbox
+                                    checked={selectedIds.includes(s.id)}
+                                    onCheckedChange={() => toggleSelectOne(s.id)}
+                                    aria-label={`Chọn ${s.fullName}`}
+                                  />
+                                  {hasAnyRowAction && (
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-slate-500" aria-label={`Thao tác với ${s.fullName}`}>
+                                          <MoreVertical className="h-4 w-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        {canEditRow && (
+                                          <DropdownMenuItem onClick={() => handleEdit(s)} className="gap-2 text-xs">
+                                            <Edit2 className="h-3.5 w-3.5" /> Chỉnh sửa
+                                          </DropdownMenuItem>
+                                        )}
+                                        {canDeleteRow && (
+                                          <DropdownMenuItem onClick={() => handleDelete(s.id)} className="gap-2 text-xs text-destructive focus:text-destructive">
+                                            <Trash2 className="h-3.5 w-3.5" /> Xóa
+                                          </DropdownMenuItem>
+                                        )}
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  )}
+                                </div>
+                              </div>
+                              <h3 className="truncate text-sm font-bold leading-5 text-slate-800" title={s.fullName}>{s.fullName}</h3>
+                              <p className="mb-2 text-[11px] font-mono text-slate-500">{s.code || "—"}</p>
+
+                              <div className="space-y-1.5">
+                                {assignmentRows.map(({ key, icon: Icon, names }) => {
+                                  const visibleNames = names.slice(0, 2);
+                                  const extraNames = names.slice(2);
+                                  return (
+                                    <div key={key} className="flex min-w-0 items-start gap-2 text-[11px] leading-4 text-slate-600" aria-label={key}>
+                                      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                      <div className="flex min-w-0 flex-wrap items-center gap-x-1">
+                                        {visibleNames.length ? visibleNames.map((name, index) => (
+                                          <span key={`${key}-${name}`} className="max-w-[130px] truncate" title={name}>
+                                            {index > 0 && <span className="mr-1 text-slate-300">·</span>}{name}
+                                          </span>
+                                        )) : <span className="text-slate-400">—</span>}
+                                        {!!extraNames.length && (
+                                          <span
+                                            className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600"
+                                            title={extraNames.join(", ")}
+                                          >
+                                            +{extraNames.length}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/60 px-4 py-2.5 text-[10px] text-slate-500">
+                            <span className="inline-flex items-center gap-1.5">
+                              <CalendarDays className="h-3.5 w-3.5" />
+                              Hồ sơ tạo: {s.createdAt ? new Date(s.createdAt).toLocaleDateString("vi-VN") : "—"}
+                            </span>
+                            {s.phone && <span className="truncate">{s.phone}</span>}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Pagination */}
           {filteredStaff.length > 0 && (
