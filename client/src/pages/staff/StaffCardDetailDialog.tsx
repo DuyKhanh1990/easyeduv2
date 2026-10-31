@@ -264,14 +264,15 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                   <SectionCard title="Hợp đồng lao động" icon={FileText}>
                     {contractsQuery.isLoading ? <p className="py-3 text-xs text-slate-500">Đang tải hợp đồng...</p>
                       : contractsQuery.isError ? <p className="py-3 text-xs text-red-600">Không thể tải hợp đồng.</p>
-                      : contractsQuery.data?.length ? <div className="divide-y divide-slate-100">
+                      : contractsQuery.data?.length ? <div className={`relative space-y-4 py-3 pl-5 ${contractsQuery.data.length > 1 ? "before:absolute before:bottom-4 before:left-[4px] before:top-4 before:w-px before:bg-blue-200 before:content-['']" : ""}`}>
                         {contractsQuery.data.map((contract: any) => (
-                          <div key={contract.id} className="py-3 first:pt-2 last:pb-2">
-                            <h4 className="text-sm font-semibold text-slate-900">{contract.name} ({contract.code})</h4>
-                            <p className="mt-1 text-xs text-slate-500">{contract.contractType}</p>
-                            <p className="mt-0.5 text-xs text-slate-500">{contract.workType}</p>
-                            <p className="mt-2 text-xs font-medium text-slate-700">{formatContractDate(contract.startDate)} - {formatContractDate(contract.endDate)}</p>
-                            <p className="mt-1 text-xs text-slate-600">Thời hạn: {contract.durationMonths ? `${contract.durationMonths} tháng` : "Không xác định thời gian"}</p>
+                          <div key={contract.id} className="relative min-w-0">
+                            <span className="absolute -left-5 top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-blue-500 ring-1 ring-blue-200" />
+                            <p className="text-xs font-semibold text-slate-800">{formatContractDate(contract.startDate)} - {formatContractDate(contract.endDate)}</p>
+                            <p className="mt-0.5 break-words text-[11px] font-medium text-blue-700">
+                              {contract.name} ({contract.code}) — {contract.durationMonths ? `${contract.durationMonths} tháng` : "Không xác định thời gian"}
+                            </p>
+                            <p className="mt-0.5 break-words text-[10px] text-blue-600">{contract.contractType} — {contract.workType}</p>
                           </div>
                         ))}
                       </div> : <p className="py-3 text-xs text-slate-500">Chưa có hợp đồng lao động.</p>}
