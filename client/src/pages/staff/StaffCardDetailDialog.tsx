@@ -263,11 +263,7 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
             <Tabs defaultValue="personal" className="w-full">
               <TabsList className="mb-4 flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1">
                 <TabsTrigger value="personal" className="shrink-0 gap-1.5 rounded-lg px-3 py-2 text-xs"><UserRound className="h-3.5 w-3.5" />Thông tin cá nhân</TabsTrigger>
-                <TabsTrigger value="work" className="shrink-0 gap-1.5 rounded-lg px-3 py-2 text-xs"><Briefcase className="h-3.5 w-3.5" />Công tác</TabsTrigger>
                 <TabsTrigger value="contract" className="shrink-0 gap-1.5 rounded-lg px-3 py-2 text-xs"><FileText className="h-3.5 w-3.5" />Hợp đồng</TabsTrigger>
-                <TabsTrigger value="salary" className="shrink-0 gap-1.5 rounded-lg px-3 py-2 text-xs"><Download className="h-3.5 w-3.5" />Lương</TabsTrigger>
-                <TabsTrigger value="attendance" className="shrink-0 gap-1.5 rounded-lg px-3 py-2 text-xs"><CalendarDays className="h-3.5 w-3.5" />Chấm công</TabsTrigger>
-                <TabsTrigger value="insurance" className="shrink-0 gap-1.5 rounded-lg px-3 py-2 text-xs"><Users className="h-3.5 w-3.5" />Bảo hiểm</TabsTrigger>
               </TabsList>
 
               <TabsContent value="personal" className="mt-0 space-y-3">
@@ -309,22 +305,6 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                 </div>
               </TabsContent>
 
-              <TabsContent value="work" className="mt-0 space-y-3">
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-                  {assignments.map(({ label, icon: Icon, names }) => (
-                    <SectionCard key={label} title={label} icon={Icon}>
-                      <div className="space-y-2 py-3">
-                        {names.length ? names.map((name) => <div key={name} className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800">{name}</div>) : <p className="text-sm text-slate-400">Chưa có thông tin</p>}
-                      </div>
-                    </SectionCard>
-                  ))}
-                </div>
-                <SectionCard title="Thông tin cập nhật hồ sơ" icon={CalendarDays}>
-                  <DetailField label="Ngày tạo hồ sơ" value={formatDate(staff.createdAt)} />
-                  <DetailField label="Chỉnh sửa gần nhất" value={formatDate(staff.updatedAt)} />
-                  <DetailField label="Trạng thái" value={staff.status} />
-                </SectionCard>
-              </TabsContent>
               <TabsContent value="contract" className="mt-0 space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div><h3 className="text-base font-semibold text-slate-900">Hợp đồng lao động</h3><p className="mt-1 text-xs text-slate-500">Quản lý thời hạn và hồ sơ đính kèm của nhân sự.</p></div>
@@ -378,9 +358,6 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                   </DialogContent>
                 </Dialog>
               </TabsContent>
-              <TabsContent value="salary" className="mt-0"><EmptyTab title="Thông tin lương chưa được liên kết" description="Để bảo vệ dữ liệu nhạy cảm, tab lương chỉ hiển thị khi được kết nối với phân quyền và dữ liệu bảng lương." /></TabsContent>
-              <TabsContent value="attendance" className="mt-0"><EmptyTab title="Chấm công chưa được liên kết" description="Dữ liệu chấm công được quản lý ở phân hệ riêng và chưa được tải vào hồ sơ này." /></TabsContent>
-              <TabsContent value="insurance" className="mt-0"><EmptyTab title="Chưa có dữ liệu bảo hiểm" description="Hồ sơ nhân sự hiện chưa có dữ liệu bảo hiểm được liên kết." /></TabsContent>
             </Tabs>
           </main>
         </div>
