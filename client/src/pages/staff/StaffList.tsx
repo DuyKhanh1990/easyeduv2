@@ -1335,6 +1335,10 @@ export function StaffList() {
         open={!!detailStaff}
         onOpenChange={(open) => { if (!open) setDetailStaff(null); }}
         staff={detailStaff}
+        onEdit={() => {
+          if (detailStaff) handleEdit(detailStaff);
+          setDetailStaff(null);
+        }}
       />
 
       <Dialog open={importOpen} onOpenChange={(v) => {
