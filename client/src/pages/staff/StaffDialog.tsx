@@ -32,9 +32,9 @@ import { useLocations } from "@/hooks/use-locations";
 import { useDepartments } from "@/hooks/use-departments";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { staffRoleAssignmentPermissionResource } from "@shared/staff-role-assignment-permissions";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, getAuthHeaders, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Radio, UserRound, UsersRound, Eye, EyeOff } from "lucide-react";
+import { Radio, UserRound, UsersRound, Eye, EyeOff, Camera, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const formSchema = z.object({
@@ -49,6 +49,7 @@ const formSchema = z.object({
   phone: z.string().optional().nullable(),
   email: z.string().email("Email không hợp lệ").optional().nullable().or(z.literal("")),
   address: z.string().optional().nullable(),
+  avatarUrl: z.string().optional().nullable(),
   status: z.string().default("Hoạt động"),
   dateOfBirth: z.string().optional().nullable(),
   locationIds: z.array(z.string()).min(1, "Cơ sở là bắt buộc"),
@@ -77,8 +78,10 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoadingPassword, setIsLoadingPassword] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [visibleOmicallPasswords, setVisibleOmicallPasswords] = useState<Record<string, boolean>>({});
   const codeAutoRef = useRef(!staff);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -95,6 +98,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
       phone: "",
       email: "",
       address: "",
+      avatarUrl: "",
       status: "Hoạt động",
       dateOfBirth: "",
     },
@@ -128,6 +132,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
         phone: staff?.phone || "",
         email: staff?.email || "",
         address: staff?.address || "",
+        avatarUrl: staff?.avatarUrl || "",
         status: staff?.status || "Hoạt động",
         dateOfBirth: staff?.dateOfBirth ? new Date(staff.dateOfBirth).toISOString().split('T')[0] : "",
       });
@@ -139,6 +144,45 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
   const selectedLocationIds = form.watch("locationIds");
   const omicallExtensions = form.watch("omicallExtensions");
   const omicallPasswords = form.watch("omicallPasswords");
+  const avatarUrl = form.watch("avatarUrl");
+
+  const handleAvatarUpload = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Vui lòng chọn tệp ảnh", variant: "destructive" });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "Ảnh không được vượt quá 5 MB", variant: "destructive" });
+      return;
+    }
+
+    setUploadingAvatar(true);
+    try {
+      const formData = new FormData();
+      formData.append("files", file);
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+        headers: getAuthHeaders(),
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Không thể tải ảnh lên");
+      const result = await response.json();
+      const uploadedUrl = result.files?.[0]?.url;
+      if (typeof uploadedUrl !== "string" || !uploadedUrl) {
+        throw new Error("Không nhận được đường dẫn ảnh");
+      }
+      form.setValue("avatarUrl", uploadedUrl, { shouldDirty: true, shouldValidate: true });
+    } catch (error: any) {
+      toast({
+        title: "Tải ảnh thất bại",
+        description: error?.message || "Vui lòng thử lại.",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   const staffDepartments = departments?.filter((d: any) => {
     const roles: any[] = d.roles ?? [];
@@ -287,6 +331,42 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
                 </div>
               </div>
               <div className="space-y-5 p-5">
+            <div className="flex items-center gap-4 rounded-xl border border-dashed border-sky-200 bg-white/80 p-4">
+              <div className="h-20 w-20 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-50">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="Ảnh đại diện nhân sự" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-slate-400">
+                    {uploadingAvatar ? <Loader2 className="h-6 w-6 animate-spin" /> : <UserRound className="h-7 w-7" />}
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className={FL}>Ảnh đại diện</p>
+                <p className="mt-1 text-xs text-slate-500">Ảnh JPG, PNG hoặc định dạng ảnh khác, tối đa 5 MB.</p>
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void handleAvatarUpload(file);
+                    event.target.value = "";
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-2 h-8 rounded-lg border-sky-200 px-3 text-xs text-sky-700 hover:bg-sky-50"
+                  disabled={uploadingAvatar}
+                  onClick={() => avatarInputRef.current?.click()}
+                >
+                  {uploadingAvatar ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Camera className="mr-1.5 h-3.5 w-3.5" />}
+                  {uploadingAvatar ? "Đang tải ảnh..." : avatarUrl ? "Thay ảnh" : "Tải ảnh lên"}
+                </Button>
+              </div>
+            </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <FormField
                 control={form.control}
@@ -606,7 +686,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
               </Button>
               <Button 
                 type="submit" 
-                disabled={isSubmitting} 
+                disabled={isSubmitting || uploadingAvatar}
                 className="h-10 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 px-6 font-semibold shadow-md shadow-sky-200 hover:from-sky-600 hover:to-blue-700"
               >
                 {staff ? "Cập nhật" : "Lưu"}

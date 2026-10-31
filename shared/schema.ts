@@ -568,6 +568,7 @@ export const staff = pgTable("staff", {
   userId: uuid("user_id").notNull().references(() => users.id),
   code: varchar("code", { length: 50 }).notNull().unique(),
   fullName: varchar("full_name", { length: 255 }).notNull(),
+  avatarUrl: text("avatar_url"),
   phone: varchar("phone", { length: 50 }),
   email: varchar("email", { length: 255 }),
   dateOfBirth: date("date_of_birth"),
