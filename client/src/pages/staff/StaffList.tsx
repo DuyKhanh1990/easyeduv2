@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Plus, Settings2, Edit2, Trash2, AlertCircle, Download, Upload, X, CheckCircle, TriangleAlert, Search, Users, UserCheck, UserX, ChevronLeft, ChevronRight, History, LayoutGrid, Table2, Briefcase, Building2, MapPin, CalendarDays, MoreVertical } from "lucide-react";
 import { StaffDialog } from "./StaffDialog";
 import { StaffHistoryTab } from "./StaffHistoryTab";
+import { StaffCardDetailDialog } from "./StaffCardDetailDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { MultiSelect } from "@/components/ui/multi-select";
 import {
@@ -176,6 +177,7 @@ export function StaffList() {
   const { data: staff, isLoading } = useStaff();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<any>(null);
+  const [detailStaff, setDetailStaff] = useState<any>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [importOpen, setImportOpen] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -1238,7 +1240,16 @@ export function StaffList() {
                               <CalendarDays className="h-3.5 w-3.5" />
                               Hồ sơ tạo: {s.createdAt ? new Date(s.createdAt).toLocaleDateString("vi-VN") : "—"}
                             </span>
-                            {s.phone && <span className="truncate">{s.phone}</span>}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setDetailStaff(s)}
+                              className="h-7 shrink-0 gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[10px] font-medium text-blue-700 hover:border-blue-200 hover:bg-blue-50"
+                              aria-label={`Xem chi tiết nhân sự ${s.fullName}`}
+                            >
+                              Xem chi tiết <ChevronRight className="h-3 w-3" />
+                            </Button>
                           </div>
                         </article>
                       );
@@ -1319,6 +1330,11 @@ export function StaffList() {
         onOpenChange={setDialogOpen}
         staff={selectedStaff}
         allStaff={staff || []}
+      />
+      <StaffCardDetailDialog
+        open={!!detailStaff}
+        onOpenChange={(open) => { if (!open) setDetailStaff(null); }}
+        staff={detailStaff}
       />
 
       <Dialog open={importOpen} onOpenChange={(v) => {
