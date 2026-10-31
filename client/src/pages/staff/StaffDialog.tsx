@@ -62,6 +62,23 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 const STORED_PASSWORD_MASK = "••••••••";
+const AVATAR_CROP_SIZE = 280;
+
+function clampAvatarOffset(
+  offset: { x: number; y: number },
+  imageWidth: number,
+  imageHeight: number,
+  viewSize: number,
+  zoom: number,
+) {
+  const scale = Math.max(viewSize / imageWidth, viewSize / imageHeight) * zoom;
+  const maxX = Math.max(0, (imageWidth * scale - viewSize) / 2);
+  const maxY = Math.max(0, (imageHeight * scale - viewSize) / 2);
+  return {
+    x: Math.max(-maxX, Math.min(maxX, offset.x)),
+    y: Math.max(-maxY, Math.min(maxY, offset.y)),
+  };
+}
 
 interface StaffDialogProps {
   open: boolean;
@@ -79,9 +96,17 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
   const [showPassword, setShowPassword] = useState(false);
   const [isLoadingPassword, setIsLoadingPassword] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [cropDialogOpen, setCropDialogOpen] = useState(false);
+  const [cropImage, setCropImage] = useState<{ src: string; width: number; height: number } | null>(null);
+  const [cropZoom, setCropZoom] = useState(1);
+  const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 });
+  const [cropViewSize, setCropViewSize] = useState(AVATAR_CROP_SIZE);
+  const [isCroppingAvatar, setIsCroppingAvatar] = useState(false);
   const [visibleOmicallPasswords, setVisibleOmicallPasswords] = useState<Record<string, boolean>>({});
   const codeAutoRef = useRef(!staff);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const cropViewportRef = useRef<HTMLDivElement>(null);
+  const cropDragRef = useRef<{ pointerId: number; x: number; y: number; offsetX: number; offsetY: number } | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -146,14 +171,32 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
   const omicallPasswords = form.watch("omicallPasswords");
   const avatarUrl = form.watch("avatarUrl");
 
-  const handleAvatarUpload = async (file: File) => {
+  useEffect(() => {
+    const src = cropImage?.src;
+    return () => {
+      if (src) URL.revokeObjectURL(src);
+    };
+  }, [cropImage?.src]);
+
+  useEffect(() => {
+    if (!cropDialogOpen) return;
+    const viewport = cropViewportRef.current;
+    if (!viewport) return;
+    const updateSize = () => setCropViewSize(viewport.clientWidth || AVATAR_CROP_SIZE);
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [cropDialogOpen, cropImage?.src]);
+
+  const handleAvatarUpload = async (file: File): Promise<boolean> => {
     if (!file.type.startsWith("image/")) {
       toast({ title: "Vui lòng chọn tệp ảnh", variant: "destructive" });
-      return;
+      return false;
     }
     if (file.size > 5 * 1024 * 1024) {
       toast({ title: "Ảnh không được vượt quá 5 MB", variant: "destructive" });
-      return;
+      return false;
     }
 
     setUploadingAvatar(true);
@@ -173,16 +216,94 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
         throw new Error("Không nhận được đường dẫn ảnh");
       }
       form.setValue("avatarUrl", uploadedUrl, { shouldDirty: true, shouldValidate: true });
+      return true;
     } catch (error: any) {
       toast({
         title: "Tải ảnh thất bại",
         description: error?.message || "Vui lòng thử lại.",
         variant: "destructive",
       });
+      return false;
     } finally {
       setUploadingAvatar(false);
     }
   };
+
+  const handleAvatarFileSelected = (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Vui lòng chọn tệp ảnh", variant: "destructive" });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "Ảnh không được vượt quá 5 MB", variant: "destructive" });
+      return;
+    }
+
+    const src = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      setCropImage({ src, width: image.naturalWidth, height: image.naturalHeight });
+      setCropZoom(1);
+      setCropOffset({ x: 0, y: 0 });
+      setCropDialogOpen(true);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(src);
+      toast({ title: "Không thể mở ảnh này", variant: "destructive" });
+    };
+    image.src = src;
+  };
+
+  const confirmAvatarCrop = async () => {
+    if (!cropImage || isCroppingAvatar) return;
+    setIsCroppingAvatar(true);
+    try {
+      const image = new Image();
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error("Không thể đọc ảnh đã chọn"));
+        image.src = cropImage.src;
+      });
+
+      const viewSize = cropViewportRef.current?.clientWidth || AVATAR_CROP_SIZE;
+      const scale = Math.max(viewSize / cropImage.width, viewSize / cropImage.height) * cropZoom;
+      const sourceSize = viewSize / scale;
+      const centerX = cropImage.width / 2 - cropOffset.x / scale;
+      const centerY = cropImage.height / 2 - cropOffset.y / scale;
+      const sourceX = Math.max(0, Math.min(cropImage.width - sourceSize, centerX - sourceSize / 2));
+      const sourceY = Math.max(0, Math.min(cropImage.height - sourceSize, centerY - sourceSize / 2));
+      const outputSize = 512;
+      const canvas = document.createElement("canvas");
+      canvas.width = outputSize;
+      canvas.height = outputSize;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Không thể xử lý ảnh");
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, outputSize, outputSize);
+      context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, outputSize, outputSize);
+
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+      if (!blob) throw new Error("Không thể tạo ảnh đã cắt");
+      const croppedFile = new File([blob], "staff-avatar.jpg", { type: "image/jpeg" });
+      const uploaded = await handleAvatarUpload(croppedFile);
+      if (uploaded) {
+        setCropDialogOpen(false);
+        setCropImage(null);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Không thể căn chỉnh ảnh",
+        description: error?.message || "Vui lòng thử lại.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCroppingAvatar(false);
+    }
+  };
+
+  const cropScale = cropImage
+    ? Math.max(cropViewSize / cropImage.width, cropViewSize / cropImage.height) * cropZoom
+    : 1;
 
   const staffDepartments = departments?.filter((d: any) => {
     const roles: any[] = d.roles ?? [];
@@ -305,6 +426,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
   const SELECT = "h-10 rounded-xl border-slate-200 bg-white text-sm shadow-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-100";
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto bg-slate-50 p-0 gap-0 rounded-2xl border-slate-200 shadow-2xl">
         <DialogHeader className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur">
@@ -351,7 +473,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
                   className="hidden"
                   onChange={(event) => {
                     const file = event.target.files?.[0];
-                    if (file) void handleAvatarUpload(file);
+                    if (file) handleAvatarFileSelected(file);
                     event.target.value = "";
                   }}
                 />
@@ -696,5 +818,116 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
         </Form>
       </DialogContent>
     </Dialog>
+    <Dialog
+      open={cropDialogOpen}
+      onOpenChange={(nextOpen) => {
+        if (isCroppingAvatar) return;
+        setCropDialogOpen(nextOpen);
+        if (!nextOpen) {
+          setCropImage(null);
+          cropDragRef.current = null;
+        }
+      }}
+    >
+      <DialogContent className="max-w-[calc(100vw-2rem)] rounded-2xl sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Căn chỉnh ảnh đại diện</DialogTitle>
+          <p className="text-sm text-slate-500">Kéo ảnh để chọn vị trí khuôn mặt, sau đó điều chỉnh độ phóng to.</p>
+        </DialogHeader>
+        {cropImage && (
+          <div
+            ref={cropViewportRef}
+            className="relative mx-auto aspect-square w-[min(280px,calc(100vw-4rem))] touch-none select-none overflow-hidden rounded-full border-4 border-white bg-slate-100 shadow-md ring-1 ring-slate-300"
+            onPointerDown={(event) => {
+              if (event.button !== 0 || isCroppingAvatar) return;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              cropDragRef.current = {
+                pointerId: event.pointerId,
+                x: event.clientX,
+                y: event.clientY,
+                offsetX: cropOffset.x,
+                offsetY: cropOffset.y,
+              };
+            }}
+            onPointerMove={(event) => {
+              const drag = cropDragRef.current;
+              if (!drag || drag.pointerId !== event.pointerId || !cropImage) return;
+              const viewSize = cropViewportRef.current?.clientWidth || AVATAR_CROP_SIZE;
+              setCropOffset(clampAvatarOffset({
+                x: drag.offsetX + event.clientX - drag.x,
+                y: drag.offsetY + event.clientY - drag.y,
+              }, cropImage.width, cropImage.height, viewSize, cropZoom));
+            }}
+            onPointerUp={(event) => {
+              if (cropDragRef.current?.pointerId === event.pointerId) cropDragRef.current = null;
+            }}
+            onPointerCancel={() => { cropDragRef.current = null; }}
+          >
+            <img
+              src={cropImage.src}
+              alt="Ảnh đang căn chỉnh"
+              draggable={false}
+              className="pointer-events-none absolute left-1/2 top-1/2 max-w-none"
+              style={{
+                width: cropImage.width * cropScale,
+                height: cropImage.height * cropScale,
+                transform: `translate(calc(-50% + ${cropOffset.x}px), calc(-50% + ${cropOffset.y}px))`,
+              }}
+            />
+            <div className="pointer-events-none absolute inset-0 rounded-full border border-white/80" />
+          </div>
+        )}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <label htmlFor="staff-avatar-zoom" className="font-medium text-slate-700">Thu phóng</label>
+            <span className="tabular-nums text-slate-500">{cropZoom.toFixed(1)}×</span>
+          </div>
+          <input
+            id="staff-avatar-zoom"
+            type="range"
+            min="1"
+            max="3"
+            step="0.01"
+            value={cropZoom}
+            disabled={!cropImage || isCroppingAvatar}
+            onChange={(event) => {
+              const nextZoom = Number(event.target.value);
+              setCropZoom(nextZoom);
+              if (cropImage) {
+                const viewSize = cropViewportRef.current?.clientWidth || AVATAR_CROP_SIZE;
+                setCropOffset((offset) => clampAvatarOffset(
+                  offset,
+                  cropImage.width,
+                  cropImage.height,
+                  viewSize,
+                  nextZoom,
+                ));
+              }
+            }}
+            className="w-full accent-sky-600"
+          />
+          <div className="flex justify-between text-[11px] text-slate-400"><span>Toàn ảnh</span><span>Phóng to</span></div>
+        </div>
+        <DialogFooter className="flex-row justify-end gap-2 sm:space-x-0">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isCroppingAvatar}
+            onClick={() => {
+              setCropDialogOpen(false);
+              setCropImage(null);
+              cropDragRef.current = null;
+            }}
+          >
+            Hủy
+          </Button>
+          <Button type="button" disabled={!cropImage || isCroppingAvatar} onClick={() => void confirmAvatarCrop()}>
+            {isCroppingAvatar && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isCroppingAvatar ? "Đang xử lý..." : "Cắt và tải lên"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
