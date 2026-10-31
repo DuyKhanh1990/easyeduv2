@@ -603,6 +603,24 @@ export const staffAssignments = pgTable("staff_assignments", {
   staffIdIdx: index("staff_assignments_staff_id_idx").on(table.staffId),
 }));
 
+export const staffContracts = pgTable("staff_contracts", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  staffId: uuid("staff_id").notNull().references(() => staff.id, { onDelete: "cascade" }),
+  code: varchar("code", { length: 100 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  contractType: varchar("contract_type", { length: 50 }).notNull(),
+  durationMonths: integer("duration_months"),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date"),
+  workType: varchar("work_type", { length: 50 }).notNull(),
+  attachments: jsonb("attachments").$type<{ name: string; url: string }[]>().notNull().default(sql`'[]'::jsonb`),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  staffIdx: index("staff_contracts_staff_id_idx").on(table.staffId),
+  staffCodeUnique: uniqueIndex("staff_contracts_staff_code_uidx").on(table.staffId, table.code),
+}));
+
 export const staffRelations = relations(staff, ({ one, many }) => ({
   user: one(users, {
     fields: [staff.userId],
@@ -1287,6 +1305,7 @@ export type InsertRole = z.infer<typeof insertRoleSchema>;
 export type DepartmentWithRoles = Department & { roles: Role[] };
 
 export const insertStaffSchema = createInsertSchema(staff).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertStaffContractSchema = createInsertSchema(staffContracts).omit({ id: true, createdAt: true, updatedAt: true });
 export type Staff = typeof staff.$inferSelect;
 export type InsertStaff = z.infer<typeof insertStaffSchema>;
 

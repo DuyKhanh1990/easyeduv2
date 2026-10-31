@@ -1,7 +1,13 @@
+import { useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Briefcase, Building2, CalendarDays, Download, FileText, MapPin, Printer, UserRound, Users, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Briefcase, Building2, CalendarDays, Download, FileText, MapPin, Printer, UserRound, Users, Plus, Paperclip, type LucideIcon } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
+import { getAuthHeaders } from "@/lib/queryClient";
+
+type ContractAttachment = { name: string; url: string };
 
 interface StaffCardDetailDialogProps {
   open: boolean;
@@ -63,7 +69,85 @@ function EmptyTab({ title, description }: { title: string; description: string }
   );
 }
 
+function calculateContractEndDate(startDate: string, months: number): string {
+  const [year, month, day] = startDate.split("-").map(Number);
+  if (!year || !month || !day || !months) return "";
+  const targetMonth = new Date(Date.UTC(year, month - 1 + months, 1));
+  const lastDay = new Date(Date.UTC(targetMonth.getUTCFullYear(), targetMonth.getUTCMonth() + 1, 0)).getUTCDate();
+  targetMonth.setUTCDate(Math.min(day, lastDay) - 1);
+  return targetMonth.toISOString().slice(0, 10);
+}
+
 export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: StaffCardDetailDialogProps) {
+  const queryClient = useQueryClient();
+  const contractFileInput = useRef<HTMLInputElement>(null);
+  const [addContractOpen, setAddContractOpen] = useState(false);
+  const [uploadingContractFiles, setUploadingContractFiles] = useState(false);
+  const [contractFileError, setContractFileError] = useState("");
+  const [draft, setDraft] = useState({
+    code: "", name: "", contractType: "Xác định thời hạn", durationMonths: "12",
+    startDate: new Date().toISOString().slice(0, 10), workType: "Toàn thời gian", attachments: [] as ContractAttachment[],
+  });
+  const contractsQuery = useQuery({
+    queryKey: ["/api/staff", staff?.id, "contracts"],
+    enabled: open && !!staff?.id,
+    queryFn: async () => (await apiRequest("GET", `/api/staff/${staff.id}/contracts`)).json(),
+  });
+  const createContract = useMutation({
+    mutationFn: async () => {
+      const months = draft.durationMonths === "indefinite" ? null : Number(draft.durationMonths);
+      const response = await apiRequest("POST", `/api/staff/${staff.id}/contracts`, {
+        code: draft.code.trim(), name: draft.name.trim(), contractType: draft.contractType,
+        durationMonths: months, startDate: draft.startDate,
+        endDate: months ? calculateContractEndDate(draft.startDate, months) : null,
+        workType: draft.workType, attachments: draft.attachments,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/staff", staff.id, "contracts"] });
+      setAddContractOpen(false);
+      setDraft({ code: "", name: "", contractType: "Xác định thời hạn", durationMonths: "12", startDate: new Date().toISOString().slice(0, 10), workType: "Toàn thời gian", attachments: [] });
+    },
+  });
+  const uploadContractFiles = async (files: FileList | null) => {
+    if (!files?.length || !staff?.id) return;
+    setUploadingContractFiles(true);
+    setContractFileError("");
+    try {
+      const formData = new FormData();
+      Array.from(files).forEach((file) => formData.append("files", file));
+      const response = await fetch(`/api/staff/${staff.id}/contracts/files`, {
+        method: "POST", body: formData, headers: getAuthHeaders(), credentials: "include",
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.message || "Không thể tải tệp lên");
+      }
+      const payload = await response.json();
+      setDraft((current) => ({ ...current, attachments: [...current.attachments, ...payload.files] }));
+    } catch (error) {
+      setContractFileError(error instanceof Error ? error.message : "Không thể tải tệp lên");
+    } finally {
+      setUploadingContractFiles(false);
+      if (contractFileInput.current) contractFileInput.current.value = "";
+    }
+  };
+  const downloadContractAttachment = async (attachment: ContractAttachment) => {
+    try {
+      const url = `/api/staff/${staff.id}/contracts/file?key=${encodeURIComponent(attachment.url)}`;
+      const response = await fetch(url, { headers: getAuthHeaders(), credentials: "include" });
+      if (!response.ok) throw new Error("Không thể tải tệp");
+      const blobUrl = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = blobUrl;
+      anchor.download = attachment.name;
+      anchor.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.alert("Không thể tải tệp đính kèm.");
+    }
+  };
   if (!staff) return null;
 
   const assignments = [
@@ -241,7 +325,59 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                   <DetailField label="Trạng thái" value={staff.status} />
                 </SectionCard>
               </TabsContent>
-              <TabsContent value="contract" className="mt-0"><EmptyTab title="Chưa có dữ liệu hợp đồng" description="Hồ sơ nhân sự hiện chưa liên kết với dữ liệu hợp đồng lao động." /></TabsContent>
+              <TabsContent value="contract" className="mt-0 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div><h3 className="text-base font-semibold text-slate-900">Hợp đồng lao động</h3><p className="mt-1 text-xs text-slate-500">Quản lý thời hạn và hồ sơ đính kèm của nhân sự.</p></div>
+                  <Button type="button" onClick={() => setAddContractOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Thêm hợp đồng</Button>
+                </div>
+                {contractsQuery.isLoading ? <div className="rounded-xl border bg-white p-8 text-center text-sm text-slate-500">Đang tải hợp đồng...</div>
+                  : contractsQuery.isError ? <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">Không thể tải danh sách hợp đồng.</div>
+                  : contractsQuery.data?.length ? <div className="space-y-3">{contractsQuery.data.map((contract: any) => (
+                    <SectionCard key={contract.id} title={`${contract.code} · ${contract.name}`} icon={FileText}>
+                      <div className="grid gap-x-8 md:grid-cols-2">
+                        <DetailField label="Loại hợp đồng" value={contract.contractType} />
+                        <DetailField label="Thời hạn" value={contract.durationMonths ? `${contract.durationMonths} tháng` : "Không xác định thời gian"} />
+                        <DetailField label="Hình thức làm việc" value={contract.workType} />
+                        <DetailField label="Ngày bắt đầu" value={formatDate(contract.startDate)} />
+                        <DetailField label="Ngày kết thúc" value={contract.endDate ? formatDate(contract.endDate) : "Không xác định"} />
+                      </div>
+                      {!!contract.attachments?.length && <div className="border-t border-slate-100 py-3"><p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-600"><Paperclip className="h-3.5 w-3.5" /> Hồ sơ đính kèm</p><div className="flex flex-wrap gap-2">{contract.attachments.map((file: ContractAttachment) => <button type="button" key={file.url} onClick={() => downloadContractAttachment(file)} className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700 hover:underline">{file.name}</button>)}</div></div>}
+                    </SectionCard>
+                  ))}</div> : <EmptyTab title="Chưa có dữ liệu hợp đồng" description="Thêm hợp đồng để lưu thông tin và tệp hồ sơ cho nhân sự." />}
+
+                <Dialog open={addContractOpen} onOpenChange={(value) => { setAddContractOpen(value); if (!value) createContract.reset(); }}>
+                  <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+                    <DialogHeader><DialogTitle>Thêm hợp đồng</DialogTitle><DialogDescription>Nhập thông tin hợp đồng và đính kèm hồ sơ liên quan.</DialogDescription></DialogHeader>
+                    <form className="space-y-5" onSubmit={(event) => { event.preventDefault(); createContract.mutate(); }}>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <label className="space-y-1.5 text-sm font-medium">Mã hợp đồng<input required maxLength={100} value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} className="h-10 w-full rounded-md border border-input bg-background px-3 font-normal" /></label>
+                        <label className="space-y-1.5 text-sm font-medium">Tên hợp đồng<input required maxLength={255} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="h-10 w-full rounded-md border border-input bg-background px-3 font-normal" /></label>
+                      </div>
+                      <section className="space-y-4 rounded-xl border p-4">
+                        <h3 className="text-base font-bold">THÔNG TIN HỢP ĐỒNG</h3>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <label className="space-y-1.5 text-sm font-medium">Loại hợp đồng<select value={draft.contractType} onChange={(e) => setDraft({ ...draft, contractType: e.target.value })} className="h-10 w-full rounded-md border border-input bg-background px-3 font-normal"><option>Thử việc</option><option>Xác định thời hạn</option><option>Không xác định thời hạn</option></select></label>
+                          <label className="space-y-1.5 text-sm font-medium">Thời hạn hợp đồng<select value={draft.durationMonths} onChange={(e) => setDraft({ ...draft, durationMonths: e.target.value })} className="h-10 w-full rounded-md border border-input bg-background px-3 font-normal">{[1, 2, 3, 6, 12, 18, 24, 36].map((month) => <option key={month} value={month}>{month} tháng{month === 12 ? " (1 năm)" : month === 24 ? " (2 năm)" : month === 36 ? " (3 năm)" : ""}</option>)}<option value="indefinite">Không xác định thời gian</option></select></label>
+                          <label className="space-y-1.5 text-sm font-medium">Ngày bắt đầu<input type="date" required value={draft.startDate} onChange={(e) => setDraft({ ...draft, startDate: e.target.value })} className="h-10 w-full rounded-md border border-input bg-background px-3 font-normal" /></label>
+                          <div className="space-y-1.5 text-sm font-medium">Ngày kết thúc<div className="flex h-10 items-center rounded-md bg-emerald-50 px-3 font-semibold text-emerald-700">{draft.durationMonths === "indefinite" ? "Không xác định" : draft.startDate ? formatDate(calculateContractEndDate(draft.startDate, Number(draft.durationMonths))) : "—"}</div></div>
+                          <label className="space-y-1.5 text-sm font-medium sm:col-span-2">Hình thức làm việc<select value={draft.workType} onChange={(e) => setDraft({ ...draft, workType: e.target.value })} className="h-10 w-full rounded-md border border-input bg-background px-3 font-normal"><option>Toàn thời gian</option><option>Bán thời gian</option></select></label>
+                        </div>
+                        <p className="text-xs text-emerald-700">Ngày kết thúc được tính tự động theo ngày bắt đầu và thời hạn hợp đồng.</p>
+                      </section>
+                      <section className="space-y-3 rounded-xl border p-4">
+                        <h3 className="text-sm font-bold">FILE HỒ SƠ ĐÍNH KÈM</h3>
+                        <input ref={contractFileInput} type="file" multiple className="hidden" onChange={(event) => void uploadContractFiles(event.target.files)} />
+                        <Button type="button" variant="outline" disabled={uploadingContractFiles} onClick={() => contractFileInput.current?.click()}><Plus className="mr-2 h-4 w-4" />{uploadingContractFiles ? "Đang tải tệp..." : "Chọn tệp"}</Button>
+                        <p className="text-xs text-slate-500">Tối đa 10 tệp mỗi lần tải, 20 MB/tệp. Tệp được lưu riêng tư và chỉ tải qua hồ sơ nhân sự.</p>
+                        {contractFileError && <p role="alert" className="text-sm text-red-600">{contractFileError}</p>}
+                        {draft.attachments.length > 0 && <ul className="space-y-1">{draft.attachments.map((file, index) => <li key={`${file.url}-${index}`} className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2 text-sm"><span className="truncate">{file.name}</span><button type="button" className="text-red-600 hover:underline" onClick={() => setDraft({ ...draft, attachments: draft.attachments.filter((_, i) => i !== index) })}>Bỏ</button></li>)}</ul>}
+                      </section>
+                      {createContract.isError && <p role="alert" className="text-sm text-red-600">{createContract.error instanceof Error ? createContract.error.message : "Không thể lưu hợp đồng."}</p>}
+                      <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setAddContractOpen(false)}>Hủy</Button><Button type="submit" disabled={createContract.isPending}>{createContract.isPending ? "Đang lưu..." : "Lưu hợp đồng"}</Button></div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </TabsContent>
               <TabsContent value="salary" className="mt-0"><EmptyTab title="Thông tin lương chưa được liên kết" description="Để bảo vệ dữ liệu nhạy cảm, tab lương chỉ hiển thị khi được kết nối với phân quyền và dữ liệu bảng lương." /></TabsContent>
               <TabsContent value="attendance" className="mt-0"><EmptyTab title="Chấm công chưa được liên kết" description="Dữ liệu chấm công được quản lý ở phân hệ riêng và chưa được tải vào hồ sơ này." /></TabsContent>
               <TabsContent value="insurance" className="mt-0"><EmptyTab title="Chưa có dữ liệu bảo hiểm" description="Hồ sơ nhân sự hiện chưa có dữ liệu bảo hiểm được liên kết." /></TabsContent>

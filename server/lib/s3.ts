@@ -243,6 +243,34 @@ export async function deletePrivateCustomerImport(storageKey: string): Promise<v
   await s3Client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 }
 
+const staffContractPrefix = `${portalUploadFolder}/private/staff-contracts/`;
+
+export async function uploadPrivateStaffContractFile(
+  filePath: string,
+  staffId: string,
+  filename: string,
+  mimetype: string,
+): Promise<string> {
+  const safeStaffId = staffId.replace(/[^a-zA-Z0-9._-]/g, "");
+  if (!safeStaffId) throw new Error("Mã nhân sự không hợp lệ.");
+  const safeName = filename.replace(/[^a-zA-Z0-9.\-_]/g, "_").slice(-180);
+  const key = `${staffContractPrefix}${safeStaffId}/${Date.now()}_${crypto.randomUUID()}_${safeName}`;
+  const body = await fs.promises.readFile(filePath);
+  await putObjectRaw(key, body, mimetype || "application/octet-stream", "private");
+  return key;
+}
+
+export async function downloadPrivateStaffContractFile(storageKey: string, staffId: string): Promise<{ body: Buffer; contentType: string }> {
+  const key = storageKey.trim();
+  const safeStaffId = staffId.replace(/[^a-zA-Z0-9._-]/g, "");
+  if (!safeStaffId || !key.startsWith(`${staffContractPrefix}${safeStaffId}/`)) {
+    throw new Error("Storage key không thuộc hồ sơ hợp đồng của nhân sự.");
+  }
+  const response = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  if (!response.Body) throw new Error("S3 không trả về nội dung file.");
+  return { body: await streamToBuffer(response.Body as Readable), contentType: response.ContentType || "application/octet-stream" };
+}
+
 /**
  * Upload a file from disk to S3 by streaming — không load toàn bộ file vào RAM.
  * Dùng cho file lớn (video, audio) để tránh OOM.
