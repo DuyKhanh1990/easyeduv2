@@ -3,11 +3,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Briefcase, Building2, CalendarDays, FileText, MapPin, UserRound, Users, Plus, Paperclip, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Briefcase, Building2, CalendarDays, Eye, FileText, MapPin, UserRound, Users, Plus, Paperclip, type LucideIcon } from "lucide-react";
+import * as mammoth from "mammoth";
+import DOMPurify from "dompurify";
 import { apiRequest } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/queryClient";
 
 type ContractAttachment = { name: string; url: string };
+type ContractAttachmentPreview = {
+  attachment: ContractAttachment;
+  kind: "loading" | "image" | "pdf" | "docx" | "unsupported" | "error";
+  url?: string;
+  html?: string;
+};
 
 interface StaffCardDetailDialogProps {
   open: boolean;
@@ -84,6 +92,7 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
   const [addContractOpen, setAddContractOpen] = useState(false);
   const [uploadingContractFiles, setUploadingContractFiles] = useState(false);
   const [contractFileError, setContractFileError] = useState("");
+  const [contractPreview, setContractPreview] = useState<ContractAttachmentPreview | null>(null);
   const [draft, setDraft] = useState({
     code: "", name: "", contractType: "Xác định thời hạn", durationMonths: "12",
     startDate: new Date().toISOString().slice(0, 10), workType: "Toàn thời gian", attachments: [] as ContractAttachment[],
@@ -147,6 +156,38 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
     } catch {
       window.alert("Không thể tải tệp đính kèm.");
     }
+  };
+  const previewContractAttachment = async (attachment: ContractAttachment) => {
+    setContractPreview({ attachment, kind: "loading" });
+    try {
+      const response = await fetch(`/api/staff/${staff.id}/contracts/file?key=${encodeURIComponent(attachment.url)}`, {
+        headers: getAuthHeaders(), credentials: "include",
+      });
+      if (!response.ok) throw new Error("Không thể mở tệp");
+      const blob = await response.blob();
+      const extension = attachment.name.split(".").pop()?.toLowerCase();
+      const mimeType = blob.type.toLowerCase();
+      if (mimeType.startsWith("image/") || ["png", "jpg", "jpeg", "gif", "webp"].includes(extension ?? "")) {
+        setContractPreview({ attachment, kind: "image", url: URL.createObjectURL(blob) });
+      } else if (mimeType === "application/pdf" || extension === "pdf") {
+        setContractPreview({ attachment, kind: "pdf", url: URL.createObjectURL(blob) });
+      } else if (extension === "docx") {
+        const result = await mammoth.convertToHtml({ arrayBuffer: await blob.arrayBuffer() });
+        setContractPreview({
+          attachment,
+          kind: "docx",
+          html: DOMPurify.sanitize(result.value, { USE_PROFILES: { html: true } }),
+        });
+      } else {
+        setContractPreview({ attachment, kind: "unsupported" });
+      }
+    } catch {
+      setContractPreview({ attachment, kind: "error" });
+    }
+  };
+  const closeContractPreview = () => {
+    if (contractPreview?.url) URL.revokeObjectURL(contractPreview.url);
+    setContractPreview(null);
   };
   if (!staff) return null;
 
@@ -299,16 +340,40 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                   : contractsQuery.isError ? <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">Không thể tải danh sách hợp đồng.</div>
                   : contractsQuery.data?.length ? <div className="space-y-3">{contractsQuery.data.map((contract: any) => (
                     <SectionCard key={contract.id} title={`${contract.code} · ${contract.name}`} icon={FileText}>
-                      <div className="grid gap-x-8 md:grid-cols-2">
-                        <DetailField label="Loại hợp đồng" value={contract.contractType} />
-                        <DetailField label="Thời hạn" value={contract.durationMonths ? `${contract.durationMonths} tháng` : "Không xác định thời gian"} />
-                        <DetailField label="Hình thức làm việc" value={contract.workType} />
-                        <DetailField label="Ngày bắt đầu" value={formatDate(contract.startDate)} />
-                        <DetailField label="Ngày kết thúc" value={contract.endDate ? formatDate(contract.endDate) : "Không xác định"} />
+                      <div className="grid gap-x-6 sm:grid-cols-2 lg:grid-cols-3">
+                        {[
+                          ["Loại hợp đồng", contract.contractType],
+                          ["Thời hạn", contract.durationMonths ? `${contract.durationMonths} tháng` : "Không xác định thời gian"],
+                          ["Hình thức làm việc", contract.workType],
+                          ["Ngày bắt đầu", formatDate(contract.startDate)],
+                          ["Ngày kết thúc", contract.endDate ? formatDate(contract.endDate) : "Không xác định"],
+                        ].map(([label, value]) => (
+                          <div key={label} className="min-w-0 border-b border-slate-100 py-2.5 last:border-0">
+                            <p className="text-xs text-slate-500">{label}</p>
+                            <p className="mt-1 break-words text-sm font-medium text-slate-800">{value}</p>
+                          </div>
+                        ))}
                       </div>
-                      {!!contract.attachments?.length && <div className="border-t border-slate-100 py-3"><p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-600"><Paperclip className="h-3.5 w-3.5" /> Hồ sơ đính kèm</p><div className="flex flex-wrap gap-2">{contract.attachments.map((file: ContractAttachment) => <button type="button" key={file.url} onClick={() => downloadContractAttachment(file)} className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700 hover:underline">{file.name}</button>)}</div></div>}
+                      {!!contract.attachments?.length && <div className="border-t border-slate-100 py-3"><p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-600"><Paperclip className="h-3.5 w-3.5" /> Hồ sơ đính kèm</p><div className="flex flex-wrap gap-2">{contract.attachments.map((file: ContractAttachment) => <div key={file.url} className="flex items-center gap-1 rounded-lg bg-blue-50 pl-3 pr-1 text-blue-700"><button type="button" onClick={() => downloadContractAttachment(file)} className="max-w-64 truncate py-2 text-xs hover:underline">{file.name}</button><button type="button" aria-label={`Xem trước ${file.name}`} title="Xem tệp" onClick={() => void previewContractAttachment(file)} className="rounded-md p-1.5 hover:bg-blue-100"><Eye className="h-4 w-4" /></button></div>)}</div></div>}
                     </SectionCard>
                   ))}</div> : <EmptyTab title="Chưa có dữ liệu hợp đồng" description="Thêm hợp đồng để lưu thông tin và tệp hồ sơ cho nhân sự." />}
+
+                <Dialog open={!!contractPreview} onOpenChange={(isOpen) => { if (!isOpen) closeContractPreview(); }}>
+                  <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle>{contractPreview?.attachment.name ?? "Xem tệp đính kèm"}</DialogTitle>
+                      <DialogDescription>Xem trước hồ sơ đính kèm của nhân sự.</DialogDescription>
+                    </DialogHeader>
+                    <div className="min-h-40 overflow-auto rounded-lg border bg-slate-50 p-3">
+                      {contractPreview?.kind === "loading" && <p className="py-16 text-center text-sm text-slate-500">Đang tải tệp...</p>}
+                      {contractPreview?.kind === "error" && <p className="py-16 text-center text-sm text-red-600">Không thể mở tệp đính kèm.</p>}
+                      {contractPreview?.kind === "image" && contractPreview.url && <img src={contractPreview.url} alt={contractPreview.attachment.name} className="mx-auto max-h-[70vh] max-w-full object-contain" />}
+                      {contractPreview?.kind === "pdf" && contractPreview.url && <iframe title={contractPreview.attachment.name} src={contractPreview.url} className="h-[70vh] w-full rounded-md bg-white" />}
+                      {contractPreview?.kind === "docx" && <div className="mx-auto max-w-3xl bg-white p-6 text-sm leading-6 text-slate-800 [&_h1]:mb-3 [&_h1]:text-xl [&_h2]:mb-2 [&_h2]:text-lg [&_li]:ml-5 [&_li]:list-disc [&_p]:mb-3" dangerouslySetInnerHTML={{ __html: contractPreview.html ?? "" }} />}
+                      {contractPreview?.kind === "unsupported" && <div className="py-12 text-center"><p className="text-sm text-slate-600">Định dạng này chưa hỗ trợ xem trước.</p><Button type="button" variant="outline" className="mt-3" onClick={() => void downloadContractAttachment(contractPreview.attachment)}>Tải tệp xuống</Button></div>}
+                    </div>
+                  </DialogContent>
+                </Dialog>
 
                 <Dialog open={addContractOpen} onOpenChange={(value) => { setAddContractOpen(value); if (!value) createContract.reset(); }}>
                   <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
