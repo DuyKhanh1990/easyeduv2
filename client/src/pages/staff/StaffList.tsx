@@ -1179,6 +1179,7 @@ export function StaffList() {
 
                               <div className="space-y-1.5">
                                 {assignmentRows.map(({ key, icon: Icon, names }) => {
+                                  const categoryLabel = key === "role" ? "Vai trò" : key === "department" ? "Phòng ban" : "Cơ sở";
                                   const visibleNames = names.slice(0, 2);
                                   const extraNames = names.slice(2);
                                   return (
@@ -1191,12 +1192,29 @@ export function StaffList() {
                                           </span>
                                         )) : <span className="text-slate-400">—</span>}
                                         {!!extraNames.length && (
-                                          <span
-                                            className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600"
-                                            title={extraNames.join(", ")}
-                                          >
-                                            +{extraNames.length}
-                                          </span>
+                                          <TooltipProvider delayDuration={100}>
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <button
+                                                  type="button"
+                                                  className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 outline-none transition-colors hover:bg-violet-100 hover:text-violet-700 focus-visible:ring-2 focus-visible:ring-violet-400"
+                                                  aria-label={`Xem đầy đủ ${categoryLabel.toLowerCase()}`}
+                                                >
+                                                  +{extraNames.length}
+                                                </button>
+                                              </TooltipTrigger>
+                                              <TooltipContent side="top" align="start" className="max-h-56 max-w-[280px] overflow-y-auto rounded-xl p-3 text-xs shadow-lg">
+                                                <div className="mb-1.5 font-semibold">{categoryLabel} ({names.length})</div>
+                                                <ul className="space-y-1">
+                                                  {names.map((name) => (
+                                                    <li key={`${key}-tooltip-${name}`} className="break-words">
+                                                      <span className="mr-1.5 text-slate-400">•</span>{name}
+                                                    </li>
+                                                  ))}
+                                                </ul>
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          </TooltipProvider>
                                         )}
                                       </div>
                                     </div>
