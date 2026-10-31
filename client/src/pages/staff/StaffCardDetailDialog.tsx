@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Briefcase, Building2, CalendarDays, Download, FileText, MapPin, Printer, UserRound, Users, Plus, Paperclip, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Briefcase, Building2, CalendarDays, FileText, MapPin, UserRound, Users, Plus, Paperclip, type LucideIcon } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/queryClient";
 
@@ -161,29 +161,8 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
   const locationNames = getUniqueAssignmentNames(staff, "location");
   const formatDate = (value?: string | Date | null) =>
     value ? new Date(value).toLocaleDateString("vi-VN") : "—";
-
-  const handleDownload = () => {
-    const lines = [
-      "HỒ SƠ NHÂN SỰ",
-      `Họ và tên: ${staff.fullName || "—"}`,
-      `Mã nhân viên: ${staff.code || "—"}`,
-      `Trạng thái: ${staff.status || "—"}`,
-      `Số điện thoại: ${staff.phone || "—"}`,
-      `Email: ${staff.email || "—"}`,
-      `Tài khoản: ${staff.username || "—"}`,
-      `Ngày sinh: ${formatDate(staff.dateOfBirth)}`,
-      `Địa chỉ: ${staff.address || "—"}`,
-      `Vai trò: ${roleNames.join(", ") || "—"}`,
-      `Phòng ban: ${departmentNames.join(", ") || "—"}`,
-      `Cơ sở: ${locationNames.join(", ") || "—"}`,
-    ];
-    const url = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `ho-so-nhan-su-${String(staff.code || staff.fullName || "nhan-su").replace(/[^a-zA-Z0-9-_]/g, "-")}.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
+  const formatContractDate = (value?: string | Date | null) =>
+    value ? new Date(`${String(value).slice(0, 10)}T12:00:00Z`).toLocaleDateString("vi-VN", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric" }) : "Không xác định";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -203,12 +182,6 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
           <div className="flex items-center gap-2">
             <Button type="button" variant="outline" size="sm" onClick={onEdit} className="h-8 gap-1.5 rounded-lg text-xs">
               <Briefcase className="h-3.5 w-3.5" /> Chỉnh sửa
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={handleDownload} className="hidden h-8 gap-1.5 rounded-lg text-xs sm:flex">
-              <Download className="h-3.5 w-3.5" /> Tải hồ sơ
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => window.print()} className="hidden h-8 gap-1.5 rounded-lg text-xs md:flex">
-              <Printer className="h-3.5 w-3.5" /> In thông tin
             </Button>
           </div>
         </header>
@@ -288,9 +261,20 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                   </SectionCard>
                 </div>
                 <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                  <SectionCard title="Thông tin hồ sơ" icon={CalendarDays}>
-                    <DetailField label="Ngày tạo hồ sơ" value={formatDate(staff.createdAt)} />
-                    <DetailField label="Chỉnh sửa gần nhất" value={formatDate(staff.updatedAt)} />
+                  <SectionCard title="Hợp đồng lao động" icon={FileText}>
+                    {contractsQuery.isLoading ? <p className="py-3 text-xs text-slate-500">Đang tải hợp đồng...</p>
+                      : contractsQuery.isError ? <p className="py-3 text-xs text-red-600">Không thể tải hợp đồng.</p>
+                      : contractsQuery.data?.length ? <div className="divide-y divide-slate-100">
+                        {contractsQuery.data.map((contract: any) => (
+                          <div key={contract.id} className="py-3 first:pt-2 last:pb-2">
+                            <h4 className="text-sm font-semibold text-slate-900">{contract.name} ({contract.code})</h4>
+                            <p className="mt-1 text-xs text-slate-500">{contract.contractType}</p>
+                            <p className="mt-0.5 text-xs text-slate-500">{contract.workType}</p>
+                            <p className="mt-2 text-xs font-medium text-slate-700">{formatContractDate(contract.startDate)} - {formatContractDate(contract.endDate)}</p>
+                            <p className="mt-1 text-xs text-slate-600">Thời hạn: {contract.durationMonths ? `${contract.durationMonths} tháng` : "Không xác định thời gian"}</p>
+                          </div>
+                        ))}
+                      </div> : <p className="py-3 text-xs text-slate-500">Chưa có hợp đồng lao động.</p>}
                   </SectionCard>
                   <SectionCard title="Phân công hiện tại" icon={MapPin}>
                     <div className="space-y-2 py-3">
