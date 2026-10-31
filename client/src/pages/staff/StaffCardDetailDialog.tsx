@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Briefcase, Building2, CalendarDays, Eye, FileText, MapPin, UserRound, Users, Plus, Paperclip, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Briefcase, Building2, CalendarDays, Eye, FileText, FolderOpen, FolderPlus, MapPin, Upload, UserRound, Users, Plus, Paperclip, type LucideIcon } from "lucide-react";
 import * as mammoth from "mammoth";
 import DOMPurify from "dompurify";
 import { apiRequest } from "@/lib/queryClient";
@@ -12,6 +12,7 @@ import { getAuthHeaders } from "@/lib/queryClient";
 type ContractAttachment = { name: string; url: string };
 type ContractAttachmentPreview = {
   attachment: ContractAttachment;
+  source: "contracts" | "profile-files";
   kind: "loading" | "image" | "pdf" | "docx" | "unsupported" | "error";
   url?: string;
   html?: string;
@@ -89,10 +90,15 @@ function calculateContractEndDate(startDate: string, months: number): string {
 export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: StaffCardDetailDialogProps) {
   const queryClient = useQueryClient();
   const contractFileInput = useRef<HTMLInputElement>(null);
+  const profileFileInput = useRef<HTMLInputElement>(null);
   const [addContractOpen, setAddContractOpen] = useState(false);
   const [uploadingContractFiles, setUploadingContractFiles] = useState(false);
   const [contractFileError, setContractFileError] = useState("");
   const [contractPreview, setContractPreview] = useState<ContractAttachmentPreview | null>(null);
+  const [selectedProfileCategoryId, setSelectedProfileCategoryId] = useState("");
+  const [newProfileCategoryName, setNewProfileCategoryName] = useState("");
+  const [uploadingProfileFiles, setUploadingProfileFiles] = useState(false);
+  const [profileFileError, setProfileFileError] = useState("");
   const [draft, setDraft] = useState({
     code: "", name: "", contractType: "Xác định thời hạn", durationMonths: "12",
     startDate: new Date().toISOString().slice(0, 10), workType: "Toàn thời gian", attachments: [] as ContractAttachment[],
@@ -101,6 +107,22 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
     queryKey: ["/api/staff", staff?.id, "contracts"],
     enabled: open && !!staff?.id,
     queryFn: async () => (await apiRequest("GET", `/api/staff/${staff.id}/contracts`)).json(),
+  });
+  const profileCategoriesQuery = useQuery({
+    queryKey: ["/api/staff", staff?.id, "profile-files", "categories"],
+    enabled: open && !!staff?.id,
+    queryFn: async () => (await apiRequest("GET", `/api/staff/${staff.id}/profile-files/categories`)).json(),
+  });
+  const createProfileCategory = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/staff/${staff.id}/profile-files/categories`, { name: newProfileCategoryName.trim() });
+      return response.json();
+    },
+    onSuccess: (category) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/staff", staff.id, "profile-files", "categories"] });
+      setSelectedProfileCategoryId(category.id);
+      setNewProfileCategoryName("");
+    },
   });
   const createContract = useMutation({
     mutationFn: async () => {
@@ -142,9 +164,10 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
       if (contractFileInput.current) contractFileInput.current.value = "";
     }
   };
-  const downloadContractAttachment = async (attachment: ContractAttachment) => {
+  const downloadContractAttachment = async (attachment: ContractAttachment, source: "contracts" | "profile-files" = "contracts") => {
     try {
-      const url = `/api/staff/${staff.id}/contracts/file?key=${encodeURIComponent(attachment.url)}`;
+      const endpoint = source === "contracts" ? "contracts/file" : "profile-files/file";
+      const url = `/api/staff/${staff.id}/${endpoint}?key=${encodeURIComponent(attachment.url)}`;
       const response = await fetch(url, { headers: getAuthHeaders(), credentials: "include" });
       if (!response.ok) throw new Error("Không thể tải tệp");
       const blobUrl = URL.createObjectURL(await response.blob());
@@ -157,10 +180,11 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
       window.alert("Không thể tải tệp đính kèm.");
     }
   };
-  const previewContractAttachment = async (attachment: ContractAttachment) => {
-    setContractPreview({ attachment, kind: "loading" });
+  const previewContractAttachment = async (attachment: ContractAttachment, source: "contracts" | "profile-files" = "contracts") => {
+    setContractPreview({ attachment, source, kind: "loading" });
     try {
-      const response = await fetch(`/api/staff/${staff.id}/contracts/file?key=${encodeURIComponent(attachment.url)}`, {
+      const endpoint = source === "contracts" ? "contracts/file" : "profile-files/file";
+      const response = await fetch(`/api/staff/${staff.id}/${endpoint}?key=${encodeURIComponent(attachment.url)}`, {
         headers: getAuthHeaders(), credentials: "include",
       });
       if (!response.ok) throw new Error("Không thể mở tệp");
@@ -168,26 +192,50 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
       const extension = attachment.name.split(".").pop()?.toLowerCase();
       const mimeType = blob.type.toLowerCase();
       if (mimeType.startsWith("image/") || ["png", "jpg", "jpeg", "gif", "webp"].includes(extension ?? "")) {
-        setContractPreview({ attachment, kind: "image", url: URL.createObjectURL(blob) });
+        setContractPreview({ attachment, source, kind: "image", url: URL.createObjectURL(blob) });
       } else if (mimeType === "application/pdf" || extension === "pdf") {
-        setContractPreview({ attachment, kind: "pdf", url: URL.createObjectURL(blob) });
+        setContractPreview({ attachment, source, kind: "pdf", url: URL.createObjectURL(blob) });
       } else if (extension === "docx") {
         const result = await mammoth.convertToHtml({ arrayBuffer: await blob.arrayBuffer() });
         setContractPreview({
           attachment,
+          source,
           kind: "docx",
           html: DOMPurify.sanitize(result.value, { USE_PROFILES: { html: true } }),
         });
       } else {
-        setContractPreview({ attachment, kind: "unsupported" });
+        setContractPreview({ attachment, source, kind: "unsupported" });
       }
     } catch {
-      setContractPreview({ attachment, kind: "error" });
+      setContractPreview({ attachment, source, kind: "error" });
     }
   };
   const closeContractPreview = () => {
     if (contractPreview?.url) URL.revokeObjectURL(contractPreview.url);
     setContractPreview(null);
+  };
+  const uploadProfileFiles = async (files: FileList | null) => {
+    const categoryId = selectedProfileCategoryId;
+    if (!files?.length || !staff?.id || !categoryId) return;
+    setUploadingProfileFiles(true);
+    setProfileFileError("");
+    try {
+      const formData = new FormData();
+      Array.from(files).forEach((file) => formData.append("files", file));
+      const response = await fetch(`/api/staff/${staff.id}/profile-files/categories/${categoryId}/files`, {
+        method: "POST", body: formData, headers: getAuthHeaders(), credentials: "include",
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.message || "Không thể tải tệp lên");
+      }
+      await queryClient.invalidateQueries({ queryKey: ["/api/staff", staff.id, "profile-files", "categories"] });
+    } catch (error) {
+      setProfileFileError(error instanceof Error ? error.message : "Không thể tải tệp lên");
+    } finally {
+      setUploadingProfileFiles(false);
+      if (profileFileInput.current) profileFileInput.current.value = "";
+    }
   };
   if (!staff) return null;
 
@@ -278,6 +326,7 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
               <TabsList className="mb-4 flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1">
                 <TabsTrigger value="personal" className="shrink-0 gap-1.5 rounded-lg px-3 py-2 text-xs"><UserRound className="h-3.5 w-3.5" />Thông tin cá nhân</TabsTrigger>
                 <TabsTrigger value="contract" className="shrink-0 gap-1.5 rounded-lg px-3 py-2 text-xs"><FileText className="h-3.5 w-3.5" />Hợp đồng</TabsTrigger>
+                <TabsTrigger value="profile-files" className="shrink-0 gap-1.5 rounded-lg px-3 py-2 text-xs"><FolderOpen className="h-3.5 w-3.5" />File hồ sơ</TabsTrigger>
               </TabsList>
 
               <TabsContent value="personal" className="mt-0 space-y-3">
@@ -370,7 +419,7 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                       {contractPreview?.kind === "image" && contractPreview.url && <img src={contractPreview.url} alt={contractPreview.attachment.name} className="mx-auto max-h-[70vh] max-w-full object-contain" />}
                       {contractPreview?.kind === "pdf" && contractPreview.url && <iframe title={contractPreview.attachment.name} src={contractPreview.url} className="h-[70vh] w-full rounded-md bg-white" />}
                       {contractPreview?.kind === "docx" && <div className="mx-auto max-w-3xl bg-white p-6 text-sm leading-6 text-slate-800 [&_h1]:mb-3 [&_h1]:text-xl [&_h2]:mb-2 [&_h2]:text-lg [&_li]:ml-5 [&_li]:list-disc [&_p]:mb-3" dangerouslySetInnerHTML={{ __html: contractPreview.html ?? "" }} />}
-                      {contractPreview?.kind === "unsupported" && <div className="py-12 text-center"><p className="text-sm text-slate-600">Định dạng này chưa hỗ trợ xem trước.</p><Button type="button" variant="outline" className="mt-3" onClick={() => void downloadContractAttachment(contractPreview.attachment)}>Tải tệp xuống</Button></div>}
+                      {contractPreview?.kind === "unsupported" && <div className="py-12 text-center"><p className="text-sm text-slate-600">Định dạng này chưa hỗ trợ xem trước.</p><Button type="button" variant="outline" className="mt-3" onClick={() => void downloadContractAttachment(contractPreview.attachment, contractPreview.source)}>Tải tệp xuống</Button></div>}
                     </div>
                   </DialogContent>
                 </Dialog>
@@ -407,6 +456,72 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                     </form>
                   </DialogContent>
                 </Dialog>
+              </TabsContent>
+
+              <TabsContent value="profile-files" className="mt-0">
+                <div className="grid min-h-[420px] grid-cols-1 gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
+                  <aside className="rounded-xl border border-slate-200 bg-white p-4">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800"><FolderOpen className="h-4 w-4 text-blue-600" />Danh mục hồ sơ</h3>
+                    <form className="mt-3 flex gap-2" onSubmit={(event) => { event.preventDefault(); createProfileCategory.mutate(); }}>
+                      <input
+                        value={newProfileCategoryName}
+                        onChange={(event) => setNewProfileCategoryName(event.target.value)}
+                        maxLength={255}
+                        placeholder="Ví dụ: File CV nhân sự"
+                        aria-label="Tên danh mục hồ sơ"
+                        className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-xs"
+                      />
+                      <Button type="submit" size="icon" aria-label="Thêm danh mục" disabled={!newProfileCategoryName.trim() || createProfileCategory.isPending} className="h-9 w-9 shrink-0">
+                        <FolderPlus className="h-4 w-4" />
+                      </Button>
+                    </form>
+                    {createProfileCategory.isError && <p className="mt-2 text-xs text-red-600">{createProfileCategory.error instanceof Error ? createProfileCategory.error.message : "Không thể tạo danh mục."}</p>}
+                    {profileCategoriesQuery.isLoading ? <p className="py-6 text-center text-xs text-slate-500">Đang tải danh mục...</p>
+                      : profileCategoriesQuery.isError ? <p className="py-6 text-center text-xs text-red-600">Không thể tải danh mục hồ sơ.</p>
+                      : profileCategoriesQuery.data?.length ? <div className="mt-3 space-y-1">
+                        {profileCategoriesQuery.data.map((category: any) => (
+                          <button
+                            key={category.id}
+                            type="button"
+                            onClick={() => { setSelectedProfileCategoryId(category.id); setProfileFileError(""); }}
+                            className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-xs transition ${selectedProfileCategoryId === category.id ? "bg-blue-50 font-semibold text-blue-800" : "text-slate-700 hover:bg-slate-50"}`}
+                          >
+                            <span className="flex min-w-0 items-center gap-2"><FolderOpen className="h-4 w-4 shrink-0 text-blue-600" /><span className="truncate">{category.name}</span></span>
+                            <span className="shrink-0 text-[10px] text-slate-500">{category.attachments?.length ?? 0}</span>
+                          </button>
+                        ))}
+                      </div> : <p className="mt-4 text-xs leading-5 text-slate-500">Chưa có danh mục. Nhập tên rồi bấm nút thêm.</p>}
+                  </aside>
+
+                  <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4">
+                    {(() => {
+                      const selectedCategory = profileCategoriesQuery.data?.find((category: any) => category.id === selectedProfileCategoryId);
+                      if (!selectedCategory) {
+                        return <div className="flex h-full min-h-64 flex-col items-center justify-center text-center"><FolderOpen className="h-8 w-8 text-blue-300" /><p className="mt-3 text-sm font-medium text-slate-700">Chọn danh mục hồ sơ</p><p className="mt-1 text-xs text-slate-500">Các tệp tải lên sẽ được lưu trong danh mục đang chọn.</p></div>;
+                      }
+                      return <>
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                          <div><h3 className="text-sm font-semibold text-slate-900">{selectedCategory.name}</h3><p className="mt-1 text-xs text-slate-500">Tệp hồ sơ của nhân sự này.</p></div>
+                          <Button type="button" size="sm" disabled={uploadingProfileFiles} onClick={() => profileFileInput.current?.click()} className="gap-2"><Upload className="h-4 w-4" />{uploadingProfileFiles ? "Đang tải..." : "Tải file lên"}</Button>
+                          <input ref={profileFileInput} type="file" multiple className="hidden" onChange={(event) => void uploadProfileFiles(event.target.files)} />
+                        </div>
+                        {profileFileError && <p className="mt-3 text-xs text-red-600">{profileFileError}</p>}
+                        {uploadingProfileFiles && <p className="mt-3 text-xs text-blue-700">Đang tải tệp lên...</p>}
+                        {selectedCategory.attachments?.length ? <div className="mt-3 divide-y divide-slate-100">
+                          {selectedCategory.attachments.map((file: ContractAttachment) => (
+                            <div key={file.url} className="flex items-center justify-between gap-3 py-3">
+                              <div className="flex min-w-0 items-center gap-2"><FileText className="h-4 w-4 shrink-0 text-blue-600" /><span className="truncate text-xs font-medium text-slate-700">{file.name}</span></div>
+                              <div className="flex shrink-0 items-center gap-1">
+                                <Button type="button" variant="ghost" size="icon" aria-label={`Xem ${file.name}`} title="Xem tệp" onClick={() => void previewContractAttachment(file, "profile-files")}><Eye className="h-4 w-4" /></Button>
+                                <Button type="button" variant="ghost" size="icon" aria-label={`Tải ${file.name}`} title="Tải xuống" onClick={() => void downloadContractAttachment(file, "profile-files")}><Upload className="h-4 w-4 rotate-180" /></Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div> : <div className="flex min-h-56 flex-col items-center justify-center text-center"><Paperclip className="h-7 w-7 text-slate-300" /><p className="mt-3 text-sm text-slate-600">Chưa có tệp trong danh mục này.</p><p className="mt-1 text-xs text-slate-500">Bấm “Tải file lên” để thêm hồ sơ.</p></div>}
+                      </>;
+                    })()}
+                  </section>
+                </div>
               </TabsContent>
             </Tabs>
           </main>

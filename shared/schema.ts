@@ -621,6 +621,18 @@ export const staffContracts = pgTable("staff_contracts", {
   staffCodeUnique: uniqueIndex("staff_contracts_staff_code_uidx").on(table.staffId, table.code),
 }));
 
+export const staffProfileFileCategories = pgTable("staff_profile_file_categories", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  staffId: uuid("staff_id").notNull().references(() => staff.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  attachments: jsonb("attachments").$type<{ name: string; url: string }[]>().notNull().default(sql`'[]'::jsonb`),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  staffIdx: index("staff_profile_file_categories_staff_id_idx").on(table.staffId),
+  staffNameUnique: uniqueIndex("staff_profile_file_categories_staff_name_uidx").on(table.staffId, table.name),
+}));
+
 export const staffRelations = relations(staff, ({ one, many }) => ({
   user: one(users, {
     fields: [staff.userId],
@@ -1306,6 +1318,7 @@ export type DepartmentWithRoles = Department & { roles: Role[] };
 
 export const insertStaffSchema = createInsertSchema(staff).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertStaffContractSchema = createInsertSchema(staffContracts).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertStaffProfileFileCategorySchema = createInsertSchema(staffProfileFileCategories).omit({ id: true, createdAt: true, updatedAt: true });
 export type Staff = typeof staff.$inferSelect;
 export type InsertStaff = z.infer<typeof insertStaffSchema>;
 

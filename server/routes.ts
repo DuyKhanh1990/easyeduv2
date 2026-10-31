@@ -88,6 +88,7 @@ import { registerStaffAdvanceRoutes } from "./routes/staff-advances.routes";
 import { registerNewsFeedRoutes } from "./routes/news-feed.routes";
 import { registerStaffAttendanceRoutes } from "./routes/staff-attendance.routes";
 import { registerStaffContractRoutes } from "./routes/staff-contracts.routes";
+import { registerStaffProfileFileRoutes } from "./routes/staff-profile-files.routes";
 import { registerSalarySheetRoutes } from "./routes/salary-sheets.routes";
 import { registerCustomerGuideRoutes } from "./routes/customer-guide.routes";
 import { registerCommissionRoutes } from "./routes/commission.routes";
@@ -570,6 +571,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerNewsFeedRoutes(app);
   registerStaffAttendanceRoutes(app);
   registerStaffContractRoutes(app);
+  registerStaffProfileFileRoutes(app);
   registerSalarySheetRoutes(app);
   registerCustomerGuideRoutes(app);
   registerCommissionRoutes(app);
