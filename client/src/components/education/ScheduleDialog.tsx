@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { format } from "date-fns";
 import { Calendar, Info, ChevronDown, Wallet, AlertCircle, AlertTriangle, CalendarDays, Plus, UserPlus, Search } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -33,6 +33,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
+import { useAutoInvoicePolicy } from "@/hooks/use-auto-invoice-policy";
 import { getCenterDateString, isPastCenterDate } from "@/lib/center-time-format";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -165,8 +166,36 @@ export function ScheduleDialog({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data: pastSchedulePolicy } = usePastSchedulePolicy(isOpen);
+  const autoInvoicePolicyQuery = useAutoInvoicePolicy(isOpen);
+  const autoInvoicePolicyAppliedRef = useRef(false);
   const canRunPast = pastSchedulePolicy?.canRunPast === true;
   const today = getCenterDateString();
+
+  useEffect(() => {
+    if (!isOpen) {
+      autoInvoicePolicyAppliedRef.current = false;
+      return;
+    }
+    if (
+      !autoInvoicePolicyQuery.data
+      || autoInvoicePolicyQuery.isFetching
+      || autoInvoicePolicyQuery.isError
+      || autoInvoicePolicyAppliedRef.current
+    ) return;
+
+    const defaultEnabled = autoInvoicePolicyQuery.data.defaultEnabled;
+    autoInvoicePolicyAppliedRef.current = true;
+    setGlobalAutoInvoice(defaultEnabled);
+    setStudentConfigs((current) => current.map((config) => ({
+      ...config,
+      autoInvoice: defaultEnabled,
+    })));
+  }, [
+    isOpen,
+    autoInvoicePolicyQuery.data,
+    autoInvoicePolicyQuery.isFetching,
+    autoInvoicePolicyQuery.isError,
+  ]);
 
   useEffect(() => {
     if (isOpen) return;
@@ -477,7 +506,7 @@ export function ScheduleDialog({
     endDate: globalEnd ?? (classData?.endDate ? new Date(classData.endDate) : new Date()),
     totalSessions: globalSessions,
     packageId: globalPackageId || classData?.feePackageId || "",
-    autoInvoice: true,
+    autoInvoice: globalAutoInvoice,
     promotionKeys: [] as string[],
     surchargeKeys: [] as string[],
     vatRate: 0,

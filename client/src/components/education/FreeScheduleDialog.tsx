@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Plus, Search } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAutoInvoicePolicy } from "@/hooks/use-auto-invoice-policy";
 import { FinancePromotionDialog, type FinancePromotionType } from "@/pages/finance/components/FinancePromotionDialog";
 import { calculateInvoiceVatAmount, INVOICE_VAT_RATES } from "@shared/invoice-vat";
 
@@ -71,6 +72,9 @@ export function FreeScheduleDialog({
   });
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const autoInvoicePolicyQuery = useAutoInvoicePolicy(isOpen);
+  const defaultAutoInvoice = autoInvoicePolicyQuery.data?.defaultEnabled ?? false;
+  const autoInvoicePolicyAppliedRef = useRef(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -89,6 +93,31 @@ export function FreeScheduleDialog({
       vatRate: 0,
     })));
   }, [isOpen, students, classData, defaultStart, defaultEnd]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      autoInvoicePolicyAppliedRef.current = false;
+      return;
+    }
+    if (
+      !autoInvoicePolicyQuery.data
+      || autoInvoicePolicyQuery.isFetching
+      || autoInvoicePolicyQuery.isError
+      || autoInvoicePolicyAppliedRef.current
+    ) return;
+
+    autoInvoicePolicyAppliedRef.current = true;
+    setConfigs((current) => current.map((config) => ({
+      ...config,
+      autoInvoice: defaultAutoInvoice,
+    })));
+  }, [
+    isOpen,
+    defaultAutoInvoice,
+    autoInvoicePolicyQuery.data,
+    autoInvoicePolicyQuery.isFetching,
+    autoInvoicePolicyQuery.isError,
+  ]);
 
   const updateConfig = (index: number, patch: Record<string, any>) => {
     setConfigs((current) => current.map((config, configIndex) =>

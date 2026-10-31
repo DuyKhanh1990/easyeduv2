@@ -144,3 +144,4 @@
 - [Staff role assignment permissions](staff-role-assignment-permissions.md) — role-assignment grants are per department/role; unchecked roles stay visible but disabled, while staff create/edit rights remain unchanged.
 - [Chat permission scopes](chat-permission-scopes.md) — staff Chat view is membership-only; View all is center-wide, while create and other actions require a view scope.
 - [Class name presentation](class-notification-labels.md) — notifications use name then code; compact schedule cards use name, with name and code in the hover detail.
+- [Automatic invoice dialog defaults](auto-invoice-default-ui.md) — configured setting is only the initial value; authorized roles may override it per scheduling or renewal dialog.
