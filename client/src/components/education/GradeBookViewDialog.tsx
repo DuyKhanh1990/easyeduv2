@@ -20,6 +20,7 @@ import {
 import { ClipboardList, MessageSquare } from "lucide-react";
 import { StudentNameLink } from "@/components/ui/StudentNameLink";
 import { orderScoreSheetItemsByCategorySnapshot } from "@/lib/score-sheet-order";
+import { RichHtmlImagePreview } from "@/components/ui/rich-html-image-preview";
 
 interface GradeBookViewDialogProps {
   open: boolean;
@@ -352,9 +353,9 @@ export function GradeBookViewDialog({
           </DialogHeader>
           <div className="flex-1 min-h-0 overflow-y-auto space-y-2 py-2 pr-1">
             <p className="text-sm font-medium">{commentViewName}</p>
-            <div
+            <RichHtmlImagePreview
               className="min-h-[120px] rounded-md border bg-muted/40 p-3 text-sm prose prose-sm max-w-none dark:prose-invert [&_img]:max-w-full [&_img]:h-auto"
-              dangerouslySetInnerHTML={{ __html: commentViewText || "<p class='text-muted-foreground'>Không có nhận xét</p>" }}
+              html={commentViewText || "<p class='text-muted-foreground'>Không có nhận xét</p>"}
             />
           </div>
           <DialogFooter className="shrink-0">

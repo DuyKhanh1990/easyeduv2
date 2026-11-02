@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { TeacherReview, ReviewCriteriaGroup } from "@/types/my-calendar";
 import { MessageSquare, Loader2, Star, ChevronDown, ChevronUp } from "lucide-react";
 import { useLanguage } from "@/hooks/use-language";
+import { RichHtmlImagePreview } from "@/components/ui/rich-html-image-preview";
 
 const CRITERIA_COLORS = [
   { bg: "bg-orange-50 dark:bg-orange-950/30", border: "border-orange-200 dark:border-orange-800", icon: "bg-orange-100 dark:bg-orange-900", text: "text-orange-600 dark:text-orange-400" },
@@ -116,9 +117,9 @@ function ReviewItemRow({
     <div className="rounded-lg bg-white/70 dark:bg-black/20 px-3 py-2.5 shadow-sm">
       <p className={cn("text-sm font-semibold", color.text)}>{item.subCriteriaName || t("mySpace.calendar.criteria")}</p>
       {item.comment ? (
-        <div
+        <RichHtmlImagePreview
           className="mt-1 text-sm text-foreground leading-relaxed review-html-content"
-          dangerouslySetInnerHTML={{ __html: item.comment }}
+          html={item.comment}
         />
       ) : (
         <p className="mt-1 text-xs text-muted-foreground italic">{t("mySpace.calendar.noFeedback")}</p>

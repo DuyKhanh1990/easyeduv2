@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { RichHtmlImagePreview } from "@/components/ui/rich-html-image-preview";
 import { SessionReview, useStudentReviewsTab } from "../hooks/useStudentReviewsTab";
 
 function StarDisplay({ rating }: { rating: number | null | undefined }) {
@@ -54,9 +55,9 @@ function ReviewItemRow({ item }: { item: SessionReview["reviewData"][number] }) 
     <div className="rounded-md border bg-background px-3 py-2.5">
       <p className="text-xs font-semibold leading-relaxed text-foreground">{item.criteriaName}</p>
       {item.comment ? (
-        <div
+        <RichHtmlImagePreview
           className="mt-1 text-xs text-muted-foreground leading-relaxed review-html-content"
-          dangerouslySetInnerHTML={{ __html: item.comment }}
+          html={item.comment}
         />
       ) : null}
     </div>
