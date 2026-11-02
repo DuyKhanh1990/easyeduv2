@@ -329,7 +329,7 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
                 value={historyDateRange}
                 onChange={setHistoryDateRange}
                 placeholder="Chọn thời gian"
-                className="h-9 w-[220px] shrink-0 text-xs"
+                className="h-9 min-w-[260px] flex-1 text-xs"
               />
               <Button
                 variant="outline"
