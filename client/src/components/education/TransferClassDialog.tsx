@@ -1398,19 +1398,12 @@ export function TransferClassDialog({
                       )}
                     </div>
                     {isInvoicePricingSelected && hasCurrentInvoicePricing && (
-                      <div className="flex justify-between gap-3">
-                        <span className="text-muted-foreground">
-                          Tiền theo hóa đơn (đã gồm phụ thu):
-                        </span>
-                        <span className="font-medium">
-                          {formatCurrency(currentInvoicePricing.invoiceSubtotal)}
-                        </span>
+                      <div className="text-right text-[11px] text-muted-foreground">
+                        Hóa đơn học phí: {formatCurrency(currentInvoicePricing.invoiceSubtotal)}
                       </div>
                     )}
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">
-                        {isInvoicePricingSelected ? "Học phí chưa gồm phụ thu:" : "Tổng học phí:"}
-                      </span>
+                      <span className="text-muted-foreground">Học phí:</span>
                       <span className="font-medium">
                         {currentBaseTotal > 0 ? formatCurrency(currentBaseTotal) : "—"}
                       </span>
@@ -1441,36 +1434,36 @@ export function TransferClassDialog({
                         </button>
                       )}
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">
-                        {isInvoicePricingSelected ? "Sau giảm trừ (chưa gồm phụ thu):" : "Sau giảm trừ:"}
-                      </span>
-                      <span className="font-medium">
-                        {currentNetTotal > 0 ? formatCurrency(currentNetTotal) : "—"}
-                      </span>
-                    </div>
-                    {currentSurchargeTotal > 0 && (
+                    {isInvoicePricingSelected && hasCurrentInvoicePricing && (
                       <div className="flex items-center justify-between gap-2 rounded-md border border-amber-300/70 bg-amber-50/60 px-2 py-1.5 dark:bg-amber-950/20">
                         <div className="flex min-w-0 items-center gap-2">
                           <label
                             htmlFor="exclude-source-surcharge"
                             className="cursor-pointer whitespace-nowrap text-xs font-medium"
                           >
-                            Không tính phụ phí:
+                            Tính phụ thu:
                           </label>
                           <Switch
                             id="exclude-source-surcharge"
-                            checked={excludeSourceSurcharge}
-                            onCheckedChange={setExcludeSourceSurcharge}
-                            aria-label="Không tính phụ thu vào giá trị chuyển lớp"
+                            checked={!excludeSourceSurcharge}
+                            onCheckedChange={(checked) => setExcludeSourceSurcharge(!checked)}
+                            aria-label="Tính phụ thu vào giá trị chuyển lớp"
                             data-testid="switch-exclude-source-surcharge"
                           />
                         </div>
                         <span className="shrink-0 whitespace-nowrap text-xs font-semibold">
-                          {formatCurrency(currentSurchargeTotal)}
+                          {formatCurrency(excludeSourceSurcharge ? 0 : currentSurchargeTotal)}
                         </span>
                       </div>
                     )}
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Tiền sau giảm trừ/phụ thu:</span>
+                      <span className="font-medium">
+                        {formatCurrency(
+                          currentNetTotal + (excludeSourceSurcharge ? 0 : currentSurchargeTotal),
+                        )}
+                      </span>
+                    </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Số buổi đăng ký thực tế:</span>
                       <div className="flex items-center gap-2">
@@ -1491,7 +1484,7 @@ export function TransferClassDialog({
                       </div>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Đơn giá buổi đầu tiên:</span>
+                      <span className="text-muted-foreground">Đơn giá/buổi:</span>
                       <span className="font-medium">
                         {currentSessionPrice > 0 ? formatCurrency(currentSessionPrice) + "/buổi" : "—"}
                       </span>
