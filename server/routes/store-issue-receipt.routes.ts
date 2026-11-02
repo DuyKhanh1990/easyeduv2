@@ -160,7 +160,7 @@ const issueItemSchema = z.object({
 const issueCreateSchema = z.object({
   code: z.string().min(1, "Mã phiếu không được để trống"),
   name: z.string().min(1, "Tên phiếu không được để trống"),
-  locationId: z.string().uuid().optional().nullable(),
+  locationId: z.string({ required_error: "Vui lòng chọn cơ sở" }).uuid("Vui lòng chọn cơ sở"),
   warehouseId: z.string().uuid().optional().nullable(),
   date: z.string().min(1, "Ngày xuất không được để trống"),
   recipientName: z.string().optional().nullable(),
@@ -204,6 +204,17 @@ const issueCreateSchema = z.object({
   sessionId: z.string().optional().nullable(),
   items: z.array(issueItemSchema).default([]),
 });
+
+async function validateIssueWarehouseLocation(locationId: string, warehouseId?: string | null): Promise<string | null> {
+  if (!warehouseId) return null;
+  const result = await db.execute(sql`
+    SELECT location_id FROM store_warehouses WHERE id = ${warehouseId} LIMIT 1
+  `);
+  const warehouse = result.rows[0] as { location_id: string | null } | undefined;
+  if (!warehouse) return "Không tìm thấy kho đã chọn";
+  if (warehouse.location_id !== locationId) return "Cơ sở của phiếu phải trùng với cơ sở được gán cho kho";
+  return null;
+}
 
 async function getStudentStarBalance(studentId: string): Promise<{ earned: number; spent: number; available: number }> {
   const earnedRow = await db.execute(sql`
@@ -570,6 +581,13 @@ export async function createIssueReceiptsForInvoice(params: {
   const receiptIds: string[] = [];
 
   for (const [warehouseId, warehouseItems] of byWarehouse) {
+    const warehouseResult = await db.execute(sql`
+      SELECT location_id FROM store_warehouses WHERE id = ${warehouseId} LIMIT 1
+    `);
+    const warehouseLocationId = (warehouseResult.rows[0] as { location_id: string | null } | undefined)?.location_id;
+    if (!warehouseLocationId) {
+      throw new Error(`Không thể tạo phiếu xuất: kho ${warehouseId} chưa được gán cơ sở.`);
+    }
     const errors = await validateAndDecreaseInventory(
       warehouseId,
       warehouseItems.map(i => ({ productId: i.storeProductId, quantity: i.quantity, productName: i.productName })),
@@ -595,7 +613,7 @@ export async function createIssueReceiptsForInvoice(params: {
       ) VALUES (
         ${code},
         ${"Xuất kho " + params.invoiceCode},
-        ${params.locationId ?? null},
+        ${warehouseLocationId},
         ${warehouseId},
         CURRENT_DATE,
         ${params.invoiceId},
@@ -1139,6 +1157,8 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
       const parsed = issueCreateSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0].message });
       const { items, sessionId, ...receiptData } = parsed.data;
+      const locationError = await validateIssueWarehouseLocation(receiptData.locationId, receiptData.warehouseId);
+      if (locationError) return res.status(400).json({ message: locationError });
       if (receiptData.status === "completed" && !receiptData.warehouseId) {
         return res.status(400).json({ message: "Phiếu xuất đã hoàn tất phải chọn kho" });
       }
@@ -1327,6 +1347,12 @@ export async function registerStoreIssueReceiptRoutes(app: Express) {
       `);
       const existing = existingRow.rows[0] as any;
       if (!existing) return res.status(404).json({ message: "Không tìm thấy phiếu" });
+
+      const locationError = await validateIssueWarehouseLocation(
+        receiptData.locationId,
+        receiptData.warehouseId ?? existing.warehouse_id,
+      );
+      if (locationError) return res.status(400).json({ message: locationError });
 
       if (existing.status === "cancelled") {
         return res.status(400).json({ message: "Không thể sửa phiếu đã bị hủy" });

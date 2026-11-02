@@ -978,6 +978,10 @@ export function StoreIssueReceiptDialog({ initialData, onClose, onSave, isSaving
   }
 
   function handleSave(status: "draft" | "completed") {
+    if (!form.locationId) {
+      toast({ variant: "destructive", title: "Vui lòng chọn Cơ sở" });
+      return;
+    }
     if (!form.recipientName.trim()) {
       toast({ variant: "destructive", title: "Vui lòng chọn Người nhận hàng trước khi lưu" });
       return;

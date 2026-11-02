@@ -580,7 +580,13 @@ export function StoreTransferDialog({ initialData, onClose, onSave, isSaving }: 
               {isReadOnly ? "Đóng" : "Huỷ"}
             </Button>
             {!isReadOnly && (() => {
-              const canSubmit = !isSaving && !!form.fromWarehouseId && !!form.toWarehouseId && form.fromWarehouseId !== form.toWarehouseId && form.items.length > 0;
+              const canSubmit = !isSaving
+                && !!form.fromLocationId
+                && !!form.fromWarehouseId
+                && !!form.toLocationId
+                && !!form.toWarehouseId
+                && form.fromWarehouseId !== form.toWarehouseId
+                && form.items.length > 0;
               return (
                 <>
                   <Button

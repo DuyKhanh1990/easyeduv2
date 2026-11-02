@@ -262,15 +262,36 @@ const transferItemSchema = z.object({
 const transferCreateSchema = z.object({
   code: z.string().min(1, "Mã phiếu không được để trống"),
   date: z.string().min(1, "Ngày chuyển không được để trống"),
-  fromLocationId: z.string().uuid().optional().nullable(),
+  fromLocationId: z.string({ required_error: "Vui lòng chọn cơ sở nguồn" }).uuid("Vui lòng chọn cơ sở nguồn"),
   fromWarehouseId: z.string().uuid("Kho nguồn không hợp lệ"),
-  toLocationId: z.string().uuid().optional().nullable(),
+  toLocationId: z.string({ required_error: "Vui lòng chọn cơ sở đích" }).uuid("Vui lòng chọn cơ sở đích"),
   toWarehouseId: z.string().uuid("Kho đích không hợp lệ"),
   note: z.string().optional().nullable(),
   hasReceiptIncome: z.boolean().default(false),
   hasReceiptExpense: z.boolean().default(false),
   items: z.array(transferItemSchema).min(1, "Phiếu phải có ít nhất 1 sản phẩm"),
 });
+
+async function validateTransferWarehouseLocations(data: {
+  fromLocationId: string | null;
+  fromWarehouseId: string;
+  toLocationId: string | null;
+  toWarehouseId: string;
+}): Promise<string | null> {
+  if (!data.fromLocationId) return "Vui lòng chọn cơ sở nguồn";
+  if (!data.toLocationId) return "Vui lòng chọn cơ sở đích";
+  const [fromResult, toResult] = await Promise.all([
+    db.execute(sql`SELECT location_id FROM store_warehouses WHERE id = ${data.fromWarehouseId} LIMIT 1`),
+    db.execute(sql`SELECT location_id FROM store_warehouses WHERE id = ${data.toWarehouseId} LIMIT 1`),
+  ]);
+  const fromWarehouse = fromResult.rows[0] as { location_id: string | null } | undefined;
+  const toWarehouse = toResult.rows[0] as { location_id: string | null } | undefined;
+  if (!fromWarehouse) return "Không tìm thấy kho nguồn";
+  if (!toWarehouse) return "Không tìm thấy kho đích";
+  if (fromWarehouse.location_id !== data.fromLocationId) return "Cơ sở nguồn không khớp với cơ sở của kho nguồn";
+  if (toWarehouse.location_id !== data.toLocationId) return "Cơ sở đích không khớp với cơ sở của kho đích";
+  return null;
+}
 
 export async function registerStoreTransferRoutes(app: Express) {
   await ensureTransferTables();
@@ -580,6 +601,9 @@ export async function registerStoreTransferRoutes(app: Express) {
     if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0].message });
     const data = parsed.data;
 
+    const locationError = await validateTransferWarehouseLocations(data);
+    if (locationError) return res.status(400).json({ message: locationError });
+
     if (data.fromWarehouseId === data.toWarehouseId) {
       return res.status(400).json({ message: "Kho nguồn và kho đích không được trùng nhau" });
     }
@@ -623,6 +647,9 @@ export async function registerStoreTransferRoutes(app: Express) {
     const parsed = transferCreateSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0].message });
     const data = parsed.data;
+
+    const locationError = await validateTransferWarehouseLocations(data);
+    if (locationError) return res.status(400).json({ message: locationError });
 
     if (data.fromWarehouseId === data.toWarehouseId) {
       return res.status(400).json({ message: "Kho nguồn và kho đích không được trùng nhau" });
@@ -744,6 +771,13 @@ export async function registerStoreTransferRoutes(app: Express) {
       if (transfer.status !== "draft") {
         return res.status(400).json({ message: "Chỉ có thể xác nhận phiếu ở trạng thái Nháp" });
       }
+      const locationError = await validateTransferWarehouseLocations({
+        fromLocationId: transfer.from_location_id,
+        fromWarehouseId: transfer.from_warehouse_id,
+        toLocationId: transfer.to_location_id,
+        toWarehouseId: transfer.to_warehouse_id,
+      });
+      if (locationError) return res.status(400).json({ message: locationError });
 
       const itemRows = await db.execute(sql`SELECT * FROM store_transfer_items WHERE transfer_id = ${req.params.id}`);
       const items = itemRows.rows as any[];
@@ -836,6 +870,13 @@ export async function registerStoreTransferRoutes(app: Express) {
       if (transfer.status !== "transferring") {
         return res.status(400).json({ message: "Phiếu phải ở trạng thái Đang chuyển mới có thể xác nhận hoàn thành" });
       }
+      const locationError = await validateTransferWarehouseLocations({
+        fromLocationId: transfer.from_location_id,
+        fromWarehouseId: transfer.from_warehouse_id,
+        toLocationId: transfer.to_location_id,
+        toWarehouseId: transfer.to_warehouse_id,
+      });
+      if (locationError) return res.status(400).json({ message: locationError });
 
       const itemRows = await db.execute(sql`SELECT * FROM store_transfer_items WHERE transfer_id = ${req.params.id}`);
       const items = itemRows.rows as any[];
@@ -898,6 +939,13 @@ export async function registerStoreTransferRoutes(app: Express) {
       if (transfer.status !== "draft") {
         return res.status(400).json({ message: "Chỉ có thể chuyển kho từ phiếu ở trạng thái Nháp" });
       }
+      const locationError = await validateTransferWarehouseLocations({
+        fromLocationId: transfer.from_location_id,
+        fromWarehouseId: transfer.from_warehouse_id,
+        toLocationId: transfer.to_location_id,
+        toWarehouseId: transfer.to_warehouse_id,
+      });
+      if (locationError) return res.status(400).json({ message: locationError });
 
       const itemRows = await db.execute(sql`SELECT * FROM store_transfer_items WHERE transfer_id = ${req.params.id}`);
       const items = itemRows.rows as any[];

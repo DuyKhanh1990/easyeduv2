@@ -128,7 +128,7 @@ const receiptItemSchema = z.object({
 const receiptCreateSchema = z.object({
   code: z.string().min(1, "Mã phiếu không được để trống"),
   name: z.string().min(1, "Tên phiếu không được để trống"),
-  locationId: z.string().uuid().optional().nullable(),
+  locationId: z.string({ required_error: "Vui lòng chọn cơ sở" }).uuid("Vui lòng chọn cơ sở"),
   warehouseId: z.string().uuid().optional().nullable(),
   date: z.string().min(1, "Ngày tạo không được để trống"),
   supplierId: z.string().uuid().optional().nullable(),
@@ -144,6 +144,18 @@ const receiptCreateSchema = z.object({
   totalAmount: z.number().min(0).default(0),
   items: z.array(receiptItemSchema).default([]),
 });
+
+async function validateReceiptWarehouseLocation(locationId: string, warehouseId?: string | null): Promise<string | null> {
+  if (!warehouseId) return null;
+  const [warehouse] = await db
+    .select({ locationId: storeWarehouses.locationId })
+    .from(storeWarehouses)
+    .where(eq(storeWarehouses.id, warehouseId))
+    .limit(1);
+  if (!warehouse) return "Không tìm thấy kho đã chọn";
+  if (warehouse.locationId !== locationId) return "Cơ sở của phiếu phải trùng với cơ sở được gán cho kho";
+  return null;
+}
 
 function buildAutoInvoiceDescription(receiptCode: string, receiptDate: string, itemCount: number, totalQty: number): string {
   const num = parseInt(receiptCode.replace("PNK-", "")) || 0;
@@ -675,6 +687,8 @@ export async function registerStoreReceiptRoutes(app: Express) {
       const parsed = receiptCreateSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: parsed.error.errors[0].message });
       const { items, ...receiptData } = parsed.data;
+      const locationError = await validateReceiptWarehouseLocation(receiptData.locationId, receiptData.warehouseId);
+      if (locationError) return res.status(400).json({ message: locationError });
       if (receiptData.status === "completed" && !receiptData.warehouseId) {
         return res.status(400).json({ message: "Phiếu nhập đã hoàn tất phải chọn kho" });
       }
@@ -763,6 +777,11 @@ export async function registerStoreReceiptRoutes(app: Express) {
 
       const [existing] = await db.select().from(storeReceipts).where(eq(storeReceipts.id, req.params.id));
       if (!existing) return res.status(404).json({ message: "Không tìm thấy phiếu" });
+      const locationError = await validateReceiptWarehouseLocation(
+        receiptData.locationId,
+        receiptData.warehouseId ?? existing.warehouseId,
+      );
+      if (locationError) return res.status(400).json({ message: locationError });
 
       if ((existing.status as string) === "cancelled") {
         return res.status(400).json({ message: "Không thể sửa phiếu đã bị hủy" });

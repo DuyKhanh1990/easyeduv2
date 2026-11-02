@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { X, Search, Trash2, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getInvoiceBusinessDateKey } from "@/types/invoice-types";
+import { useToast } from "@/hooks/use-toast";
 
 type Location = { id: string; name: string };
 type Warehouse = { id: string; name: string; locationId: string | null };
@@ -89,6 +90,7 @@ interface Props {
 
 export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: Props) {
   const isEdit = !!initialData?.id;
+  const { toast } = useToast();
 
   const [form, setForm] = useState<ReceiptFormData>({
     code: initialData?.code ?? "",
@@ -322,6 +324,10 @@ export function StoreReceiptDialog({ initialData, onClose, onSave, isSaving }: P
   }
 
   function handleSave(status: "draft" | "completed") {
+    if (!form.locationId) {
+      toast({ variant: "destructive", title: "Vui lòng chọn Cơ sở" });
+      return;
+    }
     onSave({ ...form, discount: discountAmt, discountType: "VND", surcharge: surchargeAmt, surchargeType: "VND", status, totalAmount: total } as any, status);
   }
 
