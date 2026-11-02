@@ -532,7 +532,7 @@ export function StoreReceiptTab() {
           <tbody>
             {!isLoading && (
               <tr className="bg-slate-50 font-semibold text-slate-700 border-b border-border">
-                <td colSpan={6} className="px-4 py-2.5">Tổng</td>
+                <td colSpan={6} className="px-4 py-2.5">Tổng thực nhập</td>
                 <td className="px-4 py-2.5 text-center tabular-nums">{summaryTotals.itemCount.toLocaleString("vi-VN")}</td>
                 <td className="px-4 py-2.5 text-center tabular-nums">{summaryTotals.quantity.toLocaleString("vi-VN")}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">{fmtVND(summaryTotals.amount)}</td>

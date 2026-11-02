@@ -582,12 +582,12 @@ export async function registerStoreReceiptRoutes(app: Express) {
           WITH matching AS (${filteredReceipts}),
           receipt_totals AS (
             SELECT COUNT(*)::int AS total,
-              COALESCE(SUM(total_amount), 0)::numeric AS total_amount
+              COALESCE(SUM(total_amount) FILTER (WHERE status = 'completed'), 0)::numeric AS total_amount
             FROM matching
           ),
           item_totals AS (
-            SELECT COUNT(i.id)::int AS item_count,
-              COALESCE(SUM(i.quantity), 0)::int AS total_quantity
+            SELECT COUNT(i.id) FILTER (WHERE m.status = 'completed')::int AS item_count,
+              COALESCE(SUM(i.quantity) FILTER (WHERE m.status = 'completed'), 0)::int AS total_quantity
             FROM matching m
             LEFT JOIN store_receipt_items i ON i.receipt_id = m.id
           )
