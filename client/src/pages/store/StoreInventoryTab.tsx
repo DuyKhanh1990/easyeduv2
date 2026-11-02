@@ -291,8 +291,8 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
           </p>
 
           <div className="mb-3 shrink-0 overflow-x-auto">
-            <div className="flex min-w-[940px] items-center gap-2">
-              <div className="relative min-w-[250px] flex-1">
+            <div className="flex min-w-[950px] items-center gap-2">
+              <div className="relative w-[290px] shrink-0">
                 <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={searchInput}
@@ -304,7 +304,7 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
                 />
               </div>
               <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="h-9 w-[160px] text-xs" aria-label="Lọc theo loại biến động">
+                <SelectTrigger className="h-9 w-[150px] shrink-0 text-xs" aria-label="Lọc theo loại biến động">
                   <SelectValue placeholder="Tất cả loại" />
                 </SelectTrigger>
                 <SelectContent>
@@ -315,7 +315,7 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
                 </SelectContent>
               </Select>
               <Select value={creatorFilter} onValueChange={setCreatorFilter}>
-                <SelectTrigger className="h-9 w-[190px] text-xs" aria-label="Lọc theo người tạo">
+                <SelectTrigger className="h-9 w-[170px] shrink-0 text-xs" aria-label="Lọc theo người tạo">
                   <SelectValue placeholder="Tất cả người tạo" />
                 </SelectTrigger>
                 <SelectContent>
@@ -329,7 +329,7 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
                 value={historyDateRange}
                 onChange={setHistoryDateRange}
                 placeholder="Chọn thời gian"
-                className="h-9 w-[220px] text-xs"
+                className="h-9 w-[220px] shrink-0 text-xs"
               />
               <Button
                 variant="outline"
