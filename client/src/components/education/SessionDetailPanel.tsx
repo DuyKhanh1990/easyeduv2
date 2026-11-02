@@ -826,7 +826,7 @@ export function SessionDetailPanel({
                 variant={
                   currentSessionStudents?.some(
                     (s) =>
-                      s.attendanceStatus === "makeup_wait" &&
+                      (s.attendanceStatus === "makeup_wait" || s.attendanceStatus === "paused") &&
                       selectedStudentIds.includes(s.studentId)
                   )
                     ? "default"
@@ -836,7 +836,7 @@ export function SessionDetailPanel({
                 className={`h-7 px-2 text-[10px] ${
                   currentSessionStudents?.some(
                     (s) =>
-                      s.attendanceStatus === "makeup_wait" &&
+                      (s.attendanceStatus === "makeup_wait" || s.attendanceStatus === "paused") &&
                       selectedStudentIds.includes(s.studentId)
                   )
                     ? "bg-blue-600 hover:bg-blue-700 border-blue-600 text-white"
@@ -847,7 +847,7 @@ export function SessionDetailPanel({
                     currentSessionStudents
                       ?.filter(
                         (s) =>
-                          s.attendanceStatus === "makeup_wait" &&
+                          (s.attendanceStatus === "makeup_wait" || s.attendanceStatus === "paused") &&
                           selectedStudentIds.includes(s.studentId)
                       )
                       .map((s) => {
@@ -880,7 +880,7 @@ export function SessionDetailPanel({
                 disabled={
                   !currentSessionStudents?.some(
                     (s) =>
-                      s.attendanceStatus === "makeup_wait" &&
+                      (s.attendanceStatus === "makeup_wait" || s.attendanceStatus === "paused") &&
                       selectedStudentIds.includes(s.studentId)
                   )
                 }

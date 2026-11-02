@@ -1820,17 +1820,33 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
       let origPackageId: string | null = null;
       let origPackageType: string | null = null;
       let origSessionPrice: string | null = null;
-      if (originalStudentSessionId) {
+      if (!originalStudentSessionId) {
+        throw new Error("Không tìm thấy buổi học gốc để xác thực xếp bù");
+      }
+      {
         const [origSS] = await tx.select({
+          id: studentSessions.id,
+          studentId: studentSessions.studentId,
+          classId: studentSessions.classId,
+          classSessionId: studentSessions.classSessionId,
+          attendanceStatus: studentSessions.attendanceStatus,
           packageId: studentSessions.packageId,
           packageType: studentSessions.packageType,
           sessionPrice: studentSessions.sessionPrice,
-        }).from(studentSessions).where(eq(studentSessions.id, originalStudentSessionId));
-        if (origSS) {
-          origPackageId = origSS.packageId ?? null;
-          origPackageType = origSS.packageType ?? null;
-          origSessionPrice = origSS.sessionPrice ?? null;
+        }).from(studentSessions).where(and(
+          eq(studentSessions.id, originalStudentSessionId),
+          eq(studentSessions.studentId, studentId),
+          eq(studentSessions.classId, sourceClassId),
+        ));
+        if (!origSS || !["makeup_wait", "paused"].includes(origSS.attendanceStatus ?? "")) {
+          throw new Error("Chỉ buổi có trạng thái Nghỉ chờ bù hoặc Bảo lưu mới được xếp bù");
         }
+        if (originalClassSessionId && origSS.classSessionId !== originalClassSessionId) {
+          throw new Error("Buổi học gốc không khớp dữ liệu xếp bù");
+        }
+        origPackageId = origSS.packageId ?? null;
+        origPackageType = origSS.packageType ?? null;
+        origSessionPrice = origSS.sessionPrice ?? null;
       }
 
       // Lookup startTime from shiftTemplate if available

@@ -147,3 +147,4 @@
 - [Automatic invoice dialog defaults](auto-invoice-default-ui.md) — configured setting is only the initial value; authorized roles may override it per scheduling or renewal dialog.
 - [Staff list sort order](staff-list-sort-order.md) — active staff stay first; within each status group, recently edited profiles appear first.
 - [Staff profile file categories](staff-profile-file-categories.md) — reuse category names across staff, but keep each employee’s uploaded files separate.
+- [Reserved attendance makeup eligibility](reserved-attendance-makeup.md) — Bảo lưu attendance on an individual lesson can be scheduled for makeup like Nghỉ chờ bù; preserve the existing makeup flow.

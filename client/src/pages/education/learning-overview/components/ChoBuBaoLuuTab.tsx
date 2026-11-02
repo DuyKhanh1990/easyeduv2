@@ -167,7 +167,9 @@ export function ChoBuBaoLuuTab({
   const selectedRowsList = useMemo(() => Array.from(selectedRows.values()), [selectedRows]);
   const selectedIds = useMemo(() => new Set(selectedRows.keys()), [selectedRows]);
   const selectedMakeupRows = useMemo(
-    () => selectedRowsList.filter((row) => row.attendanceStatus === "makeup_wait"),
+    () => selectedRowsList.filter(
+      (row) => row.attendanceStatus === "makeup_wait" || row.attendanceStatus === "paused",
+    ),
     [selectedRowsList],
   );
   const selectedSourceClassIds = useMemo(
@@ -190,7 +192,7 @@ export function ChoBuBaoLuuTab({
       staleTime: 0,
     })),
   });
-  const makeupActiveStudents = makeupActiveStudentQueries.flatMap((query) => query.data ?? []);
+  const makeupActiveStudents: any[] = makeupActiveStudentQueries.flatMap((query) => query.data ?? []);
 
   const selectedStudentsForMakeup = useMemo(
     () => selectedMakeupRows.map((row) => {
@@ -253,15 +255,15 @@ export function ChoBuBaoLuuTab({
     if (selectedMakeupRows.length === 0) {
       toast({
         title: "Không thể xếp bù",
-        description: "Chỉ học viên có trạng thái Nghỉ chờ bù mới được xếp bù.",
+        description: "Chỉ học viên có trạng thái Nghỉ chờ bù hoặc Bảo lưu mới được xếp bù.",
         variant: "destructive",
       });
       return;
     }
     if (selectedMakeupRows.length !== selectedRowsList.length) {
       toast({
-        title: "Bỏ chọn học viên Bảo lưu",
-        description: "Chỉ các dòng Nghỉ chờ bù được đưa vào dialog xếp bù.",
+        title: "Bỏ chọn trạng thái không hỗ trợ",
+        description: "Chỉ các dòng Nghỉ chờ bù hoặc Bảo lưu được đưa vào dialog xếp bù.",
         variant: "destructive",
       });
       return;
