@@ -139,7 +139,13 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
   const cancelImportQty = Number(summary?.cancel_import_qty ?? 0);
   const adjustmentInQty = Number(summary?.adjustment_in_qty ?? 0);
   const adjustmentOutQty = Number(summary?.adjustment_out_qty ?? 0);
+  const adjustmentInImportQty = Number(summary?.adjustment_in_import_qty ?? 0);
+  const adjustmentInExportQty = Number(summary?.adjustment_in_export_qty ?? 0);
+  const adjustmentOutImportQty = Number(summary?.adjustment_out_import_qty ?? 0);
+  const adjustmentOutExportQty = Number(summary?.adjustment_out_export_qty ?? 0);
   const transferNet = transferInQty + transferOutQty;
+  const totalImportQty = importQty + transferInQty + cancelExportQty + adjustmentInQty;
+  const totalExportQty = exportQty + transferOutQty + cancelImportQty + adjustmentOutQty;
 
   useEffect(() => {
     if (data && page > totalPages) setPage(totalPages);
@@ -178,11 +184,12 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
         {/* Stat cards */}
         <div className="px-6 pt-3 pb-2 shrink-0 overflow-x-auto">
           <div className="grid grid-cols-10 min-w-[900px] gap-1">
-          <StatCard label="NHẬP" value={formatSigned(importQty)} colorClass="bg-emerald-50 text-emerald-700 border-emerald-100" />
-          <StatCard label="XUẤT" value={formatSigned(exportQty)} colorClass="bg-gray-50 text-gray-700 border-gray-100" />
+          <StatCard label="NHẬP TỔNG" title="Nhập kho + chuyển vào + hủy xuất + mọi điều chỉnh làm tăng tồn" value={formatSigned(totalImportQty)} colorClass="bg-emerald-50 text-emerald-700 border-emerald-100" />
+          <StatCard label="XUẤT TỔNG" title="Xuất kho + chuyển ra + hủy nhập + mọi điều chỉnh làm giảm tồn" value={formatSigned(totalExportQty)} colorClass="bg-gray-50 text-gray-700 border-gray-100" />
           <StatCard
             label="CHUYỂN KHO"
             value={formatSigned(transferNet)}
+            title="Chi tiết chuyển vào/ra; đã tính trong Nhập tổng và Xuất tổng"
             detail={
               <span className="flex w-full justify-center gap-2 whitespace-nowrap text-[10px] font-medium">
                 <span>Vào <span className="tabular-nums">{formatSigned(transferInQty)}</span></span>
@@ -191,10 +198,32 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
             }
             colorClass="bg-indigo-50 text-indigo-700 border-indigo-100"
           />
-          <StatCard label="HOÀN HỦY" title="Hủy phiếu xuất — hoàn hàng vào kho" value={formatSigned(cancelExportQty)} colorClass="bg-cyan-50 text-cyan-700 border-cyan-100" />
-          <StatCard label="HỦY NHẬP KHO" title="Hủy phiếu nhập — trừ hàng khỏi kho" value={formatSigned(cancelImportQty)} colorClass="bg-orange-50 text-orange-700 border-orange-100" />
-          <StatCard label="ĐC TĂNG" title="Điều chỉnh tăng" value={formatSigned(adjustmentInQty)} colorClass="bg-teal-50 text-teal-700 border-teal-100" />
-          <StatCard label="ĐC GIẢM" title="Điều chỉnh giảm" value={formatSigned(adjustmentOutQty)} colorClass="bg-rose-50 text-rose-700 border-rose-100" />
+          <StatCard label="HOÀN HỦY" title="Hủy phiếu xuất — hoàn hàng vào kho; đã tính trong Nhập tổng" value={formatSigned(cancelExportQty)} colorClass="bg-cyan-50 text-cyan-700 border-cyan-100" />
+          <StatCard label="HỦY NHẬP KHO" title="Hủy phiếu nhập — trừ hàng khỏi kho; đã tính trong Xuất tổng" value={formatSigned(cancelImportQty)} colorClass="bg-orange-50 text-orange-700 border-orange-100" />
+          <StatCard
+            label="ĐC TĂNG"
+            title="Điều chỉnh làm tăng tồn từ phiếu nhập và phiếu xuất; đã tính trong Nhập tổng"
+            value={formatSigned(adjustmentInQty)}
+            detail={
+              <span className="flex flex-col items-center text-[9px] leading-tight font-medium whitespace-nowrap">
+                <span>Nhập: <span className="tabular-nums">{formatSigned(adjustmentInImportQty)}</span></span>
+                <span>Xuất: <span className="tabular-nums">{formatSigned(adjustmentInExportQty)}</span></span>
+              </span>
+            }
+            colorClass="bg-teal-50 text-teal-700 border-teal-100"
+          />
+          <StatCard
+            label="ĐC GIẢM"
+            title="Điều chỉnh làm giảm tồn từ phiếu nhập và phiếu xuất; đã tính trong Xuất tổng"
+            value={formatSigned(adjustmentOutQty)}
+            detail={
+              <span className="flex flex-col items-center text-[9px] leading-tight font-medium whitespace-nowrap">
+                <span>Nhập: <span className="tabular-nums">{formatSigned(adjustmentOutImportQty)}</span></span>
+                <span>Xuất: <span className="tabular-nums">{formatSigned(adjustmentOutExportQty)}</span></span>
+              </span>
+            }
+            colorClass="bg-rose-50 text-rose-700 border-rose-100"
+          />
           <StatCard label="TỒN KHO" value={row.actualStock} colorClass="bg-blue-50 text-blue-700 border-blue-100" />
           <StatCard label="GIỮ CHỖ" value={row.reservedQty} colorClass="bg-amber-50 text-amber-600 border-amber-100" />
           <StatCard label="KHẢ DỤNG" value={row.availableQty} colorClass="bg-indigo-50 text-indigo-700 border-indigo-100" />
