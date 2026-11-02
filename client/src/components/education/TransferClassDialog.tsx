@@ -1435,25 +1435,32 @@ export function TransferClassDialog({
                       )}
                     </div>
                     {isInvoicePricingSelected && hasCurrentInvoicePricing && (
-                      <div className="flex items-center justify-between gap-2 rounded-md border border-amber-300/70 bg-amber-50/60 px-2 py-1.5 dark:bg-amber-950/20">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <label
-                            htmlFor="exclude-source-surcharge"
-                            className="cursor-pointer whitespace-nowrap text-xs font-medium"
-                          >
-                            Tính phụ thu:
-                          </label>
-                          <Switch
-                            id="exclude-source-surcharge"
-                            checked={!excludeSourceSurcharge}
-                            onCheckedChange={(checked) => setExcludeSourceSurcharge(!checked)}
-                            aria-label="Tính phụ thu vào giá trị chuyển lớp"
-                            data-testid="switch-exclude-source-surcharge"
-                          />
+                      <div>
+                        <div className="flex items-center justify-between gap-2 rounded-md border border-amber-300/70 bg-amber-50/60 px-2 py-1.5 dark:bg-amber-950/20">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <label
+                              htmlFor="exclude-source-surcharge"
+                              className="cursor-pointer whitespace-nowrap text-xs font-medium"
+                            >
+                              Tính phụ thu:
+                            </label>
+                            <Switch
+                              id="exclude-source-surcharge"
+                              checked={!excludeSourceSurcharge}
+                              onCheckedChange={(checked) => setExcludeSourceSurcharge(!checked)}
+                              aria-label="Tính phụ thu vào giá trị chuyển lớp"
+                              data-testid="switch-exclude-source-surcharge"
+                            />
+                          </div>
+                          <span className="shrink-0 whitespace-nowrap text-xs font-semibold">
+                            {formatCurrency(excludeSourceSurcharge ? 0 : currentSurchargeTotal)}
+                          </span>
                         </div>
-                        <span className="shrink-0 whitespace-nowrap text-xs font-semibold">
-                          {formatCurrency(excludeSourceSurcharge ? 0 : currentSurchargeTotal)}
-                        </span>
+                        {currentSurchargeTotal > 0 && (
+                          <p className="mt-1 px-2 text-[11px] text-muted-foreground">
+                            Phụ thu trên hóa đơn: {formatCurrency(currentSurchargeTotal)}
+                          </p>
+                        )}
                       </div>
                     )}
                     <div className="flex justify-between">
