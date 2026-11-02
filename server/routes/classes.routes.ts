@@ -8685,9 +8685,15 @@ export function registerClassesRoutes(app: Express): void {
       if (typeof sessionNote === "string" && sessionNote.length > 50000) {
         return res.status(400).json({ message: "Ghi chú buổi học vượt quá giới hạn cho phép" });
       }
+      const saveThroughSessionId = req.body?.saveThroughSessionId;
+      if (saveThroughSessionId !== undefined && typeof saveThroughSessionId !== "string") {
+        return res.status(400).json({ message: "Buổi cuối để lưu ghi chú không hợp lệ" });
+      }
 
       const [existing] = await db.select({
         id: classSessions.id,
+        classId: classSessions.classId,
+        sessionIndex: classSessions.sessionIndex,
         sessionNote: classSessions.sessionNote,
       }).from(classSessions).where(eq(classSessions.id, classSessionId)).limit(1);
       if (!existing) return res.status(404).json({ message: "Không tìm thấy buổi học" });
@@ -8697,6 +8703,58 @@ export function registerClassesRoutes(app: Express): void {
         : "";
       if (!noteText && !existing.sessionNote?.trim()) {
         return res.status(400).json({ message: "Hãy nhập ghi chú trước khi lưu" });
+      }
+
+      if (saveThroughSessionId) {
+        if (existing.sessionIndex == null) {
+          return res.status(400).json({ message: "Buổi học hiện tại chưa có số buổi hợp lệ" });
+        }
+        const [target] = await db.select({
+          id: classSessions.id,
+          sessionIndex: classSessions.sessionIndex,
+        }).from(classSessions).where(and(
+          eq(classSessions.id, saveThroughSessionId),
+          eq(classSessions.classId, existing.classId),
+          ne(classSessions.status, "cancelled"),
+        )).limit(1);
+        if (!target || target.sessionIndex == null || target.sessionIndex < existing.sessionIndex) {
+          return res.status(400).json({ message: "Buổi cuối phải thuộc cùng lớp và không trước buổi hiện tại" });
+        }
+
+        const sessionsInRange = await db.select({
+          id: classSessions.id,
+          sessionIndex: classSessions.sessionIndex,
+        }).from(classSessions).where(and(
+          eq(classSessions.classId, existing.classId),
+          gte(classSessions.sessionIndex, existing.sessionIndex),
+          lte(classSessions.sessionIndex, target.sessionIndex),
+          ne(classSessions.status, "cancelled"),
+        )).orderBy(asc(classSessions.sessionIndex));
+        if (!sessionsInRange.some((item) => item.id === classSessionId)
+          || !sessionsInRange.some((item) => item.id === saveThroughSessionId)) {
+          return res.status(400).json({ message: "Không tìm thấy đầy đủ các buổi trong phạm vi đã chọn" });
+        }
+
+        const updatedSessions = await db.transaction(async (tx) => {
+          const updated: Array<{ id: string; sessionNote: string | null; sessionIndex: number | null }> = [];
+          for (const item of sessionsInRange) {
+            const [saved] = await tx.update(classSessions)
+              .set({ sessionNote, updatedAt: new Date() })
+              .where(eq(classSessions.id, item.id))
+              .returning({
+                id: classSessions.id,
+                sessionNote: classSessions.sessionNote,
+                sessionIndex: classSessions.sessionIndex,
+              });
+            if (!saved) throw new Error(`Không thể lưu ghi chú Buổi ${item.sessionIndex ?? ""}`);
+            updated.push(saved);
+          }
+          return updated;
+        });
+        return res.json({
+          sessionNote: updatedSessions.find((item) => item.id === classSessionId)?.sessionNote ?? null,
+          updatedSessions,
+        });
       }
 
       const [updated] = await db.update(classSessions)

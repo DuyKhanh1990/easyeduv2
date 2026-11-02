@@ -17,6 +17,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -228,7 +230,30 @@ export function SessionDetailPanel({
   const sessionNoteContentRef = useRef<HTMLDivElement | null>(null);
   const [isSessionNotePreviewOverflowing, setIsSessionNotePreviewOverflowing] = useState(false);
   const [isSessionNoteDialogOpen, setIsSessionNoteDialogOpen] = useState(false);
+  const [isSessionNoteSaveDialogOpen, setIsSessionNoteSaveDialogOpen] = useState(false);
+  const [sessionNoteSaveMode, setSessionNoteSaveMode] = useState<"this" | "through">("this");
+  const [sessionNoteTargetId, setSessionNoteTargetId] = useState("");
   const [isEditingSessionNote, setIsEditingSessionNote] = useState(false);
+  const sessionNoteRangeTargets = (classSessions ?? [])
+    .filter((item) =>
+      item.status !== "cancelled"
+      && Number.isFinite(Number(item.sessionIndex))
+      && Number.isFinite(Number(session?.sessionIndex))
+      && Number(item.sessionIndex) >= Number(session?.sessionIndex),
+    )
+    .sort((a, b) => Number(a.sessionIndex) - Number(b.sessionIndex));
+  const selectedSessionNoteTarget = sessionNoteRangeTargets.find((item) => item.id === sessionNoteTargetId);
+  const sessionNoteOverwriteIndices = sessionNoteSaveMode === "through" && selectedSessionNoteTarget
+    ? sessionNoteRangeTargets
+        .filter((item) =>
+          Number(item.sessionIndex) <= Number(selectedSessionNoteTarget.sessionIndex)
+          && Boolean(item.sessionNote?.trim()),
+        )
+        .map((item) => item.sessionIndex)
+    : [];
+  const sessionNoteOverwriteWarning = sessionNoteOverwriteIndices.length > 0
+    ? `Buổi ${sessionNoteOverwriteIndices.join(", Buổi ")} hiện đang có ghi chú. Bấm Lưu thì sẽ đè lên ghi chú cũ.`
+    : "";
 
   useEffect(() => {
     const savedNote = session?.sessionNote ?? "";
@@ -262,27 +287,39 @@ export function SessionDetailPanel({
   }, [session?.sessionNote, isEditingSessionNote]);
 
   const updateSessionNoteMutation = useMutation({
-    mutationFn: async (sessionNote: string | null) => {
+    mutationFn: async (data: { sessionNote: string | null; saveThroughSessionId?: string }) => {
       const response = await apiRequest(
         "PATCH",
         `/api/class-sessions/${selectedClassSessionId}/session-note`,
-        { sessionNote },
+        data,
       );
-      return response.json() as Promise<{ sessionNote: string | null }>;
+      return response.json() as Promise<{
+        sessionNote: string | null;
+        updatedSessions?: Array<{ id: string; sessionNote: string | null }>;
+      }>;
     },
     onSuccess: async (savedSession) => {
       const queryKey = [`/api/classes/${classData?.id}/sessions`];
+      const savedSessions = savedSession.updatedSessions ?? [
+        { id: selectedClassSessionId, sessionNote: savedSession.sessionNote },
+      ];
       queryClient.setQueryData<any[]>(queryKey, (sessions) =>
-        sessions?.map((item) => item.id === selectedClassSessionId
-          ? { ...item, sessionNote: savedSession.sessionNote }
-          : item),
+        sessions?.map((item) => {
+          const saved = savedSessions.find((savedItem) => savedItem.id === item.id);
+          return saved ? { ...item, sessionNote: saved.sessionNote } : item;
+        }),
       );
       await queryClient.invalidateQueries({ queryKey });
       const savedNote = savedSession.sessionNote ?? "";
       sessionNoteDraftRef.current = savedNote;
       setSessionNoteDraft(savedNote);
       setIsEditingSessionNote(false);
-      toast({ title: "Đã lưu ghi chú buổi học" });
+      setIsSessionNoteSaveDialogOpen(false);
+      toast({
+        title: savedSessions.length > 1
+          ? `Đã lưu ghi chú đến Buổi ${selectedSessionNoteTarget?.sessionIndex ?? ""}`
+          : "Đã lưu ghi chú buổi học",
+      });
     },
     onError: (error) => {
       toast({
@@ -742,12 +779,14 @@ export function SessionDetailPanel({
                       });
                       return;
                     }
-                    updateSessionNoteMutation.mutate(note);
+                    setSessionNoteSaveMode("this");
+                    setSessionNoteTargetId(selectedClassSessionId ?? "");
+                    setIsSessionNoteSaveDialogOpen(true);
                   }}
                   disabled={updateSessionNoteMutation.isPending}
                   data-testid="btn-save-session-note"
                 >
-                  {updateSessionNoteMutation.isPending ? "Đang lưu..." : "Lưu ghi chú"}
+                  Lưu ghi chú
                 </Button>
               </div>
             </div>
@@ -1089,12 +1128,103 @@ export function SessionDetailPanel({
     </Dialog>
   );
 
+  const sessionNoteSaveDialog = (
+    <Dialog open={isSessionNoteSaveDialogOpen} onOpenChange={setIsSessionNoteSaveDialogOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Lưu ghi chú buổi học</DialogTitle>
+          <DialogDescription>Chọn phạm vi áp dụng ghi chú này.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <label className="flex cursor-pointer items-start gap-2 rounded-md border p-3">
+            <input
+              type="radio"
+              name="session-note-save-mode"
+              checked={sessionNoteSaveMode === "this"}
+              onChange={() => setSessionNoteSaveMode("this")}
+              className="mt-1"
+            />
+            <span className="text-sm">Lưu buổi này</span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 rounded-md border p-3">
+            <input
+              type="radio"
+              name="session-note-save-mode"
+              checked={sessionNoteSaveMode === "through"}
+              onChange={() => setSessionNoteSaveMode("through")}
+              className="mt-1"
+            />
+            <span className="text-sm">Lưu đến buổi</span>
+          </label>
+          {sessionNoteSaveMode === "through" && (
+            <div className="space-y-2 pl-6">
+              <label htmlFor="session-note-target" className="text-sm font-medium">
+                Chọn buổi cuối
+              </label>
+              <select
+                id="session-note-target"
+                value={sessionNoteTargetId}
+                onChange={(event) => setSessionNoteTargetId(event.target.value)}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                {sessionNoteRangeTargets.map((item) => (
+                  <option key={item.id} value={item.id}>Buổi {item.sessionIndex}</option>
+                ))}
+              </select>
+              {sessionNoteOverwriteWarning && (
+                <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-800">
+                  {sessionNoteOverwriteWarning}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setIsSessionNoteSaveDialogOpen(false)}
+            disabled={updateSessionNoteMutation.isPending}
+          >
+            Hủy
+          </Button>
+          <Button
+            type="button"
+            onClick={() => {
+              const latestDraft = sessionNoteEditorRef.current?.getHTML()
+                ?? sessionNoteDraftRef.current;
+              const note = stripHtml(latestDraft) ? latestDraft : null;
+              if (sessionNoteSaveMode === "through" && !selectedSessionNoteTarget) {
+                toast({
+                  title: "Chưa chọn buổi cuối",
+                  description: "Vui lòng chọn buổi cần áp dụng ghi chú.",
+                  variant: "destructive",
+                });
+                return;
+              }
+              updateSessionNoteMutation.mutate({
+                sessionNote: note,
+                ...(sessionNoteSaveMode === "through"
+                  ? { saveThroughSessionId: sessionNoteTargetId }
+                  : {}),
+              });
+            }}
+            disabled={updateSessionNoteMutation.isPending}
+          >
+            {updateSessionNoteMutation.isPending ? "Đang lưu..." : "Lưu"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
   if (mode === "info") {
     return (
       <>
         {infoCard}
         {contentViewDialog}
         {sessionNoteViewDialog}
+        {sessionNoteSaveDialog}
       </>
     );
   }
@@ -1176,6 +1306,7 @@ export function SessionDetailPanel({
       {studentListCard}
       {contentViewDialog}
       {sessionNoteViewDialog}
+      {sessionNoteSaveDialog}
       {bulkChangeCycleDialog}
       {bulkReserveDialog}
     </>
