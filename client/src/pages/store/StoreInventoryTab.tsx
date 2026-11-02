@@ -125,6 +125,14 @@ function formatSigned(value: number) {
   return value > 0 ? `+${value}` : String(value);
 }
 
+function formatDateParam(date?: Date) {
+  if (!date) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function DetailPopup({ row, onClose }: DetailPopupProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState(1);
@@ -133,8 +141,9 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [creatorFilter, setCreatorFilter] = useState("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [historyDateRange, setHistoryDateRange] = useState<DateRange>({});
+  const dateFrom = formatDateParam(historyDateRange.from);
+  const dateTo = formatDateParam(historyDateRange.to);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSearch(searchInput.trim()), 300);
@@ -281,9 +290,9 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
             Lịch sử biến động kho
           </p>
 
-          <div className="shrink-0 space-y-2 mb-3">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-              <div className="relative md:col-span-2">
+          <div className="mb-3 shrink-0 overflow-x-auto">
+            <div className="flex min-w-[940px] items-center gap-2">
+              <div className="relative min-w-[250px] flex-1">
                 <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={searchInput}
@@ -295,7 +304,7 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
                 />
               </div>
               <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="h-9 text-xs" aria-label="Lọc theo loại biến động">
+                <SelectTrigger className="h-9 w-[160px] text-xs" aria-label="Lọc theo loại biến động">
                   <SelectValue placeholder="Tất cả loại" />
                 </SelectTrigger>
                 <SelectContent>
@@ -306,7 +315,7 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
                 </SelectContent>
               </Select>
               <Select value={creatorFilter} onValueChange={setCreatorFilter}>
-                <SelectTrigger className="h-9 text-xs" aria-label="Lọc theo người tạo">
+                <SelectTrigger className="h-9 w-[190px] text-xs" aria-label="Lọc theo người tạo">
                   <SelectValue placeholder="Tất cả người tạo" />
                 </SelectTrigger>
                 <SelectContent>
@@ -316,41 +325,22 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-                Từ ngày
-                <Input
-                  type="date"
-                  value={dateFrom}
-                  max={dateTo || undefined}
-                  onChange={event => setDateFrom(event.target.value)}
-                  aria-label="Từ ngày"
-                  className="h-8 w-[155px] text-xs"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-                Đến ngày
-                <Input
-                  type="date"
-                  value={dateTo}
-                  min={dateFrom || undefined}
-                  onChange={event => setDateTo(event.target.value)}
-                  aria-label="Đến ngày"
-                  className="h-8 w-[155px] text-xs"
-                />
-              </label>
+              <StoreDateRangePicker
+                value={historyDateRange}
+                onChange={setHistoryDateRange}
+                placeholder="Chọn thời gian"
+                className="h-9 w-[220px] text-xs"
+              />
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 text-xs"
+                className="h-9 shrink-0 text-xs"
                 onClick={() => {
                   setSearchInput("");
                   setSearch("");
                   setTypeFilter("all");
                   setCreatorFilter("all");
-                  setDateFrom("");
-                  setDateTo("");
+                  setHistoryDateRange({});
                   setPage(1);
                 }}
                 disabled={!hasHistoryFilters}
