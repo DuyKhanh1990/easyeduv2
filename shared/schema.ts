@@ -627,6 +627,18 @@ export const staffProfileFileTypes = pgTable("staff_profile_file_types", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const staffTeacherProfiles = pgTable("staff_teacher_profiles", {
+  staffId: uuid("staff_id").primaryKey().references(() => staff.id, { onDelete: "cascade" }),
+  profile: jsonb("profile").$type<{
+    experienceValue: number | null;
+    experienceUnit: "year" | "month" | null;
+    teachingExperience: string;
+    certificates: string;
+    achievements: string;
+  }>().notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const staffProfileFileCategories = pgTable("staff_profile_file_categories", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   staffId: uuid("staff_id").notNull().references(() => staff.id, { onDelete: "cascade" }),

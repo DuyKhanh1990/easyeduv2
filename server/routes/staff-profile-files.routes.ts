@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db";
-import { insertStaffProfileFileCategorySchema, staff, staffProfileFileCategories, staffProfileFileTypes } from "@shared/schema";
+import { insertStaffProfileFileCategorySchema, staff, staffProfileFileCategories, staffProfileFileTypes, staffTeacherProfiles } from "@shared/schema";
 import { downloadPrivateStaffProfileFile, uploadPrivateStaffProfileFile } from "../lib/s3";
 
 const profileFileUpload = multer({
@@ -22,6 +22,63 @@ function getStaffId(req: Request): string {
 }
 
 export function registerStaffProfileFileRoutes(app: Express): void {
+  app.get("/api/staff/:staffId/teacher-profile", async (req, res) => {
+    try {
+      const staffId = getStaffId(req);
+      if (!staffId) return res.status(400).json({ message: "Thiếu mã nhân sự" });
+      const [staffRow] = await db.select({ id: staff.id })
+        .from(staff).where(eq(staff.id, staffId)).limit(1);
+      if (!staffRow) return res.status(404).json({ message: "Không tìm thấy nhân sự" });
+      const [profileRow] = await db.select({ profile: staffTeacherProfiles.profile })
+        .from(staffTeacherProfiles).where(eq(staffTeacherProfiles.staffId, staffId)).limit(1);
+      res.json(profileRow?.profile ?? null);
+    } catch (error) {
+      console.error("[Staff profile] teacher profile read failed", error);
+      res.status(500).json({ message: "Không thể tải profile giáo viên" });
+    }
+  });
+
+  app.put("/api/staff/:staffId/teacher-profile", async (req, res) => {
+    const profileSchema = z.object({
+      experienceValue: z.number().int().min(0).max(1000).nullable(),
+      experienceUnit: z.enum(["year", "month"]).nullable(),
+      teachingExperience: z.string().trim().max(10000),
+      certificates: z.string().trim().max(10000),
+      achievements: z.string().trim().max(10000),
+    }).refine(
+      (value) => value.experienceValue === null || value.experienceUnit !== null,
+      { path: ["experienceUnit"], message: "Chọn năm hoặc tháng cho kinh nghiệm" },
+    );
+
+    try {
+      const staffId = getStaffId(req);
+      if (!staffId) return res.status(400).json({ message: "Thiếu mã nhân sự" });
+      const parsed = profileSchema.parse(req.body);
+      const hasContent = parsed.experienceValue !== null
+        || parsed.teachingExperience.length > 0
+        || parsed.certificates.length > 0
+        || parsed.achievements.length > 0;
+      const [staffRow] = await db.select({ id: staff.id }).from(staff).where(eq(staff.id, staffId)).limit(1);
+      if (!staffRow) return res.status(404).json({ message: "Không tìm thấy nhân sự" });
+      if (!hasContent) {
+        await db.delete(staffTeacherProfiles).where(eq(staffTeacherProfiles.staffId, staffId));
+        return res.json(null);
+      }
+      const [saved] = await db.insert(staffTeacherProfiles)
+        .values({ staffId, profile: parsed, updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: staffTeacherProfiles.staffId,
+          set: { profile: parsed, updatedAt: new Date() },
+        })
+        .returning({ profile: staffTeacherProfiles.profile });
+      res.json(saved.profile);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ message: "Thông tin profile chưa hợp lệ", errors: error.errors });
+      console.error("[Staff profile] teacher profile save failed", error);
+      res.status(500).json({ message: "Không thể lưu profile giáo viên" });
+    }
+  });
+
   app.get("/api/staff/:staffId/profile-files/types", async (_req, res) => {
     try {
       const [savedTypes, existingCategories] = await Promise.all([

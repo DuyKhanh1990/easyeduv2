@@ -3,13 +3,28 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Briefcase, Building2, CalendarDays, Eye, FileText, FolderOpen, FolderPlus, MapPin, Upload, UserRound, Users, Plus, Paperclip, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Award, Briefcase, Building2, CalendarDays, Clock3, Eye, FileText, FolderOpen, FolderPlus, GraduationCap, MapPin, Medal, Upload, UserRound, Users, Plus, Paperclip, type LucideIcon } from "lucide-react";
 import * as mammoth from "mammoth";
 import DOMPurify from "dompurify";
 import { apiRequest } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/queryClient";
+import { Textarea } from "@/components/ui/textarea";
 
 type ContractAttachment = { name: string; url: string };
+type TeacherProfile = {
+  experienceValue: number | null;
+  experienceUnit: "year" | "month" | null;
+  teachingExperience: string;
+  certificates: string;
+  achievements: string;
+};
+const EMPTY_TEACHER_PROFILE: TeacherProfile = {
+  experienceValue: null,
+  experienceUnit: "year",
+  teachingExperience: "",
+  certificates: "",
+  achievements: "",
+};
 type ContractAttachmentPreview = {
   attachment: ContractAttachment;
   source: "contracts" | "profile-files";
@@ -57,12 +72,15 @@ function DetailField({ label, value }: { label: string; value?: string | null })
   );
 }
 
-function SectionCard({ title, icon: Icon, children }: { title: string; icon: LucideIcon; children: React.ReactNode }) {
+function SectionCard({ title, icon: Icon, children, action }: { title: string; icon: LucideIcon; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <h3 className="flex items-center gap-2 border-b border-blue-100 bg-blue-50/80 px-4 py-3 text-sm font-semibold text-slate-800">
-        <Icon className="h-4 w-4 text-blue-600" /> {title}
-      </h3>
+      <div className="flex items-center justify-between gap-3 border-b border-blue-100 bg-blue-50/80 px-4 py-3">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+          <Icon className="h-4 w-4 text-blue-600" /> {title}
+        </h3>
+        {action}
+      </div>
       <div className="px-4 py-1">{children}</div>
     </section>
   );
@@ -92,6 +110,8 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
   const contractFileInput = useRef<HTMLInputElement>(null);
   const profileFileInput = useRef<HTMLInputElement>(null);
   const [addContractOpen, setAddContractOpen] = useState(false);
+  const [teacherProfileDialogOpen, setTeacherProfileDialogOpen] = useState(false);
+  const [teacherProfileDraft, setTeacherProfileDraft] = useState<TeacherProfile>(EMPTY_TEACHER_PROFILE);
   const [uploadingContractFiles, setUploadingContractFiles] = useState(false);
   const [contractFileError, setContractFileError] = useState("");
   const [contractPreview, setContractPreview] = useState<ContractAttachmentPreview | null>(null);
@@ -108,6 +128,18 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
     queryKey: ["/api/staff", staff?.id, "contracts"],
     enabled: open && !!staff?.id,
     queryFn: async () => (await apiRequest("GET", `/api/staff/${staff.id}/contracts`)).json(),
+  });
+  const teacherProfileQuery = useQuery({
+    queryKey: ["/api/staff", staff?.id, "teacher-profile"],
+    enabled: open && !!staff?.id,
+    queryFn: async () => (await apiRequest("GET", `/api/staff/${staff.id}/teacher-profile`)).json() as Promise<TeacherProfile | null>,
+  });
+  const saveTeacherProfile = useMutation({
+    mutationFn: async () => (await apiRequest("PUT", `/api/staff/${staff.id}/teacher-profile`, teacherProfileDraft)).json(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/staff", staff.id, "teacher-profile"] });
+      setTeacherProfileDialogOpen(false);
+    },
   });
   const profileCategoriesQuery = useQuery({
     queryKey: ["/api/staff", staff?.id, "profile-files", "categories"],
@@ -375,17 +407,58 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                         ))}
                       </div> : <p className="py-3 text-xs text-slate-500">Chưa có hợp đồng lao động.</p>}
                   </SectionCard>
-                  <SectionCard title="Phân công hiện tại" icon={MapPin}>
-                    <div className="space-y-2 py-3">
-                      {assignments.map(({ label, icon: Icon, names }) => (
-                        <div key={label} className="flex gap-2 text-sm">
-                          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
-                          <div><span className="text-slate-500">{label}: </span><span className="font-medium text-slate-800">{names.join(", ") || "Chưa phân công"}</span></div>
+                  <SectionCard
+                    title="Profile giáo viên"
+                    icon={GraduationCap}
+                    action={<Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 bg-white text-xs" onClick={() => {
+                      setTeacherProfileDraft({ ...EMPTY_TEACHER_PROFILE, ...(teacherProfileQuery.data ?? {}) });
+                      saveTeacherProfile.reset();
+                      setTeacherProfileDialogOpen(true);
+                    }}><Plus className="h-3.5 w-3.5" />{teacherProfileQuery.data ? "Chỉnh sửa" : "Thêm mới"}</Button>}
+                  >
+                    {teacherProfileQuery.isLoading ? <p className="py-4 text-xs text-slate-500">Đang tải profile...</p>
+                      : teacherProfileQuery.isError ? <p className="py-4 text-xs text-red-600">Không thể tải profile giáo viên.</p>
+                        : teacherProfileQuery.data ? <div className="grid gap-3 py-3 sm:grid-cols-2">
+                          {teacherProfileQuery.data.experienceValue !== null && <div className="flex min-w-0 gap-2.5 rounded-lg border border-slate-100 p-3">
+                            <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                            <div className="min-w-0"><h4 className="text-xs font-bold text-slate-900">Năm kinh nghiệm</h4><p className="mt-1 text-sm text-slate-700">{teacherProfileQuery.data.experienceValue} {teacherProfileQuery.data.experienceUnit === "month" ? "tháng" : "năm"}</p></div>
+                          </div>}
+                          {teacherProfileQuery.data.teachingExperience.trim() && <div className="flex min-w-0 gap-2.5 rounded-lg border border-slate-100 p-3">
+                            <GraduationCap className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                            <div className="min-w-0"><h4 className="text-xs font-bold text-slate-900">Kinh nghiệm giảng dạy</h4><p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-700">{teacherProfileQuery.data.teachingExperience}</p></div>
+                          </div>}
+                          {teacherProfileQuery.data.certificates.trim() && <div className="flex min-w-0 gap-2.5 rounded-lg border border-slate-100 p-3">
+                            <Award className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" />
+                            <div className="min-w-0"><h4 className="text-xs font-bold text-slate-900">Bằng cấp chứng chỉ</h4><p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-700">{teacherProfileQuery.data.certificates}</p></div>
+                          </div>}
+                          {teacherProfileQuery.data.achievements.trim() && <div className="flex min-w-0 gap-2.5 rounded-lg border border-slate-100 p-3">
+                            <Medal className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                            <div className="min-w-0"><h4 className="text-xs font-bold text-slate-900">Thành tích nổi bật</h4><p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-700">{teacherProfileQuery.data.achievements}</p></div>
+                          </div>}
                         </div>
-                      ))}
-                    </div>
+                        : <p className="py-4 text-xs text-slate-500">Chưa có thông tin profile giáo viên.</p>}
                   </SectionCard>
                 </div>
+
+                <Dialog open={teacherProfileDialogOpen} onOpenChange={(value) => { setTeacherProfileDialogOpen(value); if (!value) saveTeacherProfile.reset(); }}>
+                  <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+                    <DialogHeader><DialogTitle>Profile giáo viên</DialogTitle><DialogDescription>Các mục đều không bắt buộc. Chỉ thông tin đã nhập mới hiển thị trong hồ sơ.</DialogDescription></DialogHeader>
+                    <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); saveTeacherProfile.mutate(); }}>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium">Năm kinh nghiệm</label>
+                        <div className="grid grid-cols-[minmax(0,1fr)_150px] gap-2">
+                          <input type="number" min={0} step={1} value={teacherProfileDraft.experienceValue ?? ""} onChange={(event) => setTeacherProfileDraft({ ...teacherProfileDraft, experienceValue: event.target.value === "" ? null : Number(event.target.value), experienceUnit: event.target.value === "" ? null : (teacherProfileDraft.experienceUnit ?? "year") })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" placeholder="Nhập số" />
+                          <select aria-label="Đơn vị kinh nghiệm" value={teacherProfileDraft.experienceUnit ?? "year"} onChange={(event) => setTeacherProfileDraft({ ...teacherProfileDraft, experienceUnit: event.target.value as "year" | "month" })} className="h-10 rounded-md border border-input bg-background px-3 text-sm"><option value="year">Năm</option><option value="month">Tháng</option></select>
+                        </div>
+                      </div>
+                      <label className="block space-y-1.5 text-sm font-medium">Kinh nghiệm giảng dạy<Textarea value={teacherProfileDraft.teachingExperience} onChange={(event) => setTeacherProfileDraft({ ...teacherProfileDraft, teachingExperience: event.target.value })} maxLength={10000} rows={4} placeholder="Nhập kinh nghiệm giảng dạy..." /></label>
+                      <label className="block space-y-1.5 text-sm font-medium">Bằng cấp chứng chỉ<Textarea value={teacherProfileDraft.certificates} onChange={(event) => setTeacherProfileDraft({ ...teacherProfileDraft, certificates: event.target.value })} maxLength={10000} rows={3} placeholder="Nhập bằng cấp, chứng chỉ..." /></label>
+                      <label className="block space-y-1.5 text-sm font-medium">Thành tích nổi bật<Textarea value={teacherProfileDraft.achievements} onChange={(event) => setTeacherProfileDraft({ ...teacherProfileDraft, achievements: event.target.value })} maxLength={10000} rows={3} placeholder="Nhập thành tích nổi bật..." /></label>
+                      {saveTeacherProfile.isError && <p role="alert" className="text-sm text-red-600">{saveTeacherProfile.error instanceof Error ? saveTeacherProfile.error.message : "Không thể lưu profile giáo viên."}</p>}
+                      <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setTeacherProfileDialogOpen(false)}>Hủy</Button><Button type="submit" disabled={saveTeacherProfile.isPending}>{saveTeacherProfile.isPending ? "Đang lưu..." : "Lưu profile"}</Button></div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
               </TabsContent>
 
               <TabsContent value="contract" className="mt-0 space-y-4">
