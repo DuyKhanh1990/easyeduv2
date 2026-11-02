@@ -33,11 +33,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ClipboardList, MessageSquarePlus, Trash2 } from "lucide-react";
+import { ClipboardList, Eye, MessageSquarePlus, Trash2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/hooks/use-language";
 import { orderScoreSheetItemsByCategorySnapshot } from "@/lib/score-sheet-order";
+import { RichHtmlImagePreview } from "@/components/ui/rich-html-image-preview";
 
 interface GradeBookEditDialogProps {
   open: boolean;
@@ -50,6 +51,7 @@ interface GradeBookEditDialogProps {
     sessionId: string | null;
     published: boolean;
   };
+  showCommentPreview?: boolean;
   onSaved?: () => void;
 }
 
@@ -58,6 +60,7 @@ export function GradeBookEditDialog({
   onClose,
   classId,
   book,
+  showCommentPreview = false,
   onSaved,
 }: GradeBookEditDialogProps) {
   const { toast } = useToast();
@@ -74,6 +77,7 @@ export function GradeBookEditDialog({
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
   const [commentStudentId, setCommentStudentId] = useState("");
   const [commentStudentName, setCommentStudentName] = useState("");
+  const [commentPreviewOpen, setCommentPreviewOpen] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [scoreSheetCategoryOrderSnapshot, setScoreSheetCategoryOrderSnapshot] = useState<string[] | null>(null);
   // Theo dõi book.id đã init trong lần mở này — tránh chạy lại khi activeStudents refetch
@@ -641,8 +645,20 @@ export function GradeBookEditDialog({
       {/* Comment sub-dialog */}
       <Dialog open={commentDialogOpen} onOpenChange={setCommentDialogOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
-          <DialogHeader className="shrink-0">
+          <DialogHeader className="shrink-0 flex-row items-center justify-between">
             <DialogTitle>{t("mySpace.scoreSheet.commentTitle")}</DialogTitle>
+            {showCommentPreview && studentComments[commentStudentId]?.trim() && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mr-7"
+                onClick={() => setCommentPreviewOpen(true)}
+              >
+                <Eye className="mr-1.5 h-4 w-4" />
+                Xem nhận xét
+              </Button>
+            )}
           </DialogHeader>
           <div className="flex-1 min-h-0 overflow-y-auto space-y-3 py-2 pr-1">
             <p className="text-sm font-medium">{commentStudentName}</p>
@@ -662,6 +678,26 @@ export function GradeBookEditDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {showCommentPreview && (
+        <Dialog open={commentPreviewOpen} onOpenChange={setCommentPreviewOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+            <DialogHeader className="shrink-0">
+              <DialogTitle>{t("mySpace.scoreSheet.commentTitle")} — {commentStudentName}</DialogTitle>
+            </DialogHeader>
+            <div className="min-h-0 flex-1 overflow-y-auto rounded-md border bg-muted/20 p-4">
+              <RichHtmlImagePreview
+                html={studentComments[commentStudentId] || ""}
+                className="prose prose-sm max-w-none dark:prose-invert"
+              />
+            </div>
+            <DialogFooter className="shrink-0">
+              <Button variant="outline" onClick={() => setCommentPreviewOpen(false)}>
+                {t("mySpace.scoreSheet.cancel")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 }

@@ -1323,6 +1323,7 @@ export function StaffScoreSheet() {
             sessionId: editingBook.sessionId,
             published: editingBook.published,
           }}
+          showCommentPreview
           onSaved={() => refetch()}
         />
       )}

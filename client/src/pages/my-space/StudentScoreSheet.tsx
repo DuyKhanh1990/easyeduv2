@@ -21,6 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useLanguage } from "@/hooks/use-language";
+import { RichHtmlImagePreview } from "@/components/ui/rich-html-image-preview";
 import type { ScoreConversionTemplate } from "@shared/score-conversion";
 import type {
   ScoreSheetAssessmentAttemptResult,
@@ -638,9 +639,9 @@ export function StudentScoreSheet() {
                   </div>
                   <div className="flex-1 overflow-y-auto p-4">
                     {selected.teacherComment.trimStart().startsWith("<") ? (
-                      <div
+                      <RichHtmlImagePreview
                         className="prose prose-sm max-w-none text-sm leading-relaxed dark:prose-invert"
-                        dangerouslySetInnerHTML={{ __html: selected.teacherComment }}
+                        html={selected.teacherComment}
                       />
                     ) : (
                       <p className="whitespace-pre-wrap text-sm leading-relaxed">{selected.teacherComment}</p>
