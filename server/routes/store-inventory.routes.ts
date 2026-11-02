@@ -404,13 +404,70 @@ export async function registerStoreInventoryRoutes(app: Express) {
     if (!req.user) return res.status(401).json({ message: "Unauthorized" });
     const { productId } = req.params;
     const { warehouseId } = req.query as { warehouseId?: string };
+    const search = String(req.query.q ?? "").trim().slice(0, 200);
+    const typeFilter = String(req.query.type ?? "").trim();
+    const createdByFilter = String(req.query.createdBy ?? "").trim();
+    const dateFrom = String(req.query.dateFrom ?? "").trim();
+    const dateTo = String(req.query.dateTo ?? "").trim();
+    const allowedTypes = [
+      "import", "export", "edit_import", "edit_export",
+      "cancel_import", "cancel_export", "transfer_in", "transfer_out",
+    ];
+    const validDate = (value: string) =>
+      !value || (/^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)));
+    if (typeFilter && !allowedTypes.includes(typeFilter)) {
+      return res.status(400).json({ message: "Loại biến động không hợp lệ" });
+    }
+    if (!validDate(dateFrom) || !validDate(dateTo) || (dateFrom && dateTo && dateFrom > dateTo)) {
+      return res.status(400).json({ message: "Khoảng thời gian không hợp lệ" });
+    }
     const requestedPageSize = Number.parseInt(String(req.query.pageSize ?? "50"), 10);
     const pageSize = requestedPageSize === 100 ? 100 : 50;
     const requestedPage = Number.parseInt(String(req.query.page ?? "1"), 10);
     const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
     const offset = (page - 1) * pageSize;
+    const scopeFilters = [sql`t.product_id = ${productId}`];
+    if (warehouseId) scopeFilters.push(sql`t.warehouse_id = ${warehouseId}`);
+    const scopeWhere = sql.join(scopeFilters, sql` AND `);
+    const historyFilters = [...scopeFilters];
+    if (typeFilter) historyFilters.push(sql`t.type = ${typeFilter}`);
+    if (createdByFilter) historyFilters.push(sql`t.created_by_name = ${createdByFilter}`);
+    if (dateFrom) historyFilters.push(sql`t.created_at >= ${dateFrom}::date`);
+    if (dateTo) historyFilters.push(sql`t.created_at < (${dateTo}::date + 1)`);
+    if (search) {
+      const pattern = `%${search}%`;
+      historyFilters.push(sql`(
+        COALESCE(t.receipt_code, '') ILIKE ${pattern}
+        OR t.type ILIKE ${pattern}
+        OR (CASE t.type
+          WHEN 'import' THEN 'Nhập kho'
+          WHEN 'export' THEN 'Xuất kho'
+          WHEN 'edit_import' THEN 'Sửa nhập kho'
+          WHEN 'edit_export' THEN 'Sửa xuất kho'
+          WHEN 'cancel_import' THEN 'Hủy nhập kho'
+          WHEN 'cancel_export' THEN 'Hủy xuất kho'
+          WHEN 'transfer_in' THEN 'Chuyển kho vào'
+          WHEN 'transfer_out' THEN 'Chuyển kho ra'
+          ELSE t.type
+        END) ILIKE ${pattern}
+        OR t.quantity_delta::text ILIKE ${pattern}
+        OR (CASE WHEN t.quantity_delta > 0 THEN '+' ELSE '' END || t.quantity_delta::text) ILIKE ${pattern}
+        OR t.status ILIKE ${pattern}
+        OR (CASE t.status
+          WHEN 'completed' THEN 'Hoàn thành'
+          WHEN 'draft' THEN 'Nháp'
+          WHEN 'cancelled' THEN 'Đã hủy'
+          ELSE t.status
+        END) ILIKE ${pattern}
+        OR COALESCE(t.description, '') ILIKE ${pattern}
+        OR COALESCE(t.created_by_name, '') ILIKE ${pattern}
+        OR to_char(t.created_at, 'DD/MM/YYYY HH24:MI') ILIKE ${pattern}
+        OR to_char(t.created_at, 'YYYY-MM-DD') ILIKE ${pattern}
+      )`);
+    }
+    const historyWhere = sql.join(historyFilters, sql` AND `);
     try {
-      const [rows, count, summary] = await Promise.all([
+      const [rows, count, summary, creators] = await Promise.all([
         db.execute(sql`
           SELECT
             t.created_at    AS time,
@@ -421,16 +478,14 @@ export async function registerStoreInventoryRoutes(app: Express) {
             t.description,
             t.created_by_name AS created_by
           FROM store_stock_transactions t
-          WHERE t.product_id = ${productId}
-            AND ${warehouseId ? sql`t.warehouse_id = ${warehouseId}` : sql`TRUE`}
+          WHERE ${historyWhere}
           ORDER BY t.created_at DESC, t.id DESC
           LIMIT ${pageSize} OFFSET ${offset}
         `),
         db.execute(sql`
           SELECT COUNT(*)::int AS total
           FROM store_stock_transactions t
-          WHERE t.product_id = ${productId}
-            AND ${warehouseId ? sql`t.warehouse_id = ${warehouseId}` : sql`TRUE`}
+          WHERE ${historyWhere}
         `),
         db.execute(sql`
           SELECT
@@ -468,6 +523,13 @@ export async function registerStoreInventoryRoutes(app: Express) {
           WHERE product_id = ${productId}
             AND ${warehouseId ? sql`warehouse_id = ${warehouseId}` : sql`TRUE`}
         `),
+        db.execute(sql`
+          SELECT DISTINCT t.created_by_name AS name
+          FROM store_stock_transactions t
+          WHERE ${scopeWhere}
+            AND COALESCE(BTRIM(t.created_by_name), '') <> ''
+          ORDER BY name
+        `),
       ]);
       res.json({
         history: rows.rows,
@@ -475,6 +537,7 @@ export async function registerStoreInventoryRoutes(app: Express) {
         page,
         pageSize,
         summary: summary.rows[0],
+        creators: creators.rows.map((row: any) => String(row.name)),
       });
     } catch (err) {
       console.error("[Inventory] GET history error:", err);

@@ -5,7 +5,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Clock, X, FileDown, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Clock, X, FileDown, Loader2, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -42,6 +42,7 @@ type InventoryHistoryResponse = {
   total: number;
   page: number;
   pageSize: number;
+  creators: string[];
   summary: {
     import_qty: number;
     export_qty: number;
@@ -95,6 +96,17 @@ function txTypeLabel(type: string) {
   }
 }
 
+const HISTORY_TYPE_OPTIONS = [
+  { value: "import", label: "Nhập kho" },
+  { value: "export", label: "Xuất kho" },
+  { value: "edit_import", label: "Sửa nhập kho" },
+  { value: "edit_export", label: "Sửa xuất kho" },
+  { value: "cancel_import", label: "Hủy nhập kho" },
+  { value: "cancel_export", label: "Hủy xuất kho" },
+  { value: "transfer_in", label: "Chuyển kho vào" },
+  { value: "transfer_out", label: "Chuyển kho ra" },
+];
+
 function txTypeBadgeClass(type: string) {
   switch (type) {
     case "import": return "bg-emerald-50 text-emerald-700 border-emerald-200";
@@ -117,19 +129,52 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [creatorFilter, setCreatorFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, typeFilter, creatorFilter, dateFrom, dateTo]);
 
   const { data, isLoading } = useQuery<InventoryHistoryResponse>({
-    queryKey: ["/api/store/inventory", row.productId, "history", row.warehouseId, page, pageSize],
-    queryFn: () =>
-      apiRequest("GET", `/api/store/inventory/${row.productId}/history?warehouseId=${row.warehouseId}&page=${page}&pageSize=${pageSize}`)
-        .then(r => r.json()),
+    queryKey: [
+      "/api/store/inventory", row.productId, "history", row.warehouseId,
+      page, pageSize, search, typeFilter, creatorFilter, dateFrom, dateTo,
+    ],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        warehouseId: row.warehouseId,
+        page: String(page),
+        pageSize: String(pageSize),
+      });
+      if (search) params.set("q", search);
+      if (typeFilter !== "all") params.set("type", typeFilter);
+      if (creatorFilter !== "all") params.set("createdBy", creatorFilter);
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+      return apiRequest("GET", `/api/store/inventory/${row.productId}/history?${params.toString()}`)
+        .then(r => r.json());
+    },
     staleTime: 15000,
   });
   const history = data?.history ?? [];
+  const creators = data?.creators ?? [];
   const totalHistory = Number(data?.total ?? 0);
   const totalPages = Math.max(1, Math.ceil(totalHistory / pageSize));
   const firstVisibleRow = totalHistory === 0 ? 0 : (page - 1) * pageSize + 1;
   const lastVisibleRow = Math.min(page * pageSize, totalHistory);
+  const hasHistoryFilters = Boolean(
+    searchInput.trim() || typeFilter !== "all" || creatorFilter !== "all" || dateFrom || dateTo
+  );
   const summary = data?.summary;
   const importQty = Number(summary?.import_qty ?? 0);
   const exportQty = Number(summary?.export_qty ?? 0);
@@ -236,6 +281,85 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
             Lịch sử biến động kho
           </p>
 
+          <div className="shrink-0 space-y-2 mb-3">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+              <div className="relative md:col-span-2">
+                <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={searchInput}
+                  onChange={event => setSearchInput(event.target.value)}
+                  placeholder="Tìm trong toàn bộ thông tin lịch sử..."
+                  aria-label="Tìm kiếm lịch sử biến động kho"
+                  className="h-9 pl-8 text-xs"
+                  maxLength={200}
+                />
+              </div>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="h-9 text-xs" aria-label="Lọc theo loại biến động">
+                  <SelectValue placeholder="Tất cả loại" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tất cả loại</SelectItem>
+                  {HISTORY_TYPE_OPTIONS.map(option => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={creatorFilter} onValueChange={setCreatorFilter}>
+                <SelectTrigger className="h-9 text-xs" aria-label="Lọc theo người tạo">
+                  <SelectValue placeholder="Tất cả người tạo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tất cả người tạo</SelectItem>
+                  {creators.map(creator => (
+                    <SelectItem key={creator} value={creator}>{creator}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+                Từ ngày
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  max={dateTo || undefined}
+                  onChange={event => setDateFrom(event.target.value)}
+                  aria-label="Từ ngày"
+                  className="h-8 w-[155px] text-xs"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+                Đến ngày
+                <Input
+                  type="date"
+                  value={dateTo}
+                  min={dateFrom || undefined}
+                  onChange={event => setDateTo(event.target.value)}
+                  aria-label="Đến ngày"
+                  className="h-8 w-[155px] text-xs"
+                />
+              </label>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => {
+                  setSearchInput("");
+                  setSearch("");
+                  setTypeFilter("all");
+                  setCreatorFilter("all");
+                  setDateFrom("");
+                  setDateTo("");
+                  setPage(1);
+                }}
+                disabled={!hasHistoryFilters}
+              >
+                Xóa bộ lọc
+              </Button>
+            </div>
+          </div>
+
           <div className="flex-1 min-h-0 overflow-auto">
           <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-sm">
@@ -260,7 +384,7 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
               ) : history.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-8 text-center text-muted-foreground text-sm">
-                    Chưa có lịch sử giao dịch
+                    {hasHistoryFilters ? "Không tìm thấy lịch sử phù hợp bộ lọc" : "Chưa có lịch sử giao dịch"}
                   </td>
                 </tr>
               ) : (
