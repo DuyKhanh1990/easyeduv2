@@ -146,3 +146,4 @@
 - [Class name presentation](class-notification-labels.md) — notifications use name then code; compact schedule cards use name, with name and code in the hover detail.
 - [Automatic invoice dialog defaults](auto-invoice-default-ui.md) — configured setting is only the initial value; authorized roles may override it per scheduling or renewal dialog.
 - [Staff list sort order](staff-list-sort-order.md) — active staff stay first; within each status group, recently edited profiles appear first.
+- [Staff profile file categories](staff-profile-file-categories.md) — reuse category names across staff, but keep each employee’s uploaded files separate.

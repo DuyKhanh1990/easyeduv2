@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db";
-import { insertStaffProfileFileCategorySchema, staff, staffProfileFileCategories } from "@shared/schema";
+import { insertStaffProfileFileCategorySchema, staff, staffProfileFileCategories, staffProfileFileTypes } from "@shared/schema";
 import { downloadPrivateStaffProfileFile, uploadPrivateStaffProfileFile } from "../lib/s3";
 
 const profileFileUpload = multer({
@@ -22,6 +22,21 @@ function getStaffId(req: Request): string {
 }
 
 export function registerStaffProfileFileRoutes(app: Express): void {
+  app.get("/api/staff/:staffId/profile-files/types", async (_req, res) => {
+    try {
+      const [savedTypes, existingCategories] = await Promise.all([
+        db.select({ name: staffProfileFileTypes.name }).from(staffProfileFileTypes),
+        db.select({ name: staffProfileFileCategories.name }).from(staffProfileFileCategories),
+      ]);
+      const names = [...new Set([...savedTypes, ...existingCategories].map((item) => item.name.trim()).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, "vi"));
+      res.json(names);
+    } catch (error) {
+      console.error("[Staff profile files] shared type list failed", error);
+      res.status(500).json({ message: "Không thể tải tên danh mục dùng chung" });
+    }
+  });
+
   app.get("/api/staff/:staffId/profile-files/categories", async (req, res) => {
     try {
       const staffId = getStaffId(req);
@@ -43,6 +58,7 @@ export function registerStaffProfileFileRoutes(app: Express): void {
       const parsed = categoryPayloadSchema.parse({ ...req.body, staffId });
       const [staffRow] = await db.select({ id: staff.id }).from(staff).where(eq(staff.id, staffId)).limit(1);
       if (!staffRow) return res.status(404).json({ message: "Không tìm thấy nhân sự" });
+      await db.insert(staffProfileFileTypes).values({ name: parsed.name }).onConflictDoNothing();
       const [category] = await db.insert(staffProfileFileCategories).values(parsed).returning();
       res.status(201).json(category);
     } catch (error) {

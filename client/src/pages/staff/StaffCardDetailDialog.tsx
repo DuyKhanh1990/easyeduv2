@@ -96,6 +96,7 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
   const [contractFileError, setContractFileError] = useState("");
   const [contractPreview, setContractPreview] = useState<ContractAttachmentPreview | null>(null);
   const [selectedProfileCategoryId, setSelectedProfileCategoryId] = useState("");
+  const [selectedSharedProfileType, setSelectedSharedProfileType] = useState("");
   const [newProfileCategoryName, setNewProfileCategoryName] = useState("");
   const [uploadingProfileFiles, setUploadingProfileFiles] = useState(false);
   const [profileFileError, setProfileFileError] = useState("");
@@ -113,15 +114,22 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
     enabled: open && !!staff?.id,
     queryFn: async () => (await apiRequest("GET", `/api/staff/${staff.id}/profile-files/categories`)).json(),
   });
+  const profileTypesQuery = useQuery({
+    queryKey: ["/api/staff", staff?.id, "profile-files", "types"],
+    enabled: open && !!staff?.id,
+    queryFn: async () => (await apiRequest("GET", `/api/staff/${staff.id}/profile-files/types`)).json(),
+  });
   const createProfileCategory = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("POST", `/api/staff/${staff.id}/profile-files/categories`, { name: newProfileCategoryName.trim() });
+    mutationFn: async (name: string) => {
+      const response = await apiRequest("POST", `/api/staff/${staff.id}/profile-files/categories`, { name: name.trim() });
       return response.json();
     },
     onSuccess: (category) => {
       queryClient.invalidateQueries({ queryKey: ["/api/staff", staff.id, "profile-files", "categories"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/staff", staff.id, "profile-files", "types"] });
       setSelectedProfileCategoryId(category.id);
       setNewProfileCategoryName("");
+      setSelectedSharedProfileType("");
     },
   });
   const createContract = useMutation({
@@ -462,21 +470,40 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                 <div className="grid min-h-[420px] grid-cols-1 gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
                   <aside className="rounded-xl border border-slate-200 bg-white p-4">
                     <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800"><FolderOpen className="h-4 w-4 text-blue-600" />Danh mục hồ sơ</h3>
-                    <form className="mt-3 flex gap-2" onSubmit={(event) => { event.preventDefault(); createProfileCategory.mutate(); }}>
-                      <input
-                        value={newProfileCategoryName}
-                        onChange={(event) => setNewProfileCategoryName(event.target.value)}
-                        maxLength={255}
-                        placeholder="Ví dụ: File CV nhân sự"
-                        aria-label="Tên danh mục hồ sơ"
-                        className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-xs"
-                      />
-                      <Button type="submit" size="icon" aria-label="Thêm danh mục" disabled={!newProfileCategoryName.trim() || createProfileCategory.isPending} className="h-9 w-9 shrink-0">
-                        <FolderPlus className="h-4 w-4" />
-                      </Button>
-                    </form>
+                    <div className="mt-3 space-y-2">
+                      <div className="flex gap-2">
+                        <select
+                          value={selectedSharedProfileType}
+                          onChange={(event) => setSelectedSharedProfileType(event.target.value)}
+                          aria-label="Chọn tên danh mục dùng chung"
+                          className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                        >
+                          <option value="">Chọn tên có sẵn</option>
+                          {(profileTypesQuery.data ?? [])
+                            .filter((name: string) => !profileCategoriesQuery.data?.some((category: any) => category.name === name))
+                            .map((name: string) => <option key={name} value={name}>{name}</option>)}
+                        </select>
+                        <Button type="button" size="sm" disabled={!selectedSharedProfileType || createProfileCategory.isPending} onClick={() => createProfileCategory.mutate(selectedSharedProfileType)} className="shrink-0 gap-1.5 px-2.5">
+                          <Plus className="h-3.5 w-3.5" />Chọn
+                        </Button>
+                      </div>
+                      <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); createProfileCategory.mutate(newProfileCategoryName); }}>
+                        <input
+                          value={newProfileCategoryName}
+                          onChange={(event) => setNewProfileCategoryName(event.target.value)}
+                          maxLength={255}
+                          placeholder="Tạo tên mới, ví dụ: File CV"
+                          aria-label="Tên danh mục hồ sơ mới"
+                          className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-xs"
+                        />
+                        <Button type="submit" size="icon" aria-label="Tạo danh mục mới" disabled={!newProfileCategoryName.trim() || createProfileCategory.isPending} className="h-9 w-9 shrink-0">
+                          <FolderPlus className="h-4 w-4" />
+                        </Button>
+                      </form>
+                    </div>
+                    <p className="mt-2 text-[10px] leading-4 text-slate-500">Chỉ tên danh mục được dùng chung; tệp vẫn riêng theo từng nhân sự.</p>
                     {createProfileCategory.isError && <p className="mt-2 text-xs text-red-600">{createProfileCategory.error instanceof Error ? createProfileCategory.error.message : "Không thể tạo danh mục."}</p>}
-                    {profileCategoriesQuery.isLoading ? <p className="py-6 text-center text-xs text-slate-500">Đang tải danh mục...</p>
+                    {profileCategoriesQuery.isLoading || profileTypesQuery.isLoading ? <p className="py-6 text-center text-xs text-slate-500">Đang tải danh mục...</p>
                       : profileCategoriesQuery.isError ? <p className="py-6 text-center text-xs text-red-600">Không thể tải danh mục hồ sơ.</p>
                       : profileCategoriesQuery.data?.length ? <div className="mt-3 space-y-1">
                         {profileCategoriesQuery.data.map((category: any) => (
