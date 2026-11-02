@@ -354,7 +354,7 @@ export function GradeBookViewDialog({
           <div className="flex-1 min-h-0 overflow-y-auto space-y-2 py-2 pr-1">
             <p className="text-sm font-medium">{commentViewName}</p>
             <RichHtmlImagePreview
-              className="min-h-[120px] rounded-md border bg-muted/40 p-3 text-sm prose prose-sm max-w-none dark:prose-invert [&_img]:max-w-full [&_img]:h-auto"
+              className="min-h-[120px] rounded-md border bg-muted/40 p-3 text-sm prose prose-sm max-w-none dark:prose-invert"
               html={commentViewText || "<p class='text-muted-foreground'>Không có nhận xét</p>"}
             />
           </div>

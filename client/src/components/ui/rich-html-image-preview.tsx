@@ -17,9 +17,15 @@ export function RichHtmlImagePreview({ html, className }: RichHtmlImagePreviewPr
 
   useEffect(() => {
     contentRef.current?.querySelectorAll("img").forEach((image) => {
+      image.style.maxWidth = "220px";
+      image.style.maxHeight = "180px";
+      image.style.width = "auto";
+      image.style.height = "auto";
+      image.style.objectFit = "contain";
       image.tabIndex = 0;
       image.setAttribute("role", "button");
       image.setAttribute("aria-label", image.alt ? `Xem ảnh: ${image.alt}` : "Xem ảnh");
+      image.title = "Bấm để xem ảnh lớn";
     });
   }, [html]);
 
