@@ -1662,16 +1662,25 @@ export default function ScoreConversion() {
                                                       variant="ghost"
                                                       size="icon"
                                                       className="h-8 w-8"
-                                                      disabled={!assessmentForDialog}
+                                                      disabled={
+                                                        !assessmentForDialog
+                                                        || getAssessmentStatus(assessmentForDialog, nowWallClockMs)?.key === "not_started"
+                                                      }
                                                       onClick={() => {
-                                                        if (!assessmentForDialog) return;
+                                                        if (
+                                                          !assessmentForDialog
+                                                          || getAssessmentStatus(assessmentForDialog, nowWallClockMs)?.key === "not_started"
+                                                        ) return;
                                                         setStudentDialogTarget({
                                                           mode: "edit",
                                                           assessment: assessmentForDialog,
                                                           student,
                                                         });
                                                       }}
-                                                      title={`Nhập điểm cho ${student.studentName}`}
+                                                      title={assessmentForDialog
+                                                        && getAssessmentStatus(assessmentForDialog, nowWallClockMs)?.key === "not_started"
+                                                        ? "Chưa thi — chưa thể nhập điểm"
+                                                        : `Nhập điểm cho ${student.studentName}`}
                                                       aria-label={`Nhập điểm cho ${student.studentName}`}
                                                       data-testid={`button-edit-student-score-${student.studentId}`}
                                                     >
@@ -1977,6 +1986,10 @@ export default function ScoreConversion() {
         assessment={selectedAssessment}
         open={!!selectedAssessment}
         canManageScores={canEdit}
+        canEnterScores={
+          selectedAssessment !== null
+          && getAssessmentStatus(selectedAssessment, nowWallClockMs)?.key !== "not_started"
+        }
         canManagePublication
         onOpenChange={(open) => {
           if (!open) setSelectedAssessment(null);

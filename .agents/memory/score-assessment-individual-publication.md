@@ -40,3 +40,9 @@ Until the publication policy is reviewed, hide the session-wide publication swit
 **Why:** The user asked to defer business-rule decisions about session-wide publication.
 
 **How to apply:** Do not restore the dialog's bulk controls until the release policy has been clarified.
+
+On `/score-conversion`, keep viewing available for assessments marked “Chưa thi”, but disable per-student skill-score entry in both assessment-roster and student views.
+
+**Why:** The user requested that unopened assessments remain viewable without allowing skill scores to be entered before the exam.
+
+**How to apply:** Derive the lock from the parent assessment lifecycle status. Do not disable viewing or unrelated roster/publication actions.

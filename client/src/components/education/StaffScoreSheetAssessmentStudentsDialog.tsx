@@ -104,6 +104,7 @@ type StaffScoreSheetAssessmentStudentsDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   canManageScores?: boolean;
+  canEnterScores?: boolean;
   canManagePublication?: boolean;
 };
 
@@ -112,6 +113,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
   open,
   onOpenChange,
   canManageScores = true,
+  canEnterScores = canManageScores,
   canManagePublication = false,
 }: StaffScoreSheetAssessmentStudentsDialogProps) {
   const queryClient = useQueryClient();
@@ -478,7 +480,10 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                                 size="icon"
                                 className="h-8 w-8"
                                 onClick={() => setEditingStudent(student)}
-                                title={`Nhập điểm cho ${student.fullName}`}
+                                disabled={!canEnterScores}
+                                title={canEnterScores
+                                  ? `Nhập điểm cho ${student.fullName}`
+                                  : "Chưa thi — chưa thể nhập điểm"}
                                 aria-label={`Quản lý kết quả của ${student.fullName}`}
                                 data-testid={`btn-manage-assessment-score-${student.studentId}`}
                               >
