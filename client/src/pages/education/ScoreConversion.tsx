@@ -97,6 +97,12 @@ type PendingTemplateDelete =
   | { kind: "conversion"; id: string; name: string }
   | { kind: "scoreSheet"; id: string; name: string };
 
+type PendingStudentRemoval = {
+  sessionId: string;
+  studentId: string;
+  studentName: string;
+};
+
 type ScoreConversionViewMode = "assessments" | "students";
 const SCORE_CONVERSION_VIEW_MODE_STORAGE_KEY = "score-conversion-view-mode";
 
@@ -356,6 +362,7 @@ export default function ScoreConversion() {
   const [editingScoreSheetTemplate, setEditingScoreSheetTemplate] = useState<ScoreSheetTemplate | null>(null);
   const [initialScoreSheetTemplate, setInitialScoreSheetTemplate] = useState<ScoreSheetTemplate | null>(null);
   const [pendingTemplateDelete, setPendingTemplateDelete] = useState<PendingTemplateDelete | null>(null);
+  const [pendingStudentRemoval, setPendingStudentRemoval] = useState<PendingStudentRemoval | null>(null);
   const [selectedAssessment, setSelectedAssessment] = useState<StaffAssignedScoreSheetAssessment | null>(null);
   const [studentDialogTarget, setStudentDialogTarget] = useState<{
     mode: "view" | "edit";
@@ -725,6 +732,44 @@ export default function ScoreConversion() {
       toast({
         title: "Không thể xóa bảng điểm mẫu",
         description: error instanceof Error ? error.message : "Vui lòng thử lại.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const removeAssessmentStudentMutation = useMutation({
+    mutationFn: async ({ sessionId, studentId }: PendingStudentRemoval) => {
+      const response = await fetch(
+        `/api/my-space/score-sheet/staff-assessments/${encodeURIComponent(sessionId)}` +
+        `/students/${encodeURIComponent(studentId)}`,
+        { method: "DELETE", credentials: "include" },
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { message?: string } | null;
+        throw new Error(payload?.message ?? "Không thể xóa học viên khỏi bảng điểm");
+      }
+      return response.json();
+    },
+    onSuccess: async (_result, variables) => {
+      setPendingStudentRemoval(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [ASSIGNED_SCORE_SHEET_STUDENTS_ENDPOINT] }),
+        queryClient.invalidateQueries({ queryKey: ASSIGNED_SCORE_SHEET_ASSESSMENT_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff-assessments"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["/api/my-space/score-sheet/staff-assessments", variables.sessionId, "students"],
+        }),
+      ]);
+      toast({
+        title: "Đã xóa học viên khỏi bảng điểm",
+        description: "Điểm đã nhập được giữ lại; bạn có thể thêm học viên lại sau.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Không thể xóa học viên",
+        description: error instanceof Error ? error.message : "Đã xảy ra lỗi.",
         variant: "destructive",
       });
     },
@@ -1570,7 +1615,7 @@ export default function ScoreConversion() {
                                             <th className="min-w-[100px] px-3 py-2 font-semibold">Phân loại</th>
                                             <th className="min-w-[100px] px-3 py-2 font-semibold">Kết quả</th>
                                             <th className="min-w-[110px] px-3 py-2 font-semibold">Tình trạng</th>
-                                            <th className="min-w-[100px] px-3 py-2 text-center font-semibold">Quản lý</th>
+                                            <th className="min-w-[120px] px-3 py-2 text-center font-semibold">Quản lý</th>
                                           </tr>
                                         </thead>
                                         <tbody>
@@ -1685,6 +1730,35 @@ export default function ScoreConversion() {
                                                       data-testid={`button-edit-student-score-${student.studentId}`}
                                                     >
                                                       <Pencil className="h-4 w-4" />
+                                                    </Button>
+                                                  )}
+                                                  {canEdit && (
+                                                    <Button
+                                                      variant="ghost"
+                                                      size="icon"
+                                                      className="h-8 w-8 text-destructive hover:text-destructive disabled:opacity-40"
+                                                      disabled={
+                                                        removeAssessmentStudentMutation.isPending
+                                                        || student.published
+                                                        || student.individuallyPublished
+                                                      }
+                                                      onClick={() => {
+                                                        if (student.published || student.individuallyPublished) return;
+                                                        setPendingStudentRemoval({
+                                                          sessionId: student.sessionId,
+                                                          studentId: student.studentId,
+                                                          studentName: student.studentName,
+                                                        });
+                                                      }}
+                                                      title={
+                                                        student.published || student.individuallyPublished
+                                                          ? "Thu hồi công bố trước khi xóa"
+                                                          : `Xóa ${student.studentName} khỏi bảng điểm`
+                                                      }
+                                                      aria-label={`Xóa ${student.studentName} khỏi bảng điểm`}
+                                                      data-testid={`button-remove-student-score-${student.studentId}`}
+                                                    >
+                                                      <Trash2 className="h-4 w-4" />
                                                     </Button>
                                                   )}
                                                 </div>
@@ -1978,6 +2052,39 @@ export default function ScoreConversion() {
               disabled={!pendingTemplateDelete || deletingTemplate}
             >
               {deletingTemplate ? "Đang xóa..." : "Xóa"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={Boolean(pendingStudentRemoval)}
+        onOpenChange={(open) => {
+          if (!open && !removeAssessmentStudentMutation.isPending) {
+            setPendingStudentRemoval(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa học viên khỏi bảng điểm?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Xóa {pendingStudentRemoval?.studentName ?? "học viên"} khỏi bảng điểm của buổi thi này?
+              <br />
+              Điểm đã nhập được giữ lại và học viên có thể được thêm lại sau.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removeAssessmentStudentMutation.isPending}>Hủy</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={!pendingStudentRemoval || removeAssessmentStudentMutation.isPending}
+              onClick={() => {
+                if (pendingStudentRemoval) {
+                  removeAssessmentStudentMutation.mutate(pendingStudentRemoval);
+                }
+              }}
+            >
+              {removeAssessmentStudentMutation.isPending ? "Đang xóa…" : "Xóa"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -5563,12 +5563,36 @@ export function registerMySpaceRoutes(app: Express): void {
         const [session] = await tx
           .select({
             excludedStudentIds: classSessions.scoreSheetAssessmentExcludedStudentIds,
+            published: classSessions.scoreSheetAssessmentPublished,
           })
           .from(classSessions)
           .where(eq(classSessions.id, sessionId.data))
           .limit(1);
         if (!session) {
           return { status: 404, message: "Không tìm thấy buổi thi" };
+        }
+
+        if (shouldExclude && session.published) {
+          return {
+            status: 409,
+            message: "Hãy thu hồi công bố toàn bảng trước khi xóa học viên khỏi bảng điểm.",
+          };
+        }
+        if (shouldExclude) {
+          const attempts = await tx
+            .select({ result: scoreSheetAssessmentStudentAttempts.result })
+            .from(scoreSheetAssessmentStudentAttempts)
+            .where(and(
+              eq(scoreSheetAssessmentStudentAttempts.assessmentId, access.assessmentId),
+              eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
+              eq(scoreSheetAssessmentStudentAttempts.studentId, studentId.data),
+            ));
+          if (attempts.some((attempt) => isScoreSheetAssessmentStudentPublished(attempt.result))) {
+            return {
+              status: 409,
+              message: "Hãy thu hồi công bố riêng trước khi xóa học viên khỏi bảng điểm.",
+            };
+          }
         }
 
         const excludedStudentIds = new Set(

@@ -493,12 +493,21 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8 text-destructive hover:text-destructive"
-                                  onClick={() => setPendingRemoval(student)}
-                                  title={`Xóa ${student.fullName} khỏi bảng điểm`}
+                                  className="h-8 w-8 text-destructive hover:text-destructive disabled:opacity-40"
+                                  onClick={() => {
+                                    if (assessment?.published || student.individuallyPublished) return;
+                                    setPendingRemoval(student);
+                                  }}
+                                  title={assessment?.published || student.individuallyPublished
+                                    ? "Thu hồi công bố trước khi xóa"
+                                    : `Xóa ${student.fullName} khỏi bảng điểm`}
                                   aria-label={`Xóa ${student.fullName} khỏi bảng điểm`}
                                   data-testid={`btn-remove-assessment-student-${student.studentId}`}
-                                  disabled={removeStudentMutation.isPending}
+                                  disabled={
+                                    removeStudentMutation.isPending
+                                    || assessment?.published
+                                    || student.individuallyPublished
+                                  }
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>

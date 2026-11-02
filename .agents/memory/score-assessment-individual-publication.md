@@ -46,3 +46,9 @@ On `/score-conversion`, keep viewing available for assessments marked “Chưa t
 **Why:** The user requested that unopened assessments remain viewable without allowing skill scores to be entered before the exam.
 
 **How to apply:** Derive the lock from the parent assessment lifecycle status. Do not disable viewing or unrelated roster/publication actions.
+
+On `/score-conversion`, a student can be removed from the assessment roster only after both session-wide and individual publication are withdrawn. Removal hides the score from the learner but preserves entered attempts; withdrawing publication alone keeps the student in staff tracking.
+
+**Why:** The user confirmed that removing a student should hide the learner-facing score sheet, while withdrawing publication should hide it only from the learner and leave the staff roster intact.
+
+**How to apply:** Enforce the publication checks server-side as well as disabling the delete controls. Treat either session-wide publication or the student's individual publication as a deletion lock.
