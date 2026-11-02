@@ -415,23 +415,6 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                     </SectionCard>
                   ))}</div> : <EmptyTab title="Chưa có dữ liệu hợp đồng" description="Thêm hợp đồng để lưu thông tin và tệp hồ sơ cho nhân sự." />}
 
-                <Dialog open={!!contractPreview} onOpenChange={(isOpen) => { if (!isOpen) closeContractPreview(); }}>
-                  <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle>{contractPreview?.attachment.name ?? "Xem tệp đính kèm"}</DialogTitle>
-                      <DialogDescription>Xem trước hồ sơ đính kèm của nhân sự.</DialogDescription>
-                    </DialogHeader>
-                    <div className="min-h-40 overflow-auto rounded-lg border bg-slate-50 p-3">
-                      {contractPreview?.kind === "loading" && <p className="py-16 text-center text-sm text-slate-500">Đang tải tệp...</p>}
-                      {contractPreview?.kind === "error" && <p className="py-16 text-center text-sm text-red-600">Không thể mở tệp đính kèm.</p>}
-                      {contractPreview?.kind === "image" && contractPreview.url && <img src={contractPreview.url} alt={contractPreview.attachment.name} className="mx-auto max-h-[70vh] max-w-full object-contain" />}
-                      {contractPreview?.kind === "pdf" && contractPreview.url && <iframe title={contractPreview.attachment.name} src={contractPreview.url} className="h-[70vh] w-full rounded-md bg-white" />}
-                      {contractPreview?.kind === "docx" && <div className="mx-auto max-w-3xl bg-white p-6 text-sm leading-6 text-slate-800 [&_h1]:mb-3 [&_h1]:text-xl [&_h2]:mb-2 [&_h2]:text-lg [&_li]:ml-5 [&_li]:list-disc [&_p]:mb-3" dangerouslySetInnerHTML={{ __html: contractPreview.html ?? "" }} />}
-                      {contractPreview?.kind === "unsupported" && <div className="py-12 text-center"><p className="text-sm text-slate-600">Định dạng này chưa hỗ trợ xem trước.</p><Button type="button" variant="outline" className="mt-3" onClick={() => void downloadContractAttachment(contractPreview.attachment, contractPreview.source)}>Tải tệp xuống</Button></div>}
-                    </div>
-                  </DialogContent>
-                </Dialog>
-
                 <Dialog open={addContractOpen} onOpenChange={(value) => { setAddContractOpen(value); if (!value) createContract.reset(); }}>
                   <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
                     <DialogHeader><DialogTitle>Thêm hợp đồng</DialogTitle><DialogDescription>Nhập thông tin hợp đồng và đính kèm hồ sơ liên quan.</DialogDescription></DialogHeader>
@@ -551,6 +534,23 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                 </div>
               </TabsContent>
             </Tabs>
+
+            <Dialog open={!!contractPreview} onOpenChange={(isOpen) => { if (!isOpen) closeContractPreview(); }}>
+              <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>{contractPreview?.attachment.name ?? "Xem tệp đính kèm"}</DialogTitle>
+                  <DialogDescription>Xem trước hồ sơ đính kèm của nhân sự.</DialogDescription>
+                </DialogHeader>
+                <div className="min-h-40 overflow-auto rounded-lg border bg-slate-50 p-3">
+                  {contractPreview?.kind === "loading" && <p className="py-16 text-center text-sm text-slate-500">Đang tải tệp...</p>}
+                  {contractPreview?.kind === "error" && <p className="py-16 text-center text-sm text-red-600">Không thể mở tệp đính kèm.</p>}
+                  {contractPreview?.kind === "image" && contractPreview.url && <img src={contractPreview.url} alt={contractPreview.attachment.name} className="mx-auto max-h-[70vh] max-w-full object-contain" />}
+                  {contractPreview?.kind === "pdf" && contractPreview.url && <iframe title={contractPreview.attachment.name} src={contractPreview.url} className="h-[70vh] w-full rounded-md bg-white" />}
+                  {contractPreview?.kind === "docx" && <div className="mx-auto max-w-3xl bg-white p-6 text-sm leading-6 text-slate-800 [&_h1]:mb-3 [&_h1]:text-xl [&_h2]:mb-2 [&_h2]:text-lg [&_li]:ml-5 [&_li]:list-disc [&_p]:mb-3" dangerouslySetInnerHTML={{ __html: contractPreview.html ?? "" }} />}
+                  {contractPreview?.kind === "unsupported" && <div className="py-12 text-center"><p className="text-sm text-slate-600">Định dạng này chưa hỗ trợ xem trước.</p><Button type="button" variant="outline" className="mt-3" onClick={() => void downloadContractAttachment(contractPreview.attachment, contractPreview.source)}>Tải tệp xuống</Button></div>}
+                </div>
+              </DialogContent>
+            </Dialog>
           </main>
         </div>
       </DialogContent>
