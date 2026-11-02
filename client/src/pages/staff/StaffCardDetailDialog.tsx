@@ -427,22 +427,22 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                   >
                     {teacherProfileQuery.isLoading ? <p className="py-4 text-xs text-slate-500">Đang tải profile...</p>
                       : teacherProfileQuery.isError ? <p className="py-4 text-xs text-red-600">Không thể tải profile giáo viên.</p>
-                        : teacherProfileQuery.data ? <div className="grid gap-3 py-3 sm:grid-cols-2">
-                          {teacherProfileQuery.data.experienceValue !== null && <div className="flex min-w-0 gap-2.5 rounded-lg border border-slate-100 p-3">
+                        : teacherProfileQuery.data ? <div className="space-y-4 py-4">
+                          {teacherProfileQuery.data.experienceValue !== null && <div className="flex min-w-0 gap-2.5">
                             <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
-                            <div className="min-w-0"><h4 className="text-xs font-bold text-slate-900">Năm kinh nghiệm</h4><p className="mt-1 text-sm text-slate-700">{teacherProfileQuery.data.experienceValue} {teacherProfileQuery.data.experienceUnit === "month" ? "tháng" : "năm"}</p></div>
+                            <div className="min-w-0"><h4 className="text-sm font-bold text-slate-900">Năm kinh nghiệm</h4><p className="mt-1 text-sm text-slate-700">{teacherProfileQuery.data.experienceValue} {teacherProfileQuery.data.experienceUnit === "month" ? "tháng" : "năm"}</p></div>
                           </div>}
-                          {teacherProfileQuery.data.teachingExperience.trim() && <div className="flex min-w-0 gap-2.5 rounded-lg border border-slate-100 p-3">
+                          {teacherProfileQuery.data.teachingExperience.trim() && <div className="flex min-w-0 gap-2.5">
                             <GraduationCap className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                            <div className="min-w-0"><h4 className="text-xs font-bold text-slate-900">Kinh nghiệm giảng dạy</h4><ProfileBulletList content={teacherProfileQuery.data.teachingExperience} /></div>
+                            <div className="min-w-0"><h4 className="text-sm font-bold text-slate-900">Kinh nghiệm giảng dạy</h4><ProfileBulletList content={teacherProfileQuery.data.teachingExperience} /></div>
                           </div>}
-                          {teacherProfileQuery.data.certificates.trim() && <div className="flex min-w-0 gap-2.5 rounded-lg border border-slate-100 p-3">
+                          {teacherProfileQuery.data.certificates.trim() && <div className="flex min-w-0 gap-2.5">
                             <Award className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" />
-                            <div className="min-w-0"><h4 className="text-xs font-bold text-slate-900">Bằng cấp chứng chỉ</h4><ProfileBulletList content={teacherProfileQuery.data.certificates} /></div>
+                            <div className="min-w-0"><h4 className="text-sm font-bold text-slate-900">Bằng cấp chứng chỉ</h4><ProfileBulletList content={teacherProfileQuery.data.certificates} /></div>
                           </div>}
-                          {teacherProfileQuery.data.achievements.trim() && <div className="flex min-w-0 gap-2.5 rounded-lg border border-slate-100 p-3">
+                          {teacherProfileQuery.data.achievements.trim() && <div className="flex min-w-0 gap-2.5">
                             <Medal className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                            <div className="min-w-0"><h4 className="text-xs font-bold text-slate-900">Thành tích nổi bật</h4><ProfileBulletList content={teacherProfileQuery.data.achievements} /></div>
+                            <div className="min-w-0"><h4 className="text-sm font-bold text-slate-900">Thành tích nổi bật</h4><ProfileBulletList content={teacherProfileQuery.data.achievements} /></div>
                           </div>}
                         </div>
                         : <p className="py-4 text-xs text-slate-500">Chưa có thông tin profile giáo viên.</p>}
