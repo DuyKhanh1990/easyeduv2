@@ -96,6 +96,15 @@ function EmptyTab({ title, description }: { title: string; description: string }
   );
 }
 
+function ProfileBulletList({ content }: { content: string }) {
+  const items = content.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+  return (
+    <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-700">
+      {items.map((item, index) => <li key={`${index}-${item}`} className="break-words">{item}</li>)}
+    </ul>
+  );
+}
+
 function calculateContractEndDate(startDate: string, months: number): string {
   const [year, month, day] = startDate.split("-").map(Number);
   if (!year || !month || !day || !months) return "";
@@ -425,15 +434,15 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                           </div>}
                           {teacherProfileQuery.data.teachingExperience.trim() && <div className="flex min-w-0 gap-2.5 rounded-lg border border-slate-100 p-3">
                             <GraduationCap className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                            <div className="min-w-0"><h4 className="text-xs font-bold text-slate-900">Kinh nghiệm giảng dạy</h4><p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-700">{teacherProfileQuery.data.teachingExperience}</p></div>
+                            <div className="min-w-0"><h4 className="text-xs font-bold text-slate-900">Kinh nghiệm giảng dạy</h4><ProfileBulletList content={teacherProfileQuery.data.teachingExperience} /></div>
                           </div>}
                           {teacherProfileQuery.data.certificates.trim() && <div className="flex min-w-0 gap-2.5 rounded-lg border border-slate-100 p-3">
                             <Award className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" />
-                            <div className="min-w-0"><h4 className="text-xs font-bold text-slate-900">Bằng cấp chứng chỉ</h4><p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-700">{teacherProfileQuery.data.certificates}</p></div>
+                            <div className="min-w-0"><h4 className="text-xs font-bold text-slate-900">Bằng cấp chứng chỉ</h4><ProfileBulletList content={teacherProfileQuery.data.certificates} /></div>
                           </div>}
                           {teacherProfileQuery.data.achievements.trim() && <div className="flex min-w-0 gap-2.5 rounded-lg border border-slate-100 p-3">
                             <Medal className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                            <div className="min-w-0"><h4 className="text-xs font-bold text-slate-900">Thành tích nổi bật</h4><p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-700">{teacherProfileQuery.data.achievements}</p></div>
+                            <div className="min-w-0"><h4 className="text-xs font-bold text-slate-900">Thành tích nổi bật</h4><ProfileBulletList content={teacherProfileQuery.data.achievements} /></div>
                           </div>}
                         </div>
                         : <p className="py-4 text-xs text-slate-500">Chưa có thông tin profile giáo viên.</p>}
