@@ -7,4 +7,4 @@ description: Keep cancelled receipt movements distinct from normal imports, expo
 
 **Why:** The user wants a cancelled export to be visible as a reversal, not mistaken for a new purchase or a net increase, while retaining the single-row summary layout.
 
-**How to apply:** When changing inventory summary cards or list totals, use the cancellation transaction type to offset the original direction rather than count it as a new import/export. Reconcile displayed net totals to the stock ledger.
+**How to apply:** When changing inventory summary cards or list totals, use the cancellation transaction type to offset the original direction rather than count it as a new import/export. Reconcile displayed net totals to the stock ledger. For actual receipt-list movement totals, aggregate only completed receipt rows; keep cancelled quantities positive on the document row as an audit of the original receipt.
