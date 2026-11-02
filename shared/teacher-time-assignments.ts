@@ -83,9 +83,13 @@ export function getTeacherIdsForTimeRange(
 ): string[] {
   const rangeStart = toMinutes(startTime);
   const rangeEnd = toMinutes(endTime);
-  const assignedTeacherIds = new Set(assignments.map((assignment) => assignment.teacherId));
+  const roster = legacyTeacherIds.length > 0 ? new Set(legacyTeacherIds) : null;
+  const rosterAssignments = roster
+    ? assignments.filter((assignment) => roster.has(assignment.teacherId))
+    : assignments;
+  const assignedTeacherIds = new Set(rosterAssignments.map((assignment) => assignment.teacherId));
   const visibleTeacherIds = new Set(
-    assignments
+    rosterAssignments
       .filter((assignment) => {
         const assignmentStart = toMinutes(assignment.startTime);
         const assignmentEnd = toMinutes(assignment.endTime);

@@ -31,6 +31,21 @@ describe("getTeacherIdsForTimeRange", () => {
     ).toEqual(["partial", "legacy"]);
   });
 
+  it("ignores time assignments for teachers outside the current session roster", () => {
+    const assignments = [
+      { teacherId: "current-overlap", startTime: "08:00", endTime: "10:00" },
+      { teacherId: "removed-teacher", startTime: "08:00", endTime: "10:00" },
+      { teacherId: "current-outside", startTime: "10:00", endTime: "11:00" },
+    ];
+
+    expect(getTeacherIdsForTimeRange(
+      assignments,
+      "08:30",
+      "09:30",
+      ["current-overlap", "current-outside", "current-legacy"],
+    )).toEqual(["current-overlap", "current-legacy"]);
+  });
+
   it("uses the selected teacher's interval and keeps the configured full shift as fallback", () => {
     const assignments = [
       { teacherId: "teacher-a", startTime: "08:30:00", endTime: "09:30:00" },

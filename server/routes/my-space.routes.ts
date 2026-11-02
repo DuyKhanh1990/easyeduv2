@@ -2520,7 +2520,7 @@ export function registerMySpaceRoutes(app: Express): void {
         LEFT JOIN teacher_attendance ta ON ta.class_session_id = cs.id AND ta.staff_id = ${staffRecord.id}::uuid
         LEFT JOIN class_session_teacher_assignments tta
           ON tta.class_session_id = cs.id AND tta.teacher_id = ${staffRecord.id}::uuid
-        WHERE (cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[] OR tta.teacher_id IS NOT NULL)
+        WHERE cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
           AND cs.session_date >= ${dateFrom}
           AND cs.session_date <= ${dateTo}
         ORDER BY cs.session_date, st.start_time
@@ -2941,20 +2941,24 @@ export function registerMySpaceRoutes(app: Express): void {
         .from(classSessionTeacherAssignments)
         .where(eq(classSessionTeacherAssignments.classSessionId, classSessionId));
 
-      const ownAssignment = timeAssignments.find((assignment) => assignment.teacherId === staffRecord.id);
+      const sessionTeacherIds = row.teacherIds ?? [];
+      const sessionTeacherIdSet = new Set(sessionTeacherIds);
+      const currentTeacherTimeAssignments = timeAssignments.filter((assignment) =>
+        sessionTeacherIdSet.has(assignment.teacherId),
+      );
+      const ownAssignment = currentTeacherTimeAssignments.find((assignment) => assignment.teacherId === staffRecord.id);
       const startTime = ownAssignment?.startTime ?? row.startTime;
       const endTime = ownAssignment?.endTime ?? row.endTime;
-      const isAssignedToSession =
-        (row.teacherIds ?? []).includes(staffRecord.id) || !!ownAssignment;
+      const isAssignedToSession = sessionTeacherIdSet.has(staffRecord.id);
       if (!isAssignedToSession) {
         return res.status(404).json({ message: "Không tìm thấy buổi học" });
       }
 
       const visibleTeacherIds = getTeacherIdsForTimeRange(
-        timeAssignments,
+        currentTeacherTimeAssignments,
         startTime,
         endTime,
-        row.teacherIds ?? [],
+        sessionTeacherIds,
       );
 
       const [teachers, contents, stats, regularStudentSessions] = await Promise.all([
