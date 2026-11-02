@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { StoreDateRangePicker, type DateRange } from "./StoreDateRangePicker";
 import { exportTonKho, type InventoryRow as ExportInventoryRow } from "./storeExportUtils";
+import { calculateStoreInventoryTotals } from "./storeInventorySummary";
 
 type InventoryRow = {
   productId: string;
@@ -198,8 +199,7 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
   const adjustmentOutImportQty = Number(summary?.adjustment_out_import_qty ?? 0);
   const adjustmentOutExportQty = Number(summary?.adjustment_out_export_qty ?? 0);
   const transferNet = transferInQty + transferOutQty;
-  const totalImportQty = importQty + transferInQty + cancelExportQty + adjustmentInQty;
-  const totalExportQty = exportQty + transferOutQty + cancelImportQty + adjustmentOutQty;
+  const { totalImportQty, totalExportQty } = calculateStoreInventoryTotals(summary ?? {});
 
   useEffect(() => {
     if (data && page > totalPages) setPage(totalPages);
@@ -238,8 +238,8 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
         {/* Stat cards */}
         <div className="px-6 pt-3 pb-2 shrink-0 overflow-x-auto">
           <div className="grid grid-cols-10 min-w-[900px] gap-1">
-          <StatCard label="NHẬP TỔNG" title="Nhập kho + chuyển vào + hủy xuất + mọi điều chỉnh làm tăng tồn" value={formatSigned(totalImportQty)} colorClass="bg-emerald-50 text-emerald-700 border-emerald-100" />
-          <StatCard label="XUẤT TỔNG" title="Xuất kho + chuyển ra + hủy nhập + mọi điều chỉnh làm giảm tồn" value={formatSigned(totalExportQty)} colorClass="bg-gray-50 text-gray-700 border-gray-100" />
+          <StatCard label="NHẬP TỔNG" title="Nhập kho + chuyển vào + điều chỉnh tăng − hủy nhập kho" value={formatSigned(totalImportQty)} colorClass="bg-emerald-50 text-emerald-700 border-emerald-100" />
+          <StatCard label="XUẤT TỔNG" title="Xuất kho + chuyển ra + điều chỉnh giảm − hoàn hủy phiếu xuất" value={formatSigned(totalExportQty)} colorClass="bg-gray-50 text-gray-700 border-gray-100" />
           <StatCard
             label="CHUYỂN KHO"
             value={formatSigned(transferNet)}
@@ -252,8 +252,8 @@ function DetailPopup({ row, onClose }: DetailPopupProps) {
             }
             colorClass="bg-indigo-50 text-indigo-700 border-indigo-100"
           />
-          <StatCard label="HOÀN HỦY" title="Hủy phiếu xuất — hoàn hàng vào kho; đã tính trong Nhập tổng" value={formatSigned(cancelExportQty)} colorClass="bg-cyan-50 text-cyan-700 border-cyan-100" />
-          <StatCard label="HỦY NHẬP KHO" title="Hủy phiếu nhập — trừ hàng khỏi kho; đã tính trong Xuất tổng" value={formatSigned(cancelImportQty)} colorClass="bg-orange-50 text-orange-700 border-orange-100" />
+          <StatCard label="HOÀN HỦY" title="Hủy phiếu xuất — hoàn hàng vào kho; đã trừ khỏi Xuất tổng" value={formatSigned(cancelExportQty)} colorClass="bg-cyan-50 text-cyan-700 border-cyan-100" />
+          <StatCard label="HỦY NHẬP KHO" title="Hủy phiếu nhập — trừ hàng khỏi kho; đã trừ khỏi Nhập tổng" value={formatSigned(cancelImportQty)} colorClass="bg-orange-50 text-orange-700 border-orange-100" />
           <StatCard
             label="ĐC TĂNG"
             title="Điều chỉnh làm tăng tồn từ phiếu nhập và phiếu xuất; đã tính trong Nhập tổng"
