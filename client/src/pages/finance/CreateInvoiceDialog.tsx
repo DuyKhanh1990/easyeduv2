@@ -985,6 +985,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
     enabled: open && Boolean(studentId),
   });
   const datCocBalance = (studentWallet?.summary?.datCoc ?? 0) as number;
+  const hasAvailableDeposit = Boolean(
+    studentId && studentWallet !== undefined && Number(datCocBalance) > 0,
+  );
 
   const selectedPerson = students.find((s: any) => s.id === studentId);
   const displayName = selectedPerson ? `[${selectedPerson.code}] ${selectedPerson.fullName}` : subjectName;
@@ -1429,6 +1432,8 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
   // Remaining = total minus what's already paid directly AND what's allocated in schedule
   const scheduleRemaining = finalTotal - directPaidAmount - scheduleAllocated;
   const canAddSchedule = scheduleRemaining > 0;
+  const getScheduleDisplayLabel = (index: number) =>
+    t("finance.installmentLabel", { number: index + (directPaidAmount > 0 ? 2 : 1) });
 
   const addPayment = () => {
     if (!canAddSchedule) return;
@@ -3605,8 +3610,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                         </p>
                         <div className="space-y-1.5">
                           {paymentSchedule
-                            .filter(entry => (entry.promotionAmount ?? 0) > 0)
-                            .map(entry => {
+                            .map((entry, index) => ({ entry, index }))
+                            .filter(({ entry }) => (entry.promotionAmount ?? 0) > 0)
+                            .map(({ entry, index }) => {
                               const promotionLabels = (entry.promotionKeys ?? [])
                                 .map(key => {
                                   const option = promotionOptionsWithVouchers.find((candidate: any) => candidate.id === key);
@@ -3617,7 +3623,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                                 <div key={entry.id} className="flex justify-between gap-3 text-xs">
                                   <div className="min-w-0">
                                     <p className="truncate text-muted-foreground">
-                                      {entry.label}{entry.code ? ` (${entry.code})` : ""}
+                                      {getScheduleDisplayLabel(index)}{entry.code ? ` (${entry.code})` : ""}
                                     </p>
                                     {promotionLabels.length > 0 && (
                                       <p className="truncate text-[10px] text-muted-foreground/80">
@@ -3673,16 +3679,17 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     <Input
                       type="number"
                       min={0}
-                      max={studentId && datCocBalance > 0 ? Math.min(subTotal, datCocBalance) : subTotal}
+                      max={hasAvailableDeposit ? Math.min(subTotal, Number(datCocBalance)) : 0}
                       value={deduction}
                       onChange={e => {
-                        const maxDed = studentId && datCocBalance > 0
-                          ? Math.min(subTotal, datCocBalance)
-                          : subTotal;
+                        const maxDed = hasAvailableDeposit
+                          ? Math.min(subTotal, Number(datCocBalance))
+                          : 0;
                         setDeduction(Math.min(maxDed, Math.max(0, Number(e.target.value))));
                       }}
                       onFocus={e => e.target.select()}
-                      className="h-7 text-xs text-right w-32 border-muted"
+                      disabled={!hasAvailableDeposit}
+                      className="h-7 text-xs text-right w-32 border-muted disabled:cursor-not-allowed disabled:bg-muted/50 disabled:opacity-60"
                       data-testid="input-deduction"
                     />
                   </div>
@@ -3782,8 +3789,9 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                  <p className="text-xs text-muted-foreground text-center py-3 border rounded-lg">{t("finance.create.noInstallments")}</p>
               )}
               <div className="space-y-2">
-                {paymentSchedule.map(p => (
+                {paymentSchedule.map((p, scheduleIndex) => (
                   (() => {
+                    const scheduleDisplayLabel = getScheduleDisplayLabel(scheduleIndex);
                     const promotionAmount = p.promotionAmount ?? 0;
                     const surchargeAmount = p.surchargeAmount ?? 0;
                     const hasScheduleAdjustment =
@@ -3806,7 +3814,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                     {/* Header: label + status + delete */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold">{p.label}</span>
+                        <span className="text-xs font-bold">{scheduleDisplayLabel}</span>
                         <Select value={p.status} onValueChange={v => updatePaymentStatus(p.id, v)} disabled={isSchedulePaid}>
                           <SelectTrigger className={`h-6 text-[9px] px-1.5 py-0 rounded font-medium whitespace-nowrap border-0 shadow-none focus:ring-0 w-auto gap-1 ${isSchedulePaid ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"}`}>
                             <SelectValue />
@@ -4044,7 +4052,7 @@ export function CreateInvoiceDialog({ open, onClose, invoiceId, defaultStudent }
                           className="h-7 px-3 text-[11px] font-medium text-purple-600 border-purple-200 hover:bg-purple-50 hover:text-purple-700"
                           onClick={() => openSplitPayment(p)}
                           disabled={p.amount <= 1}
-                           title={p.amount <= 1 ? t("finance.amountTooSmallToSplit") : `${t("finance.create.splitInstallmentTitle")} ${p.label}`}
+                           title={p.amount <= 1 ? t("finance.amountTooSmallToSplit") : `${t("finance.create.splitInstallmentTitle")} ${scheduleDisplayLabel}`}
                           data-testid={`button-split-payment-${p.id}`}
                         >
                            {t("finance.create.splitInstallmentTitle")}
