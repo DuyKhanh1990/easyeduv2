@@ -329,6 +329,7 @@ type ChangeCycleSinglePayload = {
   fromSessionOrder: number;
   oldWeekdays: string;
   newWeekdays: string;
+  scheduleMode?: "keep_count" | "within_range";
   mode: "all" | "unattended_only";
   deleted: number;
   created: number;
@@ -744,6 +745,8 @@ function ChangeCycleLogDetailView({ log }: { log: ActivityLog }) {
   if (!parsed) return <div className="text-xs text-muted-foreground italic">Không có dữ liệu chi tiết.</div>;
 
   const modeLabel = (mode: string) => mode === "all" ? "Tất cả buổi (kể cả đã điểm danh)" : "Chỉ buổi chưa điểm danh";
+  const scheduleModeLabel = (mode?: string) =>
+    mode === "within_range" ? "Giữ trong khoảng lịch cũ" : "Giữ đủ số buổi (mặc định)";
 
   if (parsed.kind === "single") {
     const { data: d } = parsed;
@@ -764,6 +767,10 @@ function ChangeCycleLogDetailView({ log }: { log: ActivityLog }) {
             <div className="text-xs">
               <span className="text-muted-foreground">Chế độ: </span>
               <span className="font-medium">{modeLabel(d.mode)}</span>
+            </div>
+            <div className="text-xs">
+              <span className="text-muted-foreground">Kiểu xếp lịch: </span>
+              <span className="font-medium">{scheduleModeLabel(d.scheduleMode)}</span>
             </div>
             {hasScheduleDetails && (
               <Button

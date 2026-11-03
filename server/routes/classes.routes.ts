@@ -3479,6 +3479,7 @@ export function registerClassesRoutes(app: Express): void {
               fromSessionOrder,
               oldWeekdays: formatDays(logMeta.oldWeekdays),
               newWeekdays: formatDays(weekdays),
+              scheduleMode: scheduleMode === "within_range" ? "within_range" : "keep_count",
               mode,
               deleted: result.deleted,
               created: result.created,
