@@ -836,7 +836,7 @@ function AttendanceContent() {
                         {/* Table */}
                         {isExpanded && (
                           <div className="w-full overflow-x-auto">
-                            <Table className="w-[1210px] min-w-[1210px] table-fixed">
+                            <Table className="w-full min-w-[1210px] table-fixed">
                               <TableHeader>
                                 <TableRow className="bg-muted/10 hover:bg-muted/10">
                                   <TableHead className="w-[40px] text-xs font-semibold" data-testid="th-checkbox">
