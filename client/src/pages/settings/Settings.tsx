@@ -5399,7 +5399,7 @@ function BidvPanel() {
                     className="pr-10"
                     data-testid="input-bidv-client-secret"
                   />
-                  <button type="button" onClick={() => setShowSysSecrets(p => ({ ...p, clientSecret: !p.clientSecret }))} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <button type="button" onClick={() => void revealSystemSecret("client_secret")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     {showSysSecrets.clientSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
@@ -5418,7 +5418,7 @@ function BidvPanel() {
                     className="pr-10"
                     data-testid="input-bidv-symmetric-key"
                   />
-                  <button type="button" onClick={() => setShowSysSecrets(p => ({ ...p, symmetricKey: !p.symmetricKey }))} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <button type="button" onClick={() => void revealSystemSecret("symmetric_key")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     {showSysSecrets.symmetricKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
@@ -5678,7 +5678,7 @@ function BidvPanel() {
                       className="pr-10"
                       data-testid="input-bidv-secret-code"
                     />
-                    <button type="button" onClick={() => setShowSecretCode(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    <button type="button" onClick={() => void revealLocationSecret("secret_code")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                       {showSecretCode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
