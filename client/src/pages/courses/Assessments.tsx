@@ -1317,20 +1317,33 @@ export default function Assessments() {
             <TooltipProvider>
             <div className="flex-1 overflow-hidden flex flex-col rounded-2xl bg-white shadow-sm shadow-slate-200/60 border border-slate-200/80">
               <div className="flex-1 overflow-auto">
-                <table className="w-full caption-bottom text-sm border-collapse" style={{ minWidth: 1100 }}>
+                <table className="w-full caption-bottom text-sm border-collapse table-fixed" style={{ minWidth: 1142 }}>
+                  <colgroup>
+                    <col style={{ width: 170 }} />
+                    <col style={{ width: 180 }} />
+                    <col style={{ width: 78 }} />
+                    <col style={{ width: 80 }} />
+                    <col style={{ width: 68 }} />
+                    <col style={{ width: 92 }} />
+                    <col style={{ width: 128 }} />
+                    <col style={{ width: 108 }} />
+                    {assessCan.edit("results") && <col style={{ width: 84 }} />}
+                    <col style={{ width: 110 }} />
+                    {assessCan.delete("results") && <col style={{ width: 44 }} />}
+                  </colgroup>
                   <thead>
                     <tr className="bg-slate-50/80 border-b border-slate-100">
-                      <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap min-w-[150px]">Tên bài</th>
-                      <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap w-[160px]">Học viên</th>
-                      <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap w-[110px]">Lớp</th>
-                      <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap w-[100px]">TG làm bài</th>
-                      <th className="px-4 py-3 text-center text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap w-[80px]">Điểm</th>
-                      <th className="px-4 py-3 text-center text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap w-[100px]">Điểm Cập nhật</th>
-                      <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap w-[150px]">Chi tiết</th>
-                      <th className="px-4 py-3 text-center text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap w-[90px]">AI Chấm</th>
-                      {assessCan.edit("results") && <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap w-[110px]">Nhận xét</th>}
-                      <th className="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap w-[130px]">Nộp lúc</th>
-                      {assessCan.delete("results") && <th className="px-4 py-3 text-center text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap w-[80px]">•••</th>}
+                      <th className="px-3 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Tên bài</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Học viên</th>
+                      <th className="px-2 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Lớp</th>
+                      <th className="px-2 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">TG làm bài</th>
+                      <th className="px-1 py-3 text-center text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Điểm</th>
+                      <th className="px-2 py-3 text-center text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Điểm Cập nhật</th>
+                      <th className="px-2 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Chi tiết</th>
+                      <th className="px-2 py-3 text-center text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">AI Chấm</th>
+                      {assessCan.edit("results") && <th className="px-2 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Nhận xét</th>}
+                      <th className="px-2 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Nộp lúc</th>
+                      {assessCan.delete("results") && <th className="px-1 py-3 text-center text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">•••</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -1395,8 +1408,15 @@ export default function Assessments() {
                               </div>
                             </td>
                             {/* Student */}
-                            <td className="px-4 py-3">
-                              <StudentNameLink studentId={sub.studentId} name={sub.studentName || "—"} code={sub.studentCode} />
+                            <td className="px-3 py-3 whitespace-nowrap">
+                              <div className="truncate" title={`${sub.studentName || "—"}${sub.studentCode ? ` (${sub.studentCode})` : ""}`}>
+                                <StudentNameLink
+                                  studentId={sub.studentId}
+                                  name={sub.studentName || "—"}
+                                  code={sub.studentCode}
+                                  className="inline-block max-w-full truncate whitespace-nowrap align-bottom"
+                                />
+                              </div>
                             </td>
                             {/* Class */}
                             <td className="px-4 py-3">
