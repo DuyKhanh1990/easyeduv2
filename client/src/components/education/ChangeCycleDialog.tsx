@@ -23,11 +23,28 @@ function formatDate(value: string | Date | undefined): string {
   return year && month && day ? `${day}/${month}/${year}` : date;
 }
 
+function getSessionDate(session: any): string | undefined {
+  const value = session?.sessionDate ?? session?.classSession?.sessionDate;
+  return value ? String(value).slice(0, 10) : undefined;
+}
+
+function getSessionWeekday(session: any): number | undefined {
+  const value = session?.weekday ?? session?.classSession?.weekday;
+  if (value !== undefined && value !== null && Number.isFinite(Number(value))) {
+    return Number(value);
+  }
+  const date = getSessionDate(session);
+  if (!date) return undefined;
+  const jsWeekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return jsWeekday === 0 ? 7 : jsWeekday;
+}
+
 function formatSessionDate(session: any): string {
-  const weekday = Number(session?.weekday);
+  const weekday = getSessionWeekday(session);
+  if (weekday === undefined) return formatDate(getSessionDate(session));
   const weekdayIndex = weekday === 7 ? 0 : weekday;
   const weekdayLabel = Number.isInteger(weekdayIndex) ? WEEKDAY_LABELS[weekdayIndex] : "";
-  return `${weekdayLabel ? `${weekdayLabel}, ` : ""}${formatDate(session?.sessionDate)}`;
+  return `${weekdayLabel ? `${weekdayLabel}, ` : ""}${formatDate(getSessionDate(session))}`;
 }
 
 function formatCycle(weekdays: number[] | null | undefined, classWeekdays: number[]): string {
@@ -95,7 +112,7 @@ export function ChangeCycleDialog({
       const order = ss.sessionOrder ?? ss.classSession?.sessionIndex;
       return order !== undefined && order >= fromSessionOrder;
     })
-    .sort((a, b) => String(a.sessionDate ?? "").localeCompare(String(b.sessionDate ?? "")));
+    .sort((a, b) => String(getSessionDate(a) ?? "").localeCompare(String(getSessionDate(b) ?? "")));
 
   const attendedInRange = fromOrderSessions.filter(
     (ss) => ss.attendanceStatus && ss.attendanceStatus !== "pending"
@@ -117,13 +134,14 @@ export function ChangeCycleDialog({
       ? attendedInRange.map((session) => session.classSessionId)
       : [],
   );
-  const projectedWithinRangeCount = rangeStart && rangeEnd
+  const rangeStartDate = getSessionDate(rangeStart);
+  const rangeEndDate = getSessionDate(rangeEnd);
+  const projectedWithinRangeCount = rangeStartDate && rangeEndDate
     ? classScheduleSessions.filter((session) => {
-        const sessionDate = String(session.sessionDate ?? "").slice(0, 10);
-        const inRange = sessionDate >= String(rangeStart.sessionDate ?? "").slice(0, 10)
-          && sessionDate <= String(rangeEnd.sessionDate ?? "").slice(0, 10);
+        const sessionDate = getSessionDate(session);
+        const inRange = !!sessionDate && sessionDate >= rangeStartDate && sessionDate <= rangeEndDate;
         return inRange
-          && targetDbWeekdays.includes(Number(session.weekday))
+          && targetDbWeekdays.includes(getSessionWeekday(session) ?? -1)
           && !keptSessionIds.has(session.id);
       }).length
     : 0;
