@@ -16,6 +16,20 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 
 const WEEKDAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 
+function formatDate(value: string | Date | undefined): string {
+  if (!value) return "—";
+  const date = String(value).slice(0, 10);
+  const [year, month, day] = date.split("-");
+  return year && month && day ? `${day}/${month}/${year}` : date;
+}
+
+function formatSessionDate(session: any): string {
+  const weekday = Number(session?.weekday);
+  const weekdayIndex = weekday === 7 ? 0 : weekday;
+  const weekdayLabel = Number.isInteger(weekdayIndex) ? WEEKDAY_LABELS[weekdayIndex] : "";
+  return `${weekdayLabel ? `${weekdayLabel}, ` : ""}${formatDate(session?.sessionDate)}`;
+}
+
 function formatCycle(weekdays: number[] | null | undefined, classWeekdays: number[]): string {
   if (!weekdays || weekdays.length === 0) return "Tất cả";
   const sorted = [...weekdays].sort((a, b) => a - b);
@@ -64,28 +78,55 @@ export function ChangeCycleDialog({
 
   const [cycleKey, setCycleKey] = useState<string>(getInitialCycleKey);
   const [mode, setMode] = useState<"all" | "unattended_only">("unattended_only");
+  const [scheduleMode, setScheduleMode] = useState<"keep_count" | "within_range">("keep_count");
 
   const { data: allStudentSessions = [] } = useQuery<any[]>({
     queryKey: [`/api/classes/${classId}/student/${studentId}/sessions`],
     enabled: open && !!classId && !!studentId,
   });
 
-  const fromOrderSessions = (allStudentSessions as any[]).filter((ss) => {
-    const order = ss.sessionOrder ?? ss.classSession?.sessionIndex;
-    return order !== undefined && order >= fromSessionOrder;
+  const { data: classScheduleSessions = [] } = useQuery<any[]>({
+    queryKey: [`/api/classes/${classId}/sessions`],
+    enabled: open && !!classId,
   });
+
+  const fromOrderSessions = (allStudentSessions as any[])
+    .filter((ss) => {
+      const order = ss.sessionOrder ?? ss.classSession?.sessionIndex;
+      return order !== undefined && order >= fromSessionOrder;
+    })
+    .sort((a, b) => String(a.sessionDate ?? "").localeCompare(String(b.sessionDate ?? "")));
 
   const attendedInRange = fromOrderSessions.filter(
     (ss) => ss.attendanceStatus && ss.attendanceStatus !== "pending"
   );
 
   const countToAffect = mode === "all" ? fromOrderSessions.length : fromOrderSessions.filter(ss => ss.attendanceStatus === "pending").length;
+  const rangeStart = fromOrderSessions[0];
+  const rangeEnd = fromOrderSessions[fromOrderSessions.length - 1];
 
   const getEffectiveWeekdays = (): number[] | null => {
     if (cycleKey === "all") return null;
     const wd = parseInt(cycleKey);
     return isNaN(wd) ? null : [wd];
   };
+  const targetWeekdays = getEffectiveWeekdays() ?? sortedClassWeekdays;
+  const targetDbWeekdays = targetWeekdays.map((day) => day === 0 ? 7 : day);
+  const keptSessionIds = new Set(
+    mode === "unattended_only"
+      ? attendedInRange.map((session) => session.classSessionId)
+      : [],
+  );
+  const projectedWithinRangeCount = rangeStart && rangeEnd
+    ? classScheduleSessions.filter((session) => {
+        const sessionDate = String(session.sessionDate ?? "").slice(0, 10);
+        const inRange = sessionDate >= String(rangeStart.sessionDate ?? "").slice(0, 10)
+          && sessionDate <= String(rangeEnd.sessionDate ?? "").slice(0, 10);
+        return inRange
+          && targetDbWeekdays.includes(Number(session.weekday))
+          && !keptSessionIds.has(session.id);
+      }).length
+    : 0;
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -93,6 +134,7 @@ export function ChangeCycleDialog({
         fromSessionOrder,
         weekdays: getEffectiveWeekdays() ?? sortedClassWeekdays,
         mode,
+        scheduleMode,
       }),
     onSuccess: async (res: any) => {
       const data = res instanceof Response ? await res.json() : res;
@@ -152,6 +194,28 @@ export function ChangeCycleDialog({
             </RadioGroup>
           </div>
 
+          <div>
+            <div className="text-sm font-medium mb-2">Cách sắp xếp lịch mới</div>
+            <RadioGroup
+              value={scheduleMode}
+              onValueChange={(value) => setScheduleMode(value as "keep_count" | "within_range")}
+              className="space-y-2"
+            >
+              <label className="flex items-start gap-2 cursor-pointer text-sm rounded px-1 py-1">
+                <RadioGroupItem value="keep_count" id="schedule-keep-count" className="mt-0.5" />
+                <Label htmlFor="schedule-keep-count" className="cursor-pointer font-normal leading-5">
+                  Giữ đủ tổng số buổi cho học viên (lịch học có thể kéo dài)
+                </Label>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer text-sm rounded px-1 py-1">
+                <RadioGroupItem value="within_range" id="schedule-within-range" className="mt-0.5" />
+                <Label htmlFor="schedule-within-range" className="cursor-pointer font-normal leading-5">
+                  Giữ trong khoảng lịch cũ (số buổi có thể tăng hoặc giảm)
+                </Label>
+              </label>
+            </RadioGroup>
+          </div>
+
           {attendedInRange.length > 0 && (
             <div className="rounded-md border border-yellow-300 bg-yellow-50 dark:bg-yellow-950 dark:border-yellow-700 p-3 space-y-2">
               <div className="flex items-start gap-2 text-yellow-800 dark:text-yellow-300">
@@ -177,9 +241,22 @@ export function ChangeCycleDialog({
             </div>
           )}
 
-          {attendedInRange.length === 0 && fromOrderSessions.length > 0 && (
-            <div className="text-sm text-muted-foreground bg-muted/50 rounded px-3 py-2">
-              Sẽ sắp xếp lại <span className="font-medium text-foreground">{fromOrderSessions.length} buổi</span> theo chu kỳ mới.
+          {fromOrderSessions.length > 0 && (
+            <div className="text-sm text-muted-foreground bg-muted/50 rounded px-3 py-2 space-y-1">
+              <div>
+                Bắt đầu: buổi {rangeStart?.sessionOrder ?? fromSessionOrder}, {formatSessionDate(rangeStart)}
+                {" · "}
+                Kết thúc: buổi {rangeEnd?.sessionOrder ?? "?"}, {formatSessionDate(rangeEnd)}
+              </div>
+              {scheduleMode === "keep_count" ? (
+                <div>
+                  Sẽ sắp xếp lại đủ <span className="font-medium text-foreground">{countToAffect} buổi</span> theo chu kỳ mới; lịch có thể kéo dài.
+                </div>
+              ) : (
+                <div>
+                  Dự kiến xếp <span className="font-medium text-foreground">{projectedWithinRangeCount} buổi</span> trong khoảng lịch cũ.
+                </div>
+              )}
             </div>
           )}
 
@@ -196,7 +273,9 @@ export function ChangeCycleDialog({
             onClick={handleConfirm}
             disabled={mutation.isPending}
           >
-            {mutation.isPending ? "Đang xử lý..." : `Xác nhận đổi chu kỳ (${countToAffect} buổi)`}
+            {mutation.isPending
+              ? "Đang xử lý..."
+              : `Xác nhận đổi chu kỳ (${scheduleMode === "keep_count" ? countToAffect : projectedWithinRangeCount} buổi)`}
           </Button>
         </DialogFooter>
       </DialogContent>

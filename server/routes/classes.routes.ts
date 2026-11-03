@@ -3403,7 +3403,7 @@ export function registerClassesRoutes(app: Express): void {
   app.post("/api/student-classes/:id/change-cycle", async (req, res) => {
     try {
       const { id } = req.params;
-      const { fromSessionOrder, weekdays, mode } = req.body;
+      const { fromSessionOrder, weekdays, mode, scheduleMode } = req.body;
       if (!fromSessionOrder || !weekdays || !mode) {
         return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
       }
@@ -3457,6 +3457,7 @@ export function registerClassesRoutes(app: Express): void {
         fromSessionOrder: parseInt(String(fromSessionOrder)),
         weekdays,
         mode,
+        scheduleMode: scheduleMode === "within_range" ? "within_range" : "keep_count",
       });
 
       if (logMeta && userId) {

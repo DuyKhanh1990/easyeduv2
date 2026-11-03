@@ -2449,6 +2449,8 @@ export async function changeStudentCycle(data: {
   fromSessionOrder: number;
   weekdays: number[]; // new cycle: 0=CN, 1=T2, ..., 6=T7
   mode: "all" | "unattended_only";
+  scheduleMode?: "keep_count" | "within_range";
+  overrideClassWeekdays?: number[];
 }): Promise<{ deleted: number; created: number; warning?: string }> {
   // Get class info outside transaction for auto-extending schedule
   const [scPre] = await db.select().from(studentClasses).where(eq(studentClasses.id, data.studentClassId));
@@ -2495,6 +2497,9 @@ export async function changeStudentCycle(data: {
 
     // 4. From date = earliest date of sessions to delete
     const fromDate = toDelete[0].sessionDate;
+    const scheduleMode = data.scheduleMode ?? "keep_count";
+    const rangeStartDate = futureSessions[0].sessionDate;
+    const rangeEndDate = futureSessions[futureSessions.length - 1].sessionDate;
 
     // 5. Convert new weekdays to DB convention: 0(CN)→7, 1-6 same
     const dbWeekdays = data.weekdays.map((w) => (w === 0 ? 7 : w));
@@ -2532,7 +2537,9 @@ export async function changeStudentCycle(data: {
       ? clsInfo.teacherIds
       : (latestCs?.teacherIds ?? null);
 
-    if (!fallbackShiftId) throw new Error("Không tìm thấy ca học để tạo buổi mới. Vui lòng kiểm tra cấu hình lớp.");
+    if (scheduleMode !== "within_range" && !fallbackShiftId) {
+      throw new Error("Không tìm thấy ca học để tạo buổi mới. Vui lòng kiểm tra cấu hình lớp.");
+    }
 
     // Class full weekdays in DB convention (0→7 for Sunday, 1-6 for Mon-Sat)
     // clsInfo.weekdays uses JS getDay() convention: 0=Sun, 1=Mon...6=Sat
@@ -2551,7 +2558,43 @@ export async function changeStudentCycle(data: {
       .limit(1);
     const lastExistingClassDate = lastExistingClassDateRes[0]?.sessionDate ?? fromDate;
 
-    while (created < numToCreate && iterations < SAFEGUARD) {
+    if (scheduleMode === "within_range") {
+      // Only reuse class sessions already present in the original date range.
+      // This mode must not extend the shared class schedule.
+      const rangeClassSessions = await tx
+        .select({ id: classSessions.id })
+        .from(classSessions)
+        .where(and(
+          eq(classSessions.classId, sc.classId),
+          between(classSessions.sessionDate, rangeStartDate, rangeEndDate),
+          inArray(classSessions.weekday, dbWeekdays),
+        ))
+        .orderBy(asc(classSessions.sessionDate));
+
+      for (const cs of rangeClassSessions) {
+        if (keptClassSessionIds.has(cs.id)) continue;
+        const [existing] = await tx
+          .select({ id: studentSessions.id })
+          .from(studentSessions)
+          .where(and(eq(studentSessions.studentId, sc.studentId), eq(studentSessions.classSessionId, cs.id)));
+        if (existing) continue;
+
+        await tx.insert(studentSessions).values({
+          studentId: sc.studentId,
+          classId: sc.classId,
+          studentClassId: sc.id,
+          classSessionId: cs.id,
+          status: "scheduled",
+          attendanceStatus: "pending",
+          packageId: feeRef.packageId ?? null,
+          packageType: feeRef.packageType ?? null,
+          sessionPrice: feeRef.sessionPrice ?? null,
+        });
+        created++;
+      }
+    }
+
+    while (scheduleMode !== "within_range" && created < numToCreate && iterations < SAFEGUARD) {
       checkDate.setDate(checkDate.getDate() + 1);
       iterations++;
 

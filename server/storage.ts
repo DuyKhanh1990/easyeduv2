@@ -326,6 +326,8 @@ export interface IStorage {
     fromSessionOrder: number;
     weekdays: number[];
     mode: "all" | "unattended_only";
+    scheduleMode?: "keep_count" | "within_range";
+    overrideClassWeekdays?: number[];
   }): Promise<{ deleted: number; created: number; warning?: string }>;
 
   // Session Contents
@@ -1121,6 +1123,8 @@ export class DatabaseStorage implements IStorage {
     fromSessionOrder: number;
     weekdays: number[];
     mode: "all" | "unattended_only";
+    scheduleMode?: "keep_count" | "within_range";
+    overrideClassWeekdays?: number[];
   }): Promise<{ deleted: number; created: number; warning?: string }> {
     return sessionStorage.changeStudentCycle(data);
   }
