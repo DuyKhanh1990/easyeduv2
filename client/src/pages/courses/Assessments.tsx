@@ -764,14 +764,14 @@ export default function Assessments() {
         </div>
         <div className="flex-1 overflow-hidden px-4 md:px-6 lg:px-8 pb-4 pt-4 flex flex-col">
           {activeTab === "list" && (
-            <div className="flex-1 min-h-0 flex flex-col border rounded-lg overflow-hidden bg-white dark:bg-card">
-            <div className="p-3 border-b shrink-0 space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-[#f7f9ff] shadow-sm dark:border-border dark:bg-card">
+            <div className="shrink-0 border-b border-slate-200/70 bg-white/80 p-3 md:p-4 dark:bg-card">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <div className="relative flex-1 min-w-[180px] max-w-xs">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                   <Input
                     placeholder="Tìm tên / mã bài kiểm tra..."
-                    className="pl-8 h-8 text-xs"
+                    className="h-9 rounded-xl border-slate-200 bg-[#fbfcff] pl-8 text-xs shadow-none"
                     value={examSearch}
                     onChange={e => { setExamSearch(e.target.value); setExamsPage(1); }}
                     data-testid="input-exam-search"
@@ -784,10 +784,10 @@ export default function Assessments() {
                       onClick={() => { setExamStatusFilter(s); setExamsPage(1); }}
                       data-testid={`filter-exam-status-${s}`}
                       className={cn(
-                        "px-2.5 py-1 rounded-md border text-xs font-medium transition-all",
+                        "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all",
                         examStatusFilter === s
-                          ? "bg-primary border-primary text-primary-foreground shadow-sm"
-                          : "bg-white border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                          ? "border-sky-600 bg-sky-600 text-white shadow-sm"
+                          : "border-slate-200 bg-white text-slate-500 hover:border-sky-300 hover:text-sky-700"
                       )}
                     >
                       {s === "all" ? "Tất cả" : s === "draft" ? "Nháp" : "Công bố"}
@@ -795,7 +795,7 @@ export default function Assessments() {
                   ))}
                 </div>
                 <Select value={examCreatorFilter} onValueChange={v => { setExamCreatorFilter(v); setExamsPage(1); }}>
-                  <SelectTrigger className="h-8 text-xs w-44" data-testid="select-exam-creator">
+                  <SelectTrigger className="h-9 w-44 rounded-xl border-slate-200 bg-white text-xs" data-testid="select-exam-creator">
                     <SelectValue placeholder="Người tạo" />
                   </SelectTrigger>
                   <SelectContent>
@@ -809,7 +809,7 @@ export default function Assessments() {
                   <span>Cập nhật từ</span>
                   <Input
                     type="date"
-                    className="h-8 text-xs w-36"
+                    className="h-9 w-36 rounded-xl border-slate-200 bg-white text-xs"
                     value={examUpdatedFrom}
                     onChange={e => { setExamUpdatedFrom(e.target.value); setExamsPage(1); }}
                     data-testid="input-exam-updated-from"
@@ -817,7 +817,7 @@ export default function Assessments() {
                   <span>đến</span>
                   <Input
                     type="date"
-                    className="h-8 text-xs w-36"
+                    className="h-9 w-36 rounded-xl border-slate-200 bg-white text-xs"
                     value={examUpdatedTo}
                     onChange={e => { setExamUpdatedTo(e.target.value); setExamsPage(1); }}
                     data-testid="input-exam-updated-to"
@@ -838,7 +838,7 @@ export default function Assessments() {
                   {assessCan.create("list") && (
                     <Button
                       size="sm"
-                      className="flex items-center gap-1.5"
+                      className="flex items-center gap-1.5 rounded-xl bg-sky-600 shadow-sm hover:bg-sky-700"
                       onClick={() => { setEditingExam(null); setShowExamDialog(true); }}
                       data-testid="btn-add-exam"
                     >
@@ -850,60 +850,83 @@ export default function Assessments() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-auto">
-              <div className="overflow-x-auto">
-              <table className="w-full min-w-[1100px] caption-bottom text-sm border-collapse table-fixed">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="sticky left-0 z-20 bg-white dark:bg-card w-[40px] px-2">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-input cursor-pointer"
-                        checked={
-                          filteredExams.length > 0 &&
-                          filteredExams.slice((examsPage - 1) * examsPageSize, examsPage * examsPageSize).every(e => selectedExamIds.has(e.id))
-                        }
-                        onChange={e => {
-                          const pageExams = filteredExams.slice((examsPage - 1) * examsPageSize, examsPage * examsPageSize);
-                          setSelectedExamIds(prev => {
-                            const next = new Set(prev);
-                            if (e.target.checked) pageExams.forEach(ex => next.add(ex.id));
-                            else pageExams.forEach(ex => next.delete(ex.id));
-                            return next;
-                          });
-                        }}
-                      />
-                    </TableHead>
-                    <TableHead className="sticky left-[40px] z-20 bg-white dark:bg-card min-w-[200px] whitespace-nowrap border-r">Tên bài kiểm tra</TableHead>
-                    <TableHead className="w-[90px] text-center whitespace-nowrap">Số Session</TableHead>
-                    <TableHead className="min-w-[160px] whitespace-nowrap">Số Câu hỏi</TableHead>
-                    <TableHead className="w-[90px] text-center whitespace-nowrap">Số lần làm</TableHead>
-                    <TableHead className="min-w-[220px] whitespace-nowrap">Thông tin</TableHead>
-                    {(assessCan.edit("list") || assessCan.delete("list")) && <TableHead className="sticky right-0 z-20 bg-white dark:bg-card w-[56px] text-center whitespace-nowrap shadow-[-2px_0_4px_rgba(0,0,0,0.05)]">Thao tác</TableHead>}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {examsLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="h-32 text-center text-muted-foreground text-sm">
-                        Đang tải...
-                      </TableCell>
-                    </TableRow>
-                  ) : filteredExams.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="h-32 text-center text-muted-foreground text-sm">
-                        {exams.length === 0
-                          ? <>Chưa có bài kiểm tra nào. Nhấn <strong>Thêm mới bài kiểm tra</strong> để bắt đầu.</>
-                          : "Không có bài kiểm tra nào khớp với bộ lọc."}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredExams.slice((examsPage - 1) * examsPageSize, examsPage * examsPageSize).map((exam, idx) => (
-                      <TableRow key={exam.id} data-testid={`row-exam-${idx}`} className={selectedExamIds.has(exam.id) ? "bg-muted/50" : ""}>
-                        <TableCell className="sticky left-0 z-10 bg-white dark:bg-card px-2">
+            <div className="flex-1 overflow-auto p-3 md:p-5">
+              {examsLoading ? (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" aria-label="Đang tải bài kiểm tra">
+                  {Array.from({ length: 8 }).map((_, idx) => (
+                    <div key={idx} className="h-[238px] animate-pulse overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                      <div className="h-24 bg-gradient-to-br from-sky-100 via-indigo-50 to-teal-50" />
+                      <div className="space-y-3 p-4"><div className="h-3 w-20 rounded bg-slate-100" /><div className="h-4 w-3/4 rounded bg-slate-100" /><div className="h-3 w-1/2 rounded bg-slate-100" /><div className="mt-6 h-8 rounded-lg bg-slate-50" /></div>
+                    </div>
+                  ))}
+                </div>
+              ) : filteredExams.length === 0 ? (
+                <div className="flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-dashed border-sky-200 bg-gradient-to-br from-sky-50/80 to-indigo-50/70 px-6 text-center">
+                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-sky-600 shadow-sm">
+                    <Search className="h-6 w-6" />
+                  </div>
+                  <p className="text-sm font-semibold text-slate-800">
+                    {exams.length === 0 ? "Chưa có bài kiểm tra nào" : "Không tìm thấy bài kiểm tra"}
+                  </p>
+                  <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">
+                    {exams.length === 0
+                      ? <>Nhấn <strong>Thêm mới bài kiểm tra</strong> để bắt đầu xây dựng danh sách.</>
+                      : "Thử thay đổi từ khóa hoặc bộ lọc để xem thêm kết quả."}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="mb-3 flex items-center gap-2 rounded-xl border border-sky-100 bg-white/75 px-3 py-2 text-xs text-slate-500">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-sky-600"
+                      aria-label="Chọn tất cả bài kiểm tra trên trang"
+                      checked={
+                        filteredExams.length > 0 &&
+                        filteredExams.slice((examsPage - 1) * examsPageSize, examsPage * examsPageSize).every(e => selectedExamIds.has(e.id))
+                      }
+                      onChange={e => {
+                        const pageExams = filteredExams.slice((examsPage - 1) * examsPageSize, examsPage * examsPageSize);
+                        setSelectedExamIds(prev => {
+                          const next = new Set(prev);
+                          if (e.target.checked) pageExams.forEach(ex => next.add(ex.id));
+                          else pageExams.forEach(ex => next.delete(ex.id));
+                          return next;
+                        });
+                      }}
+                    />
+                    <span>Chọn tất cả bài kiểm tra trên trang</span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                  {filteredExams.slice((examsPage - 1) * examsPageSize, examsPage * examsPageSize).map((exam, idx) => {
+                    const stat = examStatsMap.get(exam.id);
+                    return (
+                      <div
+                        key={exam.id}
+                        data-testid={`row-exam-${idx}`}
+                        className={cn(
+                          "group relative flex min-h-[274px] flex-col overflow-hidden rounded-2xl border bg-white shadow-[0_3px_14px_rgba(48,72,120,0.06)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(48,72,120,0.12)] dark:bg-card",
+                          selectedExamIds.has(exam.id) ? "border-sky-400 ring-2 ring-sky-100" : "border-slate-200/80 hover:border-sky-200"
+                        )}
+                      >
+                        <div className={cn(
+                          "relative flex h-[96px] items-start justify-between overflow-hidden px-4 pt-3",
+                          idx % 4 === 0 ? "bg-gradient-to-br from-sky-100 via-indigo-50 to-cyan-50" :
+                          idx % 4 === 1 ? "bg-gradient-to-br from-teal-100 via-emerald-50 to-sky-50" :
+                          idx % 4 === 2 ? "bg-gradient-to-br from-indigo-100 via-blue-50 to-violet-50" :
+                          "bg-gradient-to-br from-amber-100 via-rose-50 to-sky-50"
+                        )}>
+                          <div className="absolute -right-4 -top-8 h-28 w-28 rounded-full border-[14px] border-white/30" />
+                          <div className="absolute right-12 top-7 h-12 w-20 -rotate-12 rounded-xl border border-white/70 bg-white/55 shadow-sm backdrop-blur-sm">
+                            <div className="mx-3 mt-3 h-1 rounded-full bg-sky-300/70" />
+                            <div className="mx-3 mt-2 h-1 w-8 rounded-full bg-indigo-200/80" />
+                          </div>
+                          <div className="absolute right-9 top-3 h-4 w-4 rounded-full bg-white/70 shadow-sm" />
+                          <div className="absolute right-28 top-12 h-2 w-2 rounded-full bg-white/80" />
                           <input
                             type="checkbox"
-                            className="h-4 w-4 rounded border-input cursor-pointer"
+                            className="relative z-10 h-4 w-4 cursor-pointer rounded border-slate-300 bg-white/90 accent-sky-600"
+                            aria-label={`Chọn ${exam.name}`}
                             checked={selectedExamIds.has(exam.id)}
                             onChange={e => {
                               setSelectedExamIds(prev => {
@@ -914,128 +937,114 @@ export default function Assessments() {
                               });
                             }}
                           />
-                        </TableCell>
-                        <TableCell className="sticky left-[40px] z-10 bg-white dark:bg-card border-r">
-                          <div className="flex flex-col gap-0.5">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <Badge
-                                variant={exam.status === "published" ? "default" : "secondary"}
-                                className="text-[10px] px-1.5 py-0 h-4 w-fit shrink-0"
-                              >
-                                {exam.status === "published" ? "Công bố" : "Nháp"}
-                              </Badge>
-                              <span className="text-sm font-medium text-foreground">{exam.name}</span>
+                          {(assessCan.edit("list") || assessCan.delete("list")) && (
+                            <div className="relative z-10">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 rounded-full bg-white/75 text-slate-500 hover:bg-white hover:text-sky-700"
+                                    data-testid={`btn-actions-exam-${idx}`}
+                                  >
+                                    <Settings2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-40">
+                                  <DropdownMenuItem
+                                    onClick={() => setPreviewExam(exam)}
+                                    className="flex cursor-pointer items-center gap-2"
+                                    data-testid={`btn-view-exam-${idx}`}
+                                  >
+                                    <Eye className="h-3.5 w-3.5" /> Xem
+                                  </DropdownMenuItem>
+                                  {assessCan.create("list") && (
+                                  <DropdownMenuItem
+                                    onClick={() => setCloningExam(exam)}
+                                    className="flex cursor-pointer items-center gap-2"
+                                    data-testid={`btn-clone-exam-${idx}`}
+                                  >
+                                    <Copy className="h-3.5 w-3.5" /> Sao chép
+                                  </DropdownMenuItem>
+                                  )}
+                                  {assessCan.edit("list") && (
+                                  <DropdownMenuItem
+                                    onClick={() => handleEditExam(exam)}
+                                    className="flex cursor-pointer items-center gap-2"
+                                    data-testid={`btn-edit-exam-${idx}`}
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" /> Sửa
+                                  </DropdownMenuItem>
+                                  )}
+                                  {assessCan.delete("list") && (
+                                  <DropdownMenuItem
+                                    onClick={() => handleDeleteExam(exam.id)}
+                                    className="flex cursor-pointer items-center gap-2 text-destructive focus:text-destructive"
+                                    data-testid={`btn-delete-exam-${idx}`}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" /> Xóa
+                                  </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
-                            {exam.code && (
-                              <span className="text-xs font-mono text-muted-foreground">{exam.code}</span>
-                            )}
+                          )}
+                          <div className="absolute bottom-2 left-4">
+                            <Badge
+                              variant={exam.status === "published" ? "default" : "secondary"}
+                              className={cn(
+                                "h-5 rounded-full border-0 px-2 text-[10px] font-semibold shadow-sm",
+                                exam.status === "published" ? "bg-sky-600 text-white" : "bg-emerald-100 text-emerald-800"
+                              )}
+                            >
+                              {exam.status === "published" ? "Công bố" : "Nháp"}
+                            </Badge>
                           </div>
-                        </TableCell>
-                        <TableCell className="text-center text-sm text-foreground">
-                          {examStatsMap.get(exam.id)?.sectionCount ?? 0}
-                        </TableCell>
-                        <TableCell className="text-xs text-foreground">
-                          {(() => {
-                            const stat = examStatsMap.get(exam.id);
-                            if (!stat || stat.sections.length === 0) return <span className="italic text-muted-foreground">—</span>;
-                            return (
-                              <div className="space-y-0.5">
-                                {stat.sections.map(sec => {
-                                  const parts = Object.entries(sec.questionTypeCounts).map(([type, cnt]) => {
-                                    const label = type === "single_choice" ? "TN"
-                                      : type === "multiple_choice" ? "Nhiều lựa chọn"
-                                      : type === "fill_blank" ? "Điền chỗ trống"
-                                      : type === "essay" ? "TL"
-                                      : type === "matching" ? "Nối" : type;
-                                    return `${cnt} ${label}`;
-                                  }).join(", ");
-                                  return (
-                                    <div key={sec.id} className="whitespace-nowrap">
-                                      <span className="font-medium">{sec.name}:</span> {parts || "0 câu"}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            );
-                          })()}
-                        </TableCell>
-                        <TableCell className="text-center text-sm text-foreground">
-                          {exam.maxAttempts ?? 1}
-                        </TableCell>
-                        <TableCell className="text-xs text-foreground">
-                          <div className="flex flex-col gap-0.5">
-                            <div className="flex items-center gap-1 whitespace-nowrap">
-                              <span className="text-muted-foreground shrink-0">Người tạo:</span>
-                              <span className="font-medium">{exam.createdByName || "—"}</span>
-                              <span className="text-muted-foreground">{new Date(exam.createdAt).toLocaleDateString("vi-VN")}</span>
+                        </div>
+                        <div className="flex flex-1 flex-col p-4">
+                          <div className="min-w-0">
+                            <h3 className="truncate text-sm font-bold tracking-[-0.01em] text-slate-800 dark:text-foreground">{exam.name}</h3>
+                            {exam.code && <p className="mt-0.5 truncate font-mono text-[11px] text-slate-500">{exam.code}</p>}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <div className="inline-flex items-center gap-1.5 rounded-lg bg-sky-50 px-2 py-1.5 text-[11px] font-semibold text-sky-800">
+                              <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+                              {stat?.sectionCount ?? 0} Session
                             </div>
-                            <div className="flex items-center gap-1 whitespace-nowrap">
-                              <span className="text-muted-foreground shrink-0">Cập nhật:</span>
-                              <span className="font-medium">{exam.updatedByName || "—"}</span>
-                              <span className="text-muted-foreground">{new Date(exam.updatedAt).toLocaleDateString("vi-VN")}</span>
+                            <div className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-2 py-1.5 text-[11px] font-semibold text-indigo-800">
+                              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                              {exam.maxAttempts ?? 1} lần làm
                             </div>
                           </div>
-                        </TableCell>
-                        {(assessCan.edit("list") || assessCan.delete("list")) && (
-                        <TableCell className="sticky right-0 z-10 bg-white dark:bg-card shadow-[-2px_0_4px_rgba(0,0,0,0.05)]">
-                          <div className="flex items-center justify-center">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                                  data-testid={`btn-actions-exam-${idx}`}
-                                >
-                                  <Settings2 className="w-3.5 h-3.5" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-40">
-                                <DropdownMenuItem
-                                  onClick={() => setPreviewExam(exam)}
-                                  className="flex items-center gap-2 cursor-pointer"
-                                  data-testid={`btn-view-exam-${idx}`}
-                                >
-                                  <Eye className="w-3.5 h-3.5" /> Xem
-                                </DropdownMenuItem>
-                                {assessCan.create("list") && (
-                                <DropdownMenuItem
-                                  onClick={() => setCloningExam(exam)}
-                                  className="flex items-center gap-2 cursor-pointer"
-                                  data-testid={`btn-clone-exam-${idx}`}
-                                >
-                                  <Copy className="w-3.5 h-3.5" /> Sao chép
-                                </DropdownMenuItem>
-                                )}
-                                {assessCan.edit("list") && (
-                                <DropdownMenuItem
-                                  onClick={() => handleEditExam(exam)}
-                                  className="flex items-center gap-2 cursor-pointer"
-                                  data-testid={`btn-edit-exam-${idx}`}
-                                >
-                                  <Pencil className="w-3.5 h-3.5" /> Sửa
-                                </DropdownMenuItem>
-                                )}
-                                {assessCan.delete("list") && (
-                                <DropdownMenuItem
-                                  onClick={() => handleDeleteExam(exam.id)}
-                                  className="flex items-center gap-2 cursor-pointer text-destructive focus:text-destructive"
-                                  data-testid={`btn-delete-exam-${idx}`}
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" /> Xóa
-                                </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                          <div className="mt-3 min-h-[35px] space-y-1 border-t border-slate-100 pt-2 text-[11px] leading-4 text-slate-600">
+                            {!stat || stat.sections.length === 0 ? (
+                              <span className="italic text-slate-400">Chưa có câu hỏi</span>
+                            ) : stat.sections.map(sec => {
+                              const parts = Object.entries(sec.questionTypeCounts).map(([type, cnt]) => {
+                                const label = type === "single_choice" ? "TN"
+                                  : type === "multiple_choice" ? "Nhiều lựa chọn"
+                                  : type === "fill_blank" ? "Điền chỗ trống"
+                                  : type === "essay" ? "TL"
+                                  : type === "matching" ? "Nối" : type;
+                                return `${cnt} ${label}`;
+                              }).join(", ");
+                              return <div key={sec.id} className="truncate"><span className="font-semibold text-slate-700">{sec.name}:</span> {parts || "0 câu"}</div>;
+                            })}
                           </div>
-                        </TableCell>
-                        )}
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </table>
-              </div>
+                          <div className="mt-auto flex items-end justify-between gap-2 border-t border-slate-100 pt-3">
+                            <div className="min-w-0 space-y-1 text-[10px] leading-4 text-slate-500">
+                              <div className="truncate"><span className="font-medium text-slate-600">Tạo:</span> {exam.createdByName || "—"} · {new Date(exam.createdAt).toLocaleDateString("vi-VN")}</div>
+                              <div className="truncate"><span className="font-medium text-slate-600">Cập nhật:</span> {exam.updatedByName || "—"} · {new Date(exam.updatedAt).toLocaleDateString("vi-VN")}</div>
+                            </div>
+                            <span className="shrink-0 text-[10px] font-semibold text-sky-700">Bài kiểm tra</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  </div>
+                </>
+              )}
             </div>
             <PaginationBar
               total={filteredExams.length}
