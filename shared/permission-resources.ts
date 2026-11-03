@@ -20,3 +20,9 @@ export const PAST_SCHEDULE_FEATURE_PERMISSION_RESOURCE = getSubFeaturePermission
   "other-config",
   "past-schedule",
 );
+
+export const SESSION_REVIEW_PUBLICATION_FEATURE_PERMISSION_RESOURCE = getSubFeaturePermissionResource(
+  EDUCATION_CONFIG_HREF,
+  "other-config",
+  "session-review-publication",
+);

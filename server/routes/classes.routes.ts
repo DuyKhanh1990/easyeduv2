@@ -44,6 +44,10 @@ import {
   canRunPastScheduleForRequest,
   isPastScheduleDate,
 } from "../lib/past-schedule-policy";
+import {
+  canToggleSessionReviewPublication,
+  getSessionReviewPublicationPolicy,
+} from "../lib/session-review-publication-policy";
 
 async function resolveStaffFullName(userId: string | undefined | null): Promise<string | null> {
   if (!userId) return null;
@@ -2803,6 +2807,7 @@ export function registerClassesRoutes(app: Express): void {
         .select({
           id: freeClassRegistrations.id,
           reviewData: freeClassRegistrations.reviewData,
+          reviewPublished: freeClassRegistrations.reviewPublished,
         })
         .from(freeClassRegistrations)
         .where(and(
@@ -2821,6 +2826,13 @@ export function registerClassesRoutes(app: Express): void {
         hasExistingReview ? "canEdit" : "canCreate",
         true,
       ))) return;
+
+      const publicationPolicy = await getSessionReviewPublicationPolicy();
+      const effectivePublished = canToggleSessionReviewPublication(req, publicationPolicy)
+        ? body.published
+        : hasExistingReview
+          ? registration.reviewPublished ?? false
+          : publicationPolicy.defaultPublished;
 
       const [classConfig] = await db
         .select({ evaluationCriteriaIds: classes.evaluationCriteriaIds })
@@ -2845,7 +2857,7 @@ export function registerClassesRoutes(app: Express): void {
         .update(freeClassRegistrations)
         .set({
           reviewData: body.reviewData,
-          reviewPublished: body.published,
+          reviewPublished: effectivePublished,
           updatedAt: new Date(),
         })
         .where(eq(freeClassRegistrations.id, body.registrationId))
@@ -2854,7 +2866,7 @@ export function registerClassesRoutes(app: Express): void {
           reviewPublished: freeClassRegistrations.reviewPublished,
         });
 
-      res.json({ success: true, ...updated });
+      res.json({ success: true, ...updated, published: effectivePublished });
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);
       res.status(500).json({ message: err.message || "Không thể lưu nhận xét" });
@@ -4131,6 +4143,7 @@ export function registerClassesRoutes(app: Express): void {
         .select({
           id: studentSessions.id,
           reviewData: studentSessions.reviewData,
+          reviewPublished: studentSessions.reviewPublished,
           classId: classSessions.classId,
           classSessionId: classSessions.id,
           evaluationCriteriaIds: classSessions.evaluationCriteriaIds,
@@ -4162,6 +4175,9 @@ export function registerClassesRoutes(app: Express): void {
         }
       }
 
+      const publicationPolicy = await getSessionReviewPublicationPolicy();
+      const canTogglePublication = canToggleSessionReviewPublication(req, publicationPolicy);
+
       const checkedSessionConfigs = new Map(
         existingReviewRows.map((row) => [row.classSessionId, row.evaluationCriteriaIds ?? [] as string[]]),
       );
@@ -4182,14 +4198,35 @@ export function registerClassesRoutes(app: Express): void {
         }
       }
 
-      await db.update(studentSessions)
-        .set({ reviewData, reviewPublished: !!published, updatedAt: new Date() })
-        .where(inArray(studentSessions.id, studentSessionIds));
-      const userId = (req as any).user?.id ?? null;
-      if (published) {
-        sendReviewNotification(studentSessionIds, userId).catch(console.error);
+      const publishedSessionIds: string[] = [];
+      const updatesByPublication = new Map<boolean, string[]>();
+      for (const row of existingReviewRows) {
+        const hasExistingReview = !!row.reviewData
+          && Object.keys(row.reviewData as Record<string, unknown>).length > 0;
+        const effectivePublished = canTogglePublication
+          ? !!published
+          : hasExistingReview
+            ? !!row.reviewPublished
+            : publicationPolicy.defaultPublished;
+        const ids = updatesByPublication.get(effectivePublished) ?? [];
+        ids.push(row.id);
+        updatesByPublication.set(effectivePublished, ids);
+        if (effectivePublished) publishedSessionIds.push(row.id);
       }
-      res.json({ success: true });
+      for (const [reviewPublished, ids] of updatesByPublication) {
+        await db.update(studentSessions)
+          .set({ reviewData, reviewPublished, updatedAt: new Date() })
+          .where(inArray(studentSessions.id, ids));
+      }
+      const userId = (req as any).user?.id ?? null;
+      if (publishedSessionIds.length > 0) {
+        sendReviewNotification(publishedSessionIds, userId).catch(console.error);
+      }
+      const allPublished = publishedSessionIds.length === studentSessionIds.length;
+      res.json({
+        success: true,
+        published: allPublished,
+      });
       // Activity log (fire-and-forget)
       try {
         const rows = await db.select({
@@ -4221,7 +4258,7 @@ export function registerClassesRoutes(app: Express): void {
             action: "Nhận xét học viên",
             oldContent: null,
             newContent: JSON.stringify({
-              published: !!published,
+              published: allPublished,
               students: uniqueStudents.map(r => ({
                 name: r.studentName ?? "",
                 code: r.studentCode ?? "",

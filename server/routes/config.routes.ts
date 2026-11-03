@@ -68,12 +68,18 @@ import {
 import {
   EDUCATION_OTHER_CONFIG_RESOURCE,
   PAST_SCHEDULE_FEATURE_PERMISSION_RESOURCE,
+  SESSION_REVIEW_PUBLICATION_FEATURE_PERMISSION_RESOURCE,
 } from "@shared/permission-resources";
 import {
   canRunPastSchedule,
   getPastSchedulePolicy,
   PAST_SCHEDULE_POLICY_SETTINGS_KEY,
 } from "../lib/past-schedule-policy";
+import {
+  canToggleSessionReviewPublication,
+  getSessionReviewPublicationPolicy,
+  SESSION_REVIEW_PUBLICATION_SETTINGS_KEY,
+} from "../lib/session-review-publication-policy";
 
 function getBangkokDateOnly(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -479,7 +485,7 @@ async function recordCourseAudit(req: any, data: {
 }
 
 async function recordEducationConfigAudit(req: any, data: {
-  resource: "classroom" | "subject" | "evaluation_criteria" | "evaluation_sub_criteria" | "shift" | "attendance_fee" | "attendance_limit" | "auto_invoice" | "score_category" | "score_sheet" | "score_conversion_template" | "online_learning" | "location" | "department" | "role" | "permission" | "holiday";
+  resource: "classroom" | "subject" | "evaluation_criteria" | "evaluation_sub_criteria" | "shift" | "attendance_fee" | "attendance_limit" | "auto_invoice" | "session_review_publication" | "score_category" | "score_sheet" | "score_conversion_template" | "online_learning" | "location" | "department" | "role" | "permission" | "holiday";
   action: "created" | "updated" | "deleted";
   scope?: "education-config" | "settings";
   entityId?: string | null;
@@ -489,8 +495,9 @@ async function recordEducationConfigAudit(req: any, data: {
 }) {
   try {
     const enrichAttendanceRoles = async (content: unknown) => {
-      if (!["attendance_limit", "auto_invoice"].includes(data.resource) || !content || typeof content !== "object") return content;
-      const roleIds = Array.isArray((content as any).roleIds) ? (content as any).roleIds : [];
+      if (!["attendance_limit", "auto_invoice", "session_review_publication"].includes(data.resource) || !content || typeof content !== "object") return content;
+      const roleIdField = data.resource === "session_review_publication" ? "deniedRoleIds" : "roleIds";
+      const roleIds = Array.isArray((content as any)[roleIdField]) ? (content as any)[roleIdField] : [];
       if (!roleIds.length) return { ...(content as any), roleNames: [] };
       const roleRows = await db.select({ id: roles.id, name: roles.name })
         .from(roles)
@@ -570,6 +577,14 @@ async function getEducationConfigSnapshot(resource: string, path: string, body?:
       return await getAutoInvoicePolicy();
     } catch (error) {
       console.error("[education-config-audit] failed to snapshot auto invoice settings:", error);
+      return null;
+    }
+  }
+  if (resource === "session_review_publication" && id === "session-review-publication") {
+    try {
+      return await getSessionReviewPublicationPolicy();
+    } catch (error) {
+      console.error("[education-config-audit] failed to snapshot session review publication settings:", error);
       return null;
     }
   }
@@ -677,6 +692,7 @@ export function registerConfigRoutes(app: Express): void {
       [/^\/online-learning-rules(?:\/|$)/, "online_learning"],
       [/^\/system-settings\/attendance-limit$/, "attendance_limit"],
       [/^\/system-settings\/auto-invoice$/, "auto_invoice"],
+      [/^\/system-settings\/session-review-publication$/, "session_review_publication"],
     ];
     const settingsResourceByPath: Array<[RegExp, string]> = [
       [/^\/locations(?:\/|$)/, "location"],
@@ -2581,6 +2597,73 @@ export function registerConfigRoutes(app: Express): void {
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json({ message: "Dữ liệu cấu hình không hợp lệ.", errors: err.errors });
       res.status(500).json({ message: err.message || "Không thể lưu cấu hình chạy lịch học trong quá khứ." });
+    }
+  });
+
+  app.get("/api/system-settings/session-review-publication", async (req, res) => {
+    try {
+      const [policy, canViewFeature] = await Promise.all([
+        getSessionReviewPublicationPolicy(),
+        Promise.all([
+          hasEducationConfigPermission(req, EDUCATION_OTHER_CONFIG_RESOURCE, "canView"),
+          hasEducationConfigPermission(req, SESSION_REVIEW_PUBLICATION_FEATURE_PERMISSION_RESOURCE, "canView"),
+        ]).then(([canViewTab, canViewChild]) => canViewTab && canViewChild),
+      ]);
+      res.json({
+        defaultPublished: policy.defaultPublished,
+        canToggle: canToggleSessionReviewPublication(req, policy),
+        ...(canViewFeature ? { deniedRoleIds: policy.deniedRoleIds } : {}),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Không thể tải cấu hình công bố nhận xét học viên." });
+    }
+  });
+
+  app.put("/api/system-settings/session-review-publication", async (req, res) => {
+    try {
+      const [canEditTab, canViewFeature] = await Promise.all([
+        hasEducationConfigPermission(req, EDUCATION_OTHER_CONFIG_RESOURCE, "canEdit"),
+        hasEducationConfigPermission(req, SESSION_REVIEW_PUBLICATION_FEATURE_PERMISSION_RESOURCE, "canView"),
+      ]);
+      if (!canEditTab || !canViewFeature) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa cấu hình công bố nhận xét học viên." });
+      }
+
+      const payload = z.object({
+        defaultPublished: z.boolean(),
+        deniedRoleIds: z.array(z.string().uuid()).max(500),
+      }).parse(req.body);
+      if (new Set(payload.deniedRoleIds).size !== payload.deniedRoleIds.length) {
+        return res.status(400).json({ message: "Danh sách vai trò bị trùng." });
+      }
+      if (payload.deniedRoleIds.length > 0) {
+        const matchingRoles = await db.select({
+          id: roles.id,
+          departmentName: departments.name,
+        })
+          .from(roles)
+          .innerJoin(departments, eq(roles.departmentId, departments.id))
+          .where(inArray(roles.id, payload.deniedRoleIds));
+        const staffRoles = matchingRoles.filter(
+          (role) => !role.departmentName.toLowerCase().includes("khách hàng"),
+        );
+        if (staffRoles.length !== payload.deniedRoleIds.length) {
+          return res.status(400).json({ message: "Chỉ được chọn vai trò nhân sự ngoài Phòng Khách hàng." });
+        }
+      }
+
+      const { systemSettings } = await import("@shared/schema");
+      const value = JSON.stringify(payload);
+      await db.insert(systemSettings)
+        .values({ key: SESSION_REVIEW_PUBLICATION_SETTINGS_KEY, value })
+        .onConflictDoUpdate({
+          target: systemSettings.key,
+          set: { value, updatedAt: new Date() },
+        });
+      res.json(payload);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: "Dữ liệu cấu hình không hợp lệ.", errors: err.errors });
+      res.status(500).json({ message: err.message || "Không thể lưu cấu hình công bố nhận xét học viên." });
     }
   });
 

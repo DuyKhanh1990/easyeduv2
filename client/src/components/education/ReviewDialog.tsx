@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Star } from "lucide-react";
 import { RichEditor } from "@/components/ui/rich-editor";
 import { useLanguage } from "@/hooks/use-language";
+import { useSessionReviewPublicationPolicy } from "@/hooks/use-session-review-publication-policy";
 import {
   formatEvaluationExclusionViolation,
   getEvaluationCheckboxGroupStates,
@@ -152,6 +153,7 @@ export function ReviewDialog({
 }: ReviewDialogProps) {
   const { toast } = useToast();
   const { t } = useLanguage();
+  const publicationPolicy = useSessionReviewPublicationPolicy(open);
   const isBulk = studentSessionIds.length > 1;
 
   const [comments, setComments] = useState<ReviewMap>({});
@@ -205,10 +207,10 @@ export function ReviewDialog({
       setComments(buildEmptyComments(criteria, teachers));
       setRatings(buildEmptyRatings(criteria, teachers));
       setChecked(buildEmptyChecked(criteria, teachers));
-      setPublished(false);
+       setPublished(publicationPolicy.data?.defaultPublished ?? false);
     }
     if (teachers.length > 0) setActiveTeacher(teachers[0].id);
-  }, [open, existingReviewKey, existingPublished, criteriaKey, teachersKey, isBulk, studentSessionIdsKey]);
+   }, [open, existingReviewKey, existingPublished, criteriaKey, teachersKey, isBulk, studentSessionIdsKey, publicationPolicy.data?.defaultPublished]);
 
   const buildReviewData = () => {
     const reviewData: Record<string, { teacherName: string; items: any[]; criteriaRatings: Record<string, number> }> = {};
@@ -251,20 +253,25 @@ export function ReviewDialog({
   const reviewMutation = useMutation({
     mutationFn: async () => {
       const reviewData = buildReviewData();
+      let savedPublished = published;
       if (freeReview) {
-        await apiRequest("POST", `/api/classes/${freeReview.classId}/free-schedule/review`, {
+        const response = await apiRequest("POST", `/api/classes/${freeReview.classId}/free-schedule/review`, {
           registrationId: freeReview.registrationId,
           reviewData,
           published,
         });
+        const result = await response.json();
+        savedPublished = result.published ?? published;
       } else {
-        await apiRequest("POST", "/api/student-sessions/review", {
+        const response = await apiRequest("POST", "/api/student-sessions/review", {
           studentSessionIds,
           reviewData,
           published,
         });
+        const result = await response.json();
+        savedPublished = result.published ?? published;
       }
-      return { reviewData, published };
+      return { reviewData, published: savedPublished };
     },
     onSuccess: ({ reviewData, published: savedPublished }) => {
       queryClient.invalidateQueries({
@@ -283,7 +290,7 @@ export function ReviewDialog({
       onSaved?.(reviewData, savedPublished);
       toast({
         title: t("mySpace.calendar.reviewSaved"),
-        description: published
+        description: savedPublished
           ? t("mySpace.calendar.reviewPublished")
           : t("mySpace.calendar.reviewSavedInternal"),
       });
@@ -423,6 +430,7 @@ export function ReviewDialog({
               id="publish-switch"
               checked={published}
               onCheckedChange={setPublished}
+              disabled={publicationPolicy.isLoading || publicationPolicy.isError || !publicationPolicy.data?.canToggle}
               data-testid="switch-publish-review"
             />
           </div>

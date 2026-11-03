@@ -252,6 +252,7 @@ export const navigation: NavEntry[] = [
             permissionItems: [
               { value: "auto-invoice", name: "Bật/tắt hóa đơn tự động" },
               { value: "past-schedule", name: "Chạy lịch học trong quá khứ" },
+              { value: "session-review-publication", name: "Công bố nhận xét học viên" },
             ],
           }
         ]

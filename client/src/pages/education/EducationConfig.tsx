@@ -37,9 +37,11 @@ import { z } from "zod";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { useAutoInvoicePolicy } from "@/hooks/use-auto-invoice-policy";
 import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
+import { useSessionReviewPublicationPolicy } from "@/hooks/use-session-review-publication-policy";
 import {
   AUTO_INVOICE_FEATURE_PERMISSION_RESOURCE,
   PAST_SCHEDULE_FEATURE_PERMISSION_RESOURCE,
+  SESSION_REVIEW_PUBLICATION_FEATURE_PERMISSION_RESOURCE,
 } from "@shared/permission-resources";
 import type { AttendanceFeeRule, ScoreCategory, ScoreSheet, ScoreSheetItem } from "@shared/schema";
 import { normalizeAttendanceDuration } from "@shared/attendance-limit-duration";
@@ -2271,6 +2273,139 @@ function PastScheduleConfigCard({ canEdit }: { canEdit: boolean }) {
   );
 }
 
+function SessionReviewPublicationConfigCard({ canEdit }: { canEdit: boolean }) {
+  const { toast } = useToast();
+  const {
+    data: departments = [],
+    isFetched: departmentsFetched,
+    isError: departmentsError,
+    refetch: refetchDepartments,
+  } = useQuery<Array<{ id: string; name: string; roles: Array<{ id: string; name: string }> }>>({
+    queryKey: ["/api/departments"],
+    staleTime: STATIC_STALE_TIME,
+  });
+  const policyQuery = useSessionReviewPublicationPolicy(true);
+  const policy = policyQuery.data;
+  const [defaultPublished, setDefaultPublished] = useState(false);
+  const [deniedRoleIds, setDeniedRoleIds] = useState<string[]>([]);
+  const [policyInitialized, setPolicyInitialized] = useState(false);
+  const roleOptions = departments
+    .filter((department) => !department.name.toLowerCase().includes("khách hàng"))
+    .flatMap((department) => department.roles.map((role) => ({
+      label: `${department.name} — ${role.name}`,
+      value: role.id,
+    })));
+
+  useEffect(() => {
+    if (policyQuery.isFetching) {
+      setPolicyInitialized(false);
+      return;
+    }
+    if (!policy || !Array.isArray(policy.deniedRoleIds)) return;
+    setDefaultPublished(policy.defaultPublished);
+    setDeniedRoleIds(policy.deniedRoleIds);
+    setPolicyInitialized(true);
+  }, [policy?.defaultPublished, policy?.deniedRoleIds, policyQuery.isFetching]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => apiRequest("PUT", "/api/system-settings/session-review-publication", {
+      defaultPublished,
+      deniedRoleIds,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/session-review-publication"] });
+      toast({ title: "Đã lưu cấu hình công bố nhận xét học viên" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Lỗi khi lưu", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const canLoadRoles = !!policy
+    && Array.isArray(policy.deniedRoleIds)
+    && policyInitialized
+    && departmentsFetched
+    && !departmentsError
+    && !policyQuery.isFetching;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base font-semibold">
+          <Settings2 className="h-4 w-4" />
+          Công bố nhận xét học viên
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {policyQuery.isError ? (
+          <div className="space-y-2">
+            <p className="text-sm text-destructive">Không thể tải cấu hình công bố nhận xét học viên.</p>
+            <Button type="button" variant="outline" onClick={() => policyQuery.refetch()}>
+              Thử tải lại
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-4 rounded-md border p-4">
+              <div className="space-y-1">
+                <Label htmlFor="session-review-default-published" className="font-medium">
+                  Mặc định công bố nhận xét mới
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {defaultPublished ? "Nhận xét mới được công bố khi lưu." : "Nhận xét mới chỉ lưu nội bộ."}
+                </p>
+              </div>
+              <Switch
+                id="session-review-default-published"
+                checked={defaultPublished}
+                onCheckedChange={setDefaultPublished}
+                disabled={!canEdit || !canLoadRoles || saveMutation.isPending}
+                aria-label="Mặc định công bố nhận xét buổi học mới"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Vai trò không được bật/tắt công bố</Label>
+              {departmentsError ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-destructive">Không thể tải danh sách vai trò.</p>
+                  <Button type="button" variant="outline" onClick={() => refetchDepartments()}>
+                    Tải lại danh sách
+                  </Button>
+                </div>
+              ) : canLoadRoles ? (
+                <MultiSelect
+                  key={deniedRoleIds.join(",") || "empty"}
+                  options={roleOptions}
+                  onValueChange={setDeniedRoleIds}
+                  defaultValue={deniedRoleIds}
+                  placeholder="Chọn vai trò cần chặn…"
+                  maxCount={5}
+                  disabled={!canEdit || saveMutation.isPending}
+                />
+              ) : (
+                <div className="h-9 rounded-md border bg-muted/30 animate-pulse" />
+              )}
+            </div>
+
+            {canEdit && (
+              <div className="pt-2">
+                <Button
+                  type="button"
+                  onClick={() => saveMutation.mutate()}
+                  disabled={!canLoadRoles || policyQuery.isError || saveMutation.isPending}
+                >
+                  {saveMutation.isPending ? "Đang lưu…" : "Lưu cấu hình"}
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function EducationConfig() {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
@@ -2555,13 +2690,17 @@ export default function EducationConfig() {
                 <Card><CardContent className="p-6 text-sm text-muted-foreground">Bạn không có quyền xem mục cấu hình này.</CardContent></Card>
               ) : (myPerms.isSuperAdmin
                 || myPerms.permissions[AUTO_INVOICE_FEATURE_PERMISSION_RESOURCE]?.canView
-                || myPerms.permissions[PAST_SCHEDULE_FEATURE_PERMISSION_RESOURCE]?.canView) ? (
+                || myPerms.permissions[PAST_SCHEDULE_FEATURE_PERMISSION_RESOURCE]?.canView
+                || myPerms.permissions[SESSION_REVIEW_PUBLICATION_FEATURE_PERMISSION_RESOURCE]?.canView) ? (
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                   {(myPerms.isSuperAdmin || myPerms.permissions[AUTO_INVOICE_FEATURE_PERMISSION_RESOURCE]?.canView) && (
                     <AutoInvoiceConfigTab canEdit={buildTabPerm(myPerms, "other-config").canEdit} />
                   )}
                   {(myPerms.isSuperAdmin || myPerms.permissions[PAST_SCHEDULE_FEATURE_PERMISSION_RESOURCE]?.canView) && (
                     <PastScheduleConfigCard canEdit={buildTabPerm(myPerms, "other-config").canEdit} />
+                  )}
+                  {(myPerms.isSuperAdmin || myPerms.permissions[SESSION_REVIEW_PUBLICATION_FEATURE_PERMISSION_RESOURCE]?.canView) && (
+                    <SessionReviewPublicationConfigCard canEdit={buildTabPerm(myPerms, "other-config").canEdit} />
                   )}
                 </div>
               ) : (
