@@ -334,24 +334,24 @@ export function UpdateSessionDialog({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[92dvh] w-[calc(100vw-1.25rem)] gap-0 overflow-hidden border-slate-200 bg-white p-0 shadow-2xl sm:max-w-[1120px] [&>button]:text-slate-200 [&>button:hover]:text-white">
-          <DialogHeader className="relative border-b border-slate-800 bg-slate-950 px-5 py-5 text-left text-white sm:px-7">
+        <DialogContent className="max-h-[92dvh] w-[calc(100vw-1.25rem)] gap-0 overflow-hidden border-slate-200 bg-white p-0 shadow-2xl sm:max-w-[1120px] [&>button]:text-slate-700 [&>button]:opacity-100">
+          <DialogHeader className="relative border-b border-slate-200 bg-slate-100 px-5 py-5 text-left text-slate-900 sm:px-7">
             <div className="flex items-start gap-3 pr-8">
-              <span className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-indigo-300/20 bg-indigo-500/15 text-indigo-200">
+              <span className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700">
                 <Calendar className="h-5 w-5" />
               </span>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <DialogTitle className="text-lg font-semibold tracking-tight text-white sm:text-xl">
+                  <DialogTitle className="text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">
                     Cập nhật buổi học {session?.sessionIndex}
                   </DialogTitle>
                   {(classData?.classCode || classData?.name) && (
-                    <span className="rounded-md border border-indigo-300/25 bg-indigo-400/10 px-2 py-0.5 text-xs font-medium text-indigo-100">
+                    <span className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-800">
                       {classData.classCode || classData.name}
                     </span>
                   )}
                 </div>
-                <DialogDescription className="mt-1 text-sm text-slate-300">
+                <DialogDescription className="mt-1 text-sm text-slate-600">
                   Điều chỉnh ngày, ca học, phòng học và phân công giảng dạy.
                 </DialogDescription>
               </div>
@@ -451,10 +451,10 @@ export function UpdateSessionDialog({
                         {" "}Giáo viên không chia riêng sẽ dùng toàn bộ khung giờ ca này.
                       </p>
                     </div>
-                    <div className="hidden gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-slate-500 lg:grid lg:grid-cols-[minmax(130px,0.8fr)_minmax(145px,0.8fr)_minmax(285px,1.4fr)]">
+                    <div className="hidden gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-slate-500 xl:grid xl:grid-cols-[minmax(130px,0.8fr)_minmax(145px,0.8fr)_minmax(285px,1.4fr)]">
                       <span>Tên giáo viên</span>
                       <span>Vai trò</span>
-                      <span className="text-right">Phân công giờ dạy</span>
+                      <span>Phân công giờ dạy</span>
                     </div>
                     <div className="divide-y divide-slate-100">
                       {teacherIds.map((teacherId) => {
@@ -468,12 +468,12 @@ export function UpdateSessionDialog({
                         const invalidTime = invalidTimeTeacherIds.includes(teacherId);
                         const isFullShift = timeRange.startTime === shiftStartTime && timeRange.endTime === shiftEndTime;
                         return (
-                          <div key={teacherId} className="grid grid-cols-1 gap-3 px-4 py-4 lg:grid-cols-[minmax(130px,0.8fr)_minmax(145px,0.8fr)_minmax(285px,1.4fr)] lg:items-center lg:gap-3">
-                            <span className="min-w-0 truncate text-sm font-semibold text-slate-800" title={teacher?.fullName || teacherId}>
+                          <div key={teacherId} className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] gap-x-3 gap-y-3 px-4 py-4 xl:grid-cols-[minmax(130px,0.8fr)_minmax(145px,0.8fr)_minmax(285px,1.4fr)] xl:items-center xl:gap-3">
+                            <span className="min-w-0 truncate self-center text-sm font-semibold text-slate-800" title={teacher?.fullName || teacherId}>
                               {teacher?.fullName || teacherId}
                             </span>
-                            <div className="min-w-0 space-y-1.5">
-                              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 lg:hidden">Vai trò</span>
+                            <div className="min-w-0 space-y-1.5 xl:space-y-0">
+                              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 xl:hidden">Vai trò</span>
                               <Select
                                 value={details.selectedRoleId || ""}
                                 onValueChange={(value) => {
@@ -502,10 +502,10 @@ export function UpdateSessionDialog({
                                 </SelectContent>
                               </Select>
                             </div>
-                            <div className="min-w-0 space-y-1.5">
-                              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 lg:hidden">Phân công giờ dạy</span>
-                              <div className="flex min-w-0 items-center gap-2">
-                                <label className="flex min-w-0 flex-1 items-center gap-1.5">
+                            <div className="col-span-2 min-w-0 space-y-1.5 xl:col-span-1 xl:space-y-1.5">
+                              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 xl:hidden">Phân công giờ dạy</span>
+                              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:flex xl:items-center">
+                                <label className="flex min-w-0 items-center gap-1.5 xl:flex-1">
                                   <span className="text-xs text-slate-500">Từ</span>
                                   <input
                                     type="time"
@@ -515,10 +515,10 @@ export function UpdateSessionDialog({
                                     value={timeRange.startTime}
                                     onChange={(event) => updateTeacherTimeRange(teacherId, "startTime", event.target.value)}
                                     disabled={!shiftStartTime || !shiftEndTime}
-                                    className={`h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm ${invalidTime ? "border-destructive" : ""}`}
+                                    className={`h-10 w-full min-w-[8rem] flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm ${invalidTime ? "border-destructive" : ""}`}
                                   />
                                 </label>
-                                <label className="flex min-w-0 flex-1 items-center gap-1.5">
+                                <label className="flex min-w-0 items-center gap-1.5 xl:flex-1">
                                   <span className="text-xs text-slate-500">Đến</span>
                                   <input
                                     type="time"
@@ -528,7 +528,7 @@ export function UpdateSessionDialog({
                                     value={timeRange.endTime}
                                     onChange={(event) => updateTeacherTimeRange(teacherId, "endTime", event.target.value)}
                                     disabled={!shiftStartTime || !shiftEndTime}
-                                    className={`h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm ${invalidTime ? "border-destructive" : ""}`}
+                                    className={`h-10 w-full min-w-[8rem] flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm ${invalidTime ? "border-destructive" : ""}`}
                                   />
                                 </label>
                               </div>
