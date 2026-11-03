@@ -1674,9 +1674,18 @@ export function registerStudentsRoutes(app: Express): void {
       const offset = parseInt(req.query.offset as string) || 0;
       const locationId = req.query.locationId as string | undefined;
       const action = req.query.action as string | undefined;
+      const studentId = req.query.studentId as string | undefined;
       const dateFrom = req.query.dateFrom as string | undefined;
       const dateTo = req.query.dateTo as string | undefined;
       const whereClauses = [sql`1 = 1`];
+
+      if (studentId) {
+        const parsedStudentId = z.string().uuid().safeParse(studentId);
+        if (!parsedStudentId.success) {
+          return res.status(400).json({ message: "Mã học viên không hợp lệ." });
+        }
+        whereClauses.push(sql`l.student_id = ${parsedStudentId.data}::uuid`);
+      }
 
       if (!req.isSuperAdmin) {
         const allowedLocationIdsArray = sql`ARRAY[${sql.join(

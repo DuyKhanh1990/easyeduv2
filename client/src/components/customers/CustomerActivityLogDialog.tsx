@@ -6,8 +6,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useLocations } from "@/hooks/use-locations";
-import { ScrollText, X, Building2, Zap, PlusCircle, PencilLine, Trash2, RotateCcw, Eye, ChevronLeft, ChevronRight, Download, FileSpreadsheet } from "lucide-react";
+import { ScrollText, X, Building2, Zap, PlusCircle, PencilLine, Trash2, RotateCcw, Eye, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getAuthHeaders } from "@/lib/queryClient";
 
@@ -372,14 +373,29 @@ interface Props {
 export function CustomerActivityLogDialog({ open, onOpenChange }: Props) {
   const [locationId, setLocationId] = useState("__all__");
   const [action, setAction] = useState("__all__");
+  const [studentId, setStudentId] = useState("__all__");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [pageSize, setPageSize] = useState(50);
   const [currentPage, setCurrentPage] = useState(1);
   const [detailLog, setDetailLog] = useState<ActivityLog | null>(null);
   const { data: locations = [] } = useLocations();
+  const { data: studentOptions = [] } = useQuery<{ id: string; fullName: string; code: string; type: string | null }[]>({
+    queryKey: ["/api/customers/activity-logs/student-options"],
+    queryFn: async () => {
+      const response = await fetch("/api/students?minimal=true&limit=5000", {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) throw new Error("Không thể tải danh sách học viên");
+      const result = await response.json();
+      return (result.students ?? []).filter((student: any) => student.type === "Học viên");
+    },
+    enabled: open,
+    staleTime: 5 * 60_000,
+  });
   const { data, isLoading, refetch } = useQuery<{ logs: ActivityLog[]; total: number }>({
-    queryKey: ["/api/customers/activity-logs", locationId, action, dateFrom, dateTo, pageSize, currentPage],
+    queryKey: ["/api/customers/activity-logs", locationId, action, studentId, dateFrom, dateTo, pageSize, currentPage],
     queryFn: () => {
       const params = new URLSearchParams({
         limit: String(pageSize),
@@ -387,6 +403,7 @@ export function CustomerActivityLogDialog({ open, onOpenChange }: Props) {
       });
       if (locationId !== "__all__") params.set("locationId", locationId);
       if (action !== "__all__") params.set("action", action);
+      if (studentId !== "__all__") params.set("studentId", studentId);
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
       return fetch(`/api/customers/activity-logs?${params.toString()}`, { credentials: "include" }).then(r => r.json());
@@ -395,12 +412,12 @@ export function CustomerActivityLogDialog({ open, onOpenChange }: Props) {
   });
 
   useEffect(() => { if (open) refetch(); }, [open, refetch]);
-  useEffect(() => { setCurrentPage(1); }, [locationId, action, dateFrom, dateTo]);
+  useEffect(() => { setCurrentPage(1); }, [locationId, action, studentId, dateFrom, dateTo]);
 
   const logs = data?.logs ?? [];
   const totalLogs = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalLogs / pageSize));
-  const hasFilters = locationId !== "__all__" || action !== "__all__" || dateFrom || dateTo;
+  const hasFilters = locationId !== "__all__" || action !== "__all__" || studentId !== "__all__" || dateFrom || dateTo;
   const logGroups = useMemo(() => {
     return logs.reduce<Map<string, ActivityLog[]>>((groups, log) => {
       const date = new Date(log.created_at);
@@ -442,7 +459,7 @@ export function CustomerActivityLogDialog({ open, onOpenChange }: Props) {
 
         {/* ── Filters ── */}
         <div className="px-5 py-3 border-b bg-white flex-shrink-0">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 items-end">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5 items-end">
             <div className="space-y-1">
               <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1">
                 <Building2 className="w-3 h-3" /> Cơ sở
@@ -458,6 +475,27 @@ export function CustomerActivityLogDialog({ open, onOpenChange }: Props) {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                <Users className="w-3 h-3" /> Tên học viên
+              </label>
+              <SearchableSelect
+                options={[
+                  { value: "__all__", label: "Tất cả học viên" },
+                  ...studentOptions.map((student) => ({
+                    value: student.id,
+                    label: student.fullName,
+                    sublabel: student.code,
+                  })),
+                ]}
+                value={studentId}
+                onChange={setStudentId}
+                placeholder="Tất cả học viên"
+                searchPlaceholder="Tìm tên hoặc mã học viên..."
+                className="h-9 rounded-xl border-slate-200 bg-white text-xs"
+                data-testid="select-log-student"
+              />
             </div>
             <div className="space-y-1">
               <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1">
@@ -492,7 +530,7 @@ export function CustomerActivityLogDialog({ open, onOpenChange }: Props) {
                 hasFilters && "border-violet-300 text-violet-600 bg-violet-50 hover:bg-violet-100"
               )}
               data-testid="button-reset-log-filters"
-              onClick={() => { setLocationId("__all__"); setAction("__all__"); setDateFrom(""); setDateTo(""); }}
+              onClick={() => { setLocationId("__all__"); setAction("__all__"); setStudentId("__all__"); setDateFrom(""); setDateTo(""); }}
             >
               <RotateCcw className="w-3.5 h-3.5" />
               Xoá lọc
