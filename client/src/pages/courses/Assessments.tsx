@@ -1500,7 +1500,7 @@ export default function Assessments() {
                               )}
                             </td>
                             {/* AI grading */}
-                            <td className="px-4 py-3 text-center">
+                            <td className="px-2 py-3 text-center">
                               {(() => {
                                 const results = (sub.aiGradingResults as Record<string, any>) || {};
                                 const resultKeys = Object.keys(results);
@@ -1519,8 +1519,8 @@ export default function Assessments() {
 
                                 if (isTriggering || (sub.hasAIGrading && sub.aiGradingResults == null)) {
                                   return (
-                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-violet-50 text-violet-500 text-[10px] font-medium">
-                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    <span className="inline-flex items-center gap-0.5 rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-medium leading-tight text-violet-500">
+                                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
                                       {isTriggering ? "Đang chấm" : "Xử lý..."}
                                     </span>
                                   );
@@ -1531,7 +1531,7 @@ export default function Assessments() {
                                   return (
                                     <button
                                       className={cn(
-                                        "inline-flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl text-[10px] font-semibold border transition-all hover:shadow-sm",
+                                        "inline-flex min-w-[50px] flex-col items-center gap-px rounded-lg border px-1.5 py-1 text-[9px] font-semibold leading-tight transition-all hover:shadow-sm",
                                         allDone
                                           ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
                                           : "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
@@ -1540,7 +1540,7 @@ export default function Assessments() {
                                       data-testid={`btn-ai-review-${idx}`}
                                     >
                                       <span className="flex items-center gap-0.5">
-                                        <BrainCircuit className="w-3 h-3" />
+                                        <BrainCircuit className="h-2.5 w-2.5" />
                                          {completedCount}/{gradedCount}
                                       </span>
                                        <span className="opacity-70">
