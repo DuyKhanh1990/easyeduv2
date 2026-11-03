@@ -161,6 +161,11 @@ export function ChangeCycleDialog({
         queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/active-students`] }),
         queryClient.invalidateQueries({ queryKey: [`/api/class-sessions/${selectedClassSessionId}/student-sessions`] }),
         queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/student/${studentId}/sessions`] }),
+        queryClient.invalidateQueries({ queryKey: [`/api/students/${studentId}/classes`] }),
+        queryClient.invalidateQueries({ queryKey: [`/api/students/${studentId}/classes/${classId}/sessions`] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/my-space/calendar/student"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/my-space/calendar/student/classes"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/my-space/calendar/student/class", classId, "sessions"] }),
       ]);
       const msg = `Đã thay đổi chu kỳ: xóa ${data.deleted} buổi, tạo ${data.created} buổi mới.${data.warning ? ` ${data.warning}` : ""}`;
       toast({ title: "Thành công", description: msg });
