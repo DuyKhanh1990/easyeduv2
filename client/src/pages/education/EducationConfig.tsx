@@ -2071,7 +2071,7 @@ function AutoInvoiceConfigTab({ canEdit }: { canEdit: boolean }) {
   const canSave = canEdit && canLoadRoles && !policyQuery.isError;
 
   return (
-    <Card className="max-w-2xl">
+    <Card className="h-full w-full">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base font-semibold">
           <Settings2 className="h-4 w-4" />
@@ -2202,7 +2202,7 @@ function PastScheduleConfigCard({ canEdit }: { canEdit: boolean }) {
     && !policyQuery.isFetching;
 
   return (
-    <Card>
+    <Card className="h-full w-full">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base font-semibold">
           <Settings2 className="h-4 w-4" />
@@ -2329,7 +2329,7 @@ function SessionReviewPublicationConfigCard({ canEdit }: { canEdit: boolean }) {
     && !policyQuery.isFetching;
 
   return (
-    <Card>
+    <Card className="h-full w-full">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base font-semibold">
           <Settings2 className="h-4 w-4" />
