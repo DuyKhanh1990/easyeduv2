@@ -201,6 +201,11 @@ function AttendanceContent() {
   const queryClient = useQueryClient();
   const { data: myPerms } = useMyPermissions();
   const canAttend = !myPerms || myPerms.isSuperAdmin || !!(myPerms.permissions["/attendance"]?.canCreate);
+  const canEditStudentReviews = Boolean(
+    myPerms?.isSuperAdmin
+    || myPerms?.permissions["/classes"]?.canEdit
+    || myPerms?.permissions["/classes"]?.canDelete,
+  );
 
   const [filters, setFilters] = useState<AttendanceFilters>({
     classes: [],
@@ -831,10 +836,10 @@ function AttendanceContent() {
                         {/* Table */}
                         {isExpanded && (
                           <div className="w-full overflow-x-auto">
-                            <Table className="min-w-[1000px]">
+                            <Table className="w-[1210px] min-w-[1210px] table-fixed">
                               <TableHeader>
                                 <TableRow className="bg-muted/10 hover:bg-muted/10">
-                                  <TableHead className="text-xs font-semibold w-10" data-testid="th-checkbox">
+                                  <TableHead className="w-[40px] text-xs font-semibold" data-testid="th-checkbox">
                                     <Checkbox
                                       checked={allClassSelected ? true : someClassSelected ? "indeterminate" : false}
                                       onCheckedChange={(checked) => {
@@ -846,15 +851,15 @@ function AttendanceContent() {
                                       data-testid={`checkbox-all-class-${className}`}
                                     />
                                   </TableHead>
-                                  <TableHead className="text-xs font-semibold min-w-[180px]" data-testid="th-student-name">Tên học viên</TableHead>
-                                  <TableHead className="text-xs font-semibold min-w-[110px]" data-testid="th-day">Thứ / Ngày</TableHead>
-                                  <TableHead className="text-xs font-semibold min-w-[110px]" data-testid="th-shift">Ca học</TableHead>
-                                  <TableHead className="text-xs font-semibold text-center min-w-[70px]" data-testid="th-sessions">Số buổi</TableHead>
-                                  <TableHead className="text-xs font-semibold min-w-[160px]" data-testid="th-attendance">Điểm danh</TableHead>
-                                  <TableHead className="text-xs font-semibold min-w-[150px]" data-testid="th-teacher">Giáo viên</TableHead>
-                                  <TableHead className="text-xs font-semibold w-[100px] text-center" data-testid="th-review">Nhận xét</TableHead>
-                                  <TableHead className="text-xs font-semibold min-w-[170px]" data-testid="th-notes">Ghi chú</TableHead>
-                                  <TableHead className="text-xs font-semibold min-w-[120px]" data-testid="th-online">Học online</TableHead>
+                                  <TableHead className="w-[180px] text-xs font-semibold" data-testid="th-student-name">Tên học viên</TableHead>
+                                  <TableHead className="w-[110px] text-xs font-semibold" data-testid="th-day">Thứ / Ngày</TableHead>
+                                  <TableHead className="w-[110px] text-xs font-semibold" data-testid="th-shift">Ca học</TableHead>
+                                  <TableHead className="w-[70px] text-xs font-semibold text-center" data-testid="th-sessions">Số buổi</TableHead>
+                                  <TableHead className="w-[160px] text-xs font-semibold" data-testid="th-attendance">Điểm danh</TableHead>
+                                  <TableHead className="w-[150px] text-xs font-semibold" data-testid="th-teacher">Giáo viên</TableHead>
+                                  <TableHead className="w-[100px] text-xs font-semibold text-center" data-testid="th-review">Nhận xét</TableHead>
+                                  <TableHead className="w-[170px] text-xs font-semibold" data-testid="th-notes">Ghi chú</TableHead>
+                                  <TableHead className="w-[120px] text-xs font-semibold" data-testid="th-online">Học online</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -872,7 +877,7 @@ function AttendanceContent() {
                                     className={`transition-colors ${selectedRows.has(record.id) ? "bg-primary/5" : idx % 2 === 0 ? "bg-white" : "bg-muted/10"} hover:bg-primary/5`}
                                     data-testid={`row-attendance-${record.studentCode}`}
                                   >
-                                    <TableCell className="w-10">
+                                     <TableCell className="w-[40px]">
                                       <Checkbox
                                         checked={selectedRows.has(record.id)}
                                         onCheckedChange={(checked) => {
@@ -884,13 +889,13 @@ function AttendanceContent() {
                                         data-testid={`checkbox-row-${record.id}`}
                                       />
                                     </TableCell>
-                                    <TableCell className="text-sm whitespace-nowrap font-medium">
+                                     <TableCell className="w-[180px] overflow-hidden text-sm whitespace-nowrap font-medium">
                                       <StudentNameLink studentId={record.studentId} name={record.studentName} code={record.studentCode} />
                                     </TableCell>
-                                    <TableCell className="text-sm whitespace-nowrap text-muted-foreground">
+                                     <TableCell className="w-[110px] overflow-hidden text-sm whitespace-nowrap text-muted-foreground">
                                       {record.dayOfWeek}, {format(new Date(record.sessionDate), "d/M/yyyy")}
                                     </TableCell>
-                                    <TableCell className="text-sm whitespace-nowrap">
+                                     <TableCell className="w-[110px] overflow-hidden text-sm whitespace-nowrap">
                                       <div className="flex flex-col gap-0.5">
                                         <span>{record.shift}</span>
                                         {record.learningFormat === "online" && record.onlineLink && record.onlineClickedAt && (
@@ -900,11 +905,11 @@ function AttendanceContent() {
                                         )}
                                       </div>
                                     </TableCell>
-                                    <TableCell className="text-sm text-center whitespace-nowrap">
+                                     <TableCell className="w-[70px] overflow-hidden text-sm text-center whitespace-nowrap">
                                       <span className="font-semibold text-foreground">{record.sessionOrder}</span>
                                       <span className="text-muted-foreground">/{record.totalSessions}</span>
                                     </TableCell>
-                                    <TableCell className="text-sm whitespace-nowrap">
+                                     <TableCell className="w-[160px] overflow-hidden text-sm whitespace-nowrap">
                                       {canAttend ? (
                                         <Select
                                           value={record.attendanceStatus || "pending"}
@@ -928,28 +933,28 @@ function AttendanceContent() {
                                         <StatusBadge status={record.attendanceStatus || "pending"} />
                                       )}
                                     </TableCell>
-                                    <TableCell className="text-sm whitespace-nowrap text-muted-foreground">
+                                     <TableCell className="w-[150px] overflow-hidden text-sm whitespace-nowrap text-muted-foreground">
                                       {record.teacherName}
                                     </TableCell>
-                                    <TableCell className="text-center" data-testid={`cell-review-${record.id}`}>
+                                     <TableCell className="w-[100px] text-center" data-testid={`cell-review-${record.id}`}>
                                       {hasReview ? (
-                                        <Button
+                                         canEditStudentReviews ? <Button
                                           type="button"
                                           variant="ghost"
                                           size="icon"
                                           className={`h-8 w-8 ${record.reviewPublished ? "text-emerald-600 hover:text-emerald-700" : "text-slate-400 hover:text-slate-500"}`}
-                                          aria-label={record.reviewPublished ? "Xem nhận xét đã công bố" : "Xem nhận xét chưa công bố"}
-                                          title={record.reviewPublished ? "Nhận xét đã công bố" : "Nhận xét chưa công bố"}
+                                           aria-label={record.reviewPublished ? "Sửa nhận xét đã công bố" : "Sửa nhận xét chưa công bố"}
+                                           title={record.reviewPublished ? "Sửa nhận xét đã công bố" : "Sửa nhận xét chưa công bố"}
                                           onClick={() => setReviewTarget(record)}
-                                          data-testid={`button-view-review-${record.id}`}
+                                           data-testid={`button-edit-review-${record.id}`}
                                         >
                                           <MessageSquare className="h-4 w-4" fill="currentColor" />
-                                        </Button>
+                                         </Button> : <span className="text-muted-foreground">—</span>
                                       ) : (
                                         <span className="text-muted-foreground">—</span>
                                       )}
                                     </TableCell>
-                                    <TableCell className="text-sm whitespace-nowrap">
+                                     <TableCell className="w-[170px] overflow-hidden text-sm whitespace-nowrap">
                                       {canAttend ? (
                                         <Input
                                           className="h-7 text-xs min-w-[150px] bg-transparent border-dashed focus:border-solid focus:bg-white"
@@ -968,7 +973,7 @@ function AttendanceContent() {
                                         </span>
                                       )}
                                     </TableCell>
-                                    <TableCell className="text-sm" data-testid={`cell-online-${record.id}`}>
+                                     <TableCell className="w-[120px] overflow-hidden text-sm" data-testid={`cell-online-${record.id}`}>
                                       {(record.learningFormat === "online" || !!record.onlineLink) ? (
                                         record.onlineClickedAt ? (() => {
                                           const clickedAt = new Date(record.onlineClickedAt);
