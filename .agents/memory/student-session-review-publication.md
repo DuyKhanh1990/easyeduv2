@@ -8,3 +8,5 @@ description: Default publication and blocked-role behavior for learner comments 
 **Why:** The user requested a center-configurable default without changing behavior for unconfigured centers, and explicitly said blocked roles must still be able to save comments.
 
 **How to apply:** Keep unconfigured defaults unpublished with no denied roles so existing behavior remains. Enforce blocked-role publication immutability on the server as well as disabling the UI control. Do not apply this setting to grade-book comments.
+
+For `/attendance`, show one review indicator per learner/session only when the saved review has meaningful content. Gray means unpublished; green means published. Staff who can view attendance may open the existing read-only teacher feedback dialog for either state.

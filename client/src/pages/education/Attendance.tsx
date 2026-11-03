@@ -48,6 +48,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
+  MessageSquare,
 } from "lucide-react";
 import { format } from "date-fns";
 import { StoreDateRangePicker, DateRange } from "@/pages/store/StoreDateRangePicker";
@@ -55,6 +56,8 @@ import { applyBulkAttendance } from "@/lib/attendance-bulk";
 import { apiRequest } from "@/lib/queryClient";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { useToast } from "@/hooks/use-toast";
+import { FeedbackModal } from "@/components/my-space/calendar/FeedbackModal";
+import type { ReviewSubItem, TeacherReview } from "@/types/my-calendar";
 
 type AttendanceFilters = {
   classes: string[];
@@ -90,6 +93,8 @@ type StudentAttendance = {
   totalSessions: number;
   attendanceStatus: string;
   attendanceNote: string;
+  reviewData?: unknown;
+  reviewPublished?: boolean;
   teacherName: string;
   note: string;
   onlineLink?: string | null;
@@ -125,6 +130,49 @@ function StatusBadge({ status }: { status: string }) {
       {cfg.label}
     </span>
   );
+}
+
+function normalizeReviewData(raw: unknown): TeacherReview[] {
+  if (Array.isArray(raw)) return raw as TeacherReview[];
+  if (!raw || typeof raw !== "object") return [];
+
+  return Object.values(raw as Record<string, any>).flatMap((entry) => {
+    if (!entry || !Array.isArray(entry.items)) return [];
+    const groups = new Map<string, { criteriaId: string; items: ReviewSubItem[] }>();
+    for (const item of entry.items) {
+      const name = item.criteriaName || "Chung";
+      let group = groups.get(name);
+      if (!group) {
+        group = { criteriaId: item.criteriaId || "", items: [] };
+        groups.set(name, group);
+      }
+      group.items.push({
+        subCriteriaName: item.subCriteriaName || "",
+        ...(item.groupName ? { groupName: item.groupName } : {}),
+        comment: item.comment ?? "",
+        ...(item.inputType === "checkbox"
+          ? { inputType: "checkbox" as const, checked: item.checked === true }
+          : {}),
+      });
+    }
+    const criteria = Array.from(groups, ([criteriaName, group]) => ({
+      criteriaName,
+      items: group.items,
+      ...(entry.criteriaRatings?.[group.criteriaId] != null
+        ? { rating: entry.criteriaRatings[group.criteriaId] }
+        : {}),
+    }));
+    return criteria.length ? [{ teacherName: entry.teacherName || "Giáo viên", criteria }] : [];
+  });
+}
+
+function hasReviewContent(reviewData: TeacherReview[]): boolean {
+  return reviewData.some((teacher) => teacher.criteria.some((criterion) =>
+    (criterion.rating ?? 0) > 0
+    || criterion.items.some((item) =>
+      !!item.comment?.trim() || (item.inputType === "checkbox" && item.checked === true),
+    ),
+  ));
 }
 
 export function Attendance() {
@@ -182,6 +230,7 @@ function AttendanceContent() {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [isBulkAttendanceOpen, setIsBulkAttendanceOpen] = useState(false);
   const [isBulkSaving, setIsBulkSaving] = useState(false);
+  const [reviewTarget, setReviewTarget] = useState<StudentAttendance | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
 
@@ -810,6 +859,7 @@ function AttendanceContent() {
                                   <TableHead className="text-xs font-semibold text-center min-w-[70px]" data-testid="th-sessions">Số buổi</TableHead>
                                   <TableHead className="text-xs font-semibold min-w-[160px]" data-testid="th-attendance">Điểm danh</TableHead>
                                   <TableHead className="text-xs font-semibold min-w-[150px]" data-testid="th-teacher">Giáo viên</TableHead>
+                                  <TableHead className="text-xs font-semibold w-[100px] text-center" data-testid="th-review">Nhận xét</TableHead>
                                   <TableHead className="text-xs font-semibold min-w-[170px]" data-testid="th-notes">Ghi chú</TableHead>
                                   <TableHead className="text-xs font-semibold min-w-[120px]" data-testid="th-online">Học online</TableHead>
                                 </TableRow>
@@ -822,6 +872,8 @@ function AttendanceContent() {
                                         ? val !== "makeup_scheduled"
                                         : ["pending", "present", "paused"].includes(val),
                                     );
+                                    const teacherReviews = normalizeReviewData(record.reviewData);
+                                    const hasReview = hasReviewContent(teacherReviews);
                                     return (
                                   <TableRow
                                     key={`${record.id}-${idx}`}
@@ -886,6 +938,24 @@ function AttendanceContent() {
                                     </TableCell>
                                     <TableCell className="text-sm whitespace-nowrap text-muted-foreground">
                                       {record.teacherName}
+                                    </TableCell>
+                                    <TableCell className="text-center" data-testid={`cell-review-${record.id}`}>
+                                      {hasReview ? (
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className={`h-8 w-8 ${record.reviewPublished ? "text-emerald-600 hover:text-emerald-700" : "text-slate-400 hover:text-slate-500"}`}
+                                          aria-label={record.reviewPublished ? "Xem nhận xét đã công bố" : "Xem nhận xét chưa công bố"}
+                                          title={record.reviewPublished ? "Nhận xét đã công bố" : "Nhận xét chưa công bố"}
+                                          onClick={() => setReviewTarget(record)}
+                                          data-testid={`button-view-review-${record.id}`}
+                                        >
+                                          <MessageSquare className="h-4 w-4" />
+                                        </Button>
+                                      ) : (
+                                        <span className="text-muted-foreground">—</span>
+                                      )}
                                     </TableCell>
                                     <TableCell className="text-sm whitespace-nowrap">
                                       {canAttend ? (
@@ -1082,6 +1152,13 @@ function AttendanceContent() {
           </div>
         </DialogContent>
       </Dialog>
+      <FeedbackModal
+        open={!!reviewTarget}
+        onClose={() => setReviewTarget(null)}
+        reviewData={reviewTarget ? normalizeReviewData(reviewTarget.reviewData) : []}
+        className={reviewTarget?.className ?? ""}
+        sessionDate={reviewTarget ? `${reviewTarget.dayOfWeek}, ${format(new Date(reviewTarget.sessionDate), "d/M/yyyy")}` : ""}
+      />
     </DashboardLayout>
   );
 }
