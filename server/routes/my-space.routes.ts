@@ -211,7 +211,7 @@ async function getCurrentScoreSheetTemplate(
 
 async function hasMySpaceScoreSheetPermission(
   req: any,
-  action: "view" | "create" | "edit",
+  action: "view" | "create" | "edit" | "delete",
 ): Promise<boolean> {
   if (req.isSuperAdmin) return true;
   const permissions = await storage.getEffectivePermissions(
@@ -220,6 +220,7 @@ async function hasMySpaceScoreSheetPermission(
   );
   if (action === "create") return permissions.canCreate;
   if (action === "edit") return permissions.canEdit;
+  if (action === "delete") return permissions.canDelete;
   return Boolean(
     permissions.canView
     || permissions.canViewAll
@@ -299,10 +300,14 @@ type ScoreSheetAssessmentSessionAccess = {
   isManual: boolean;
 };
 
-async function hasScoreConversionPermission(req: any, action: "view" | "edit"): Promise<boolean> {
+async function hasScoreConversionPermission(
+  req: any,
+  action: "view" | "edit" | "delete",
+): Promise<boolean> {
   if (req.isSuperAdmin) return true;
   const permissions = await storage.getEffectivePermissions(req.roleIds ?? [], "/assessments#list");
   if (action === "edit") return permissions.canEdit;
+  if (action === "delete") return permissions.canDelete;
   return Boolean(
     permissions.canView
     || permissions.canViewAll
@@ -315,7 +320,7 @@ async function hasScoreConversionPermission(req: any, action: "view" | "edit"): 
 async function getAuthorizedScoreSheetSession(
   req: any,
   sessionId: string,
-  options: { queryable?: any; lock?: boolean; permission?: "view" | "edit" } = {},
+  options: { queryable?: any; lock?: boolean; permission?: "view" | "edit" | "delete" } = {},
 ): Promise<ScoreSheetAssessmentSessionAccess | null> {
   const queryable = options.queryable ?? db;
   const staffRecord = await getStaffForUser(req.user.id);
@@ -5632,6 +5637,101 @@ export function registerMySpaceRoutes(app: Express): void {
   app.post(
     "/api/my-space/score-sheet/staff-assessments/:sessionId/students/:studentId/restore",
     (req, res) => updateScoreAssessmentRoster(req, res, false),
+  );
+
+  app.delete(
+    "/api/my-space/score-sheet/staff-assessments/:sessionId",
+    async (req, res) => {
+      try {
+        if (!(req.user as any)) return res.status(401).json({ message: "Unauthorized" });
+        if (!(await hasScoreConversionPermission(req, "delete"))) {
+          return res.status(403).json({ message: "Bạn không có quyền xóa bảng điểm." });
+        }
+
+        const sessionId = z.string().uuid().safeParse(req.params.sessionId);
+        if (!sessionId.success) {
+          return res.status(400).json({ message: "Buổi học không hợp lệ." });
+        }
+
+        const result = await db.transaction(async (tx) => {
+          const access = await getAuthorizedScoreSheetSession(req, sessionId.data, {
+            queryable: tx,
+            lock: true,
+            permission: "delete",
+          });
+          if (
+            !access?.assessment
+            || access.isManual
+            || !access.assessment.templateSnapshot.scoreConversionTemplateId
+          ) {
+            return { status: 404, message: "Không tìm thấy bảng điểm của buổi học này." };
+          }
+
+          const [session] = await tx
+            .select({
+              assessmentId: classSessions.scoreSheetAssessmentId,
+              published: classSessions.scoreSheetAssessmentPublished,
+            })
+            .from(classSessions)
+            .where(eq(classSessions.id, sessionId.data))
+            .limit(1);
+          if (!session || session.assessmentId !== access.assessmentId) {
+            return { status: 404, message: "Bảng điểm của buổi học đã thay đổi hoặc không còn tồn tại." };
+          }
+          if (session.published) {
+            return {
+              status: 409,
+              message: "Hãy thu hồi công bố toàn bảng trước khi xóa bảng điểm.",
+            };
+          }
+
+          const attempts = await tx
+            .select({ result: scoreSheetAssessmentStudentAttempts.result })
+            .from(scoreSheetAssessmentStudentAttempts)
+            .where(and(
+              eq(scoreSheetAssessmentStudentAttempts.assessmentId, access.assessmentId),
+              eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
+            ));
+          if (attempts.some((attempt) => isScoreSheetAssessmentStudentPublished(attempt.result))) {
+            return {
+              status: 409,
+              message: "Hãy thu hồi công bố riêng của tất cả học viên trước khi xóa bảng điểm.",
+            };
+          }
+
+          await tx
+            .delete(scoreSheetAssessmentStudentAttempts)
+            .where(and(
+              eq(scoreSheetAssessmentStudentAttempts.assessmentId, access.assessmentId),
+              eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
+            ));
+          await tx
+            .update(classSessions)
+            .set({
+              scoreSheetAssessmentId: null,
+              scoreSheetAssessmentPublished: false,
+              scoreSheetAssessmentExcludedStudentIds: [],
+              updatedAt: new Date(),
+            })
+            .where(and(
+              eq(classSessions.id, sessionId.data),
+              eq(classSessions.scoreSheetAssessmentId, access.assessmentId),
+            ));
+
+          return { status: 200, message: "" };
+        });
+
+        if (result.status !== 200) {
+          return res.status(result.status).json({ message: result.message });
+        }
+        return res.json({ success: true });
+      } catch (err: any) {
+        console.error("Delete score assessment session error:", err);
+        return res.status(500).json({
+          message: err.message || "Không thể xóa bảng điểm của buổi học.",
+        });
+      }
+    },
   );
 
   app.get(

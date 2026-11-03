@@ -103,6 +103,11 @@ type PendingStudentRemoval = {
   studentName: string;
 };
 
+type PendingAssessmentRemoval = {
+  sessionId: string;
+  label: string;
+};
+
 type ScoreConversionViewMode = "assessments" | "students";
 const SCORE_CONVERSION_VIEW_MODE_STORAGE_KEY = "score-conversion-view-mode";
 
@@ -363,6 +368,7 @@ export default function ScoreConversion() {
   const [initialScoreSheetTemplate, setInitialScoreSheetTemplate] = useState<ScoreSheetTemplate | null>(null);
   const [pendingTemplateDelete, setPendingTemplateDelete] = useState<PendingTemplateDelete | null>(null);
   const [pendingStudentRemoval, setPendingStudentRemoval] = useState<PendingStudentRemoval | null>(null);
+  const [pendingAssessmentRemoval, setPendingAssessmentRemoval] = useState<PendingAssessmentRemoval | null>(null);
   const [selectedAssessment, setSelectedAssessment] = useState<StaffAssignedScoreSheetAssessment | null>(null);
   const [studentDialogTarget, setStudentDialogTarget] = useState<{
     mode: "view" | "edit";
@@ -769,6 +775,40 @@ export default function ScoreConversion() {
     onError: (error) => {
       toast({
         title: "Không thể xóa học viên",
+        description: error instanceof Error ? error.message : "Đã xảy ra lỗi.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const removeAssessmentMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      const response = await fetch(
+        `/api/my-space/score-sheet/staff-assessments/${encodeURIComponent(sessionId)}`,
+        { method: "DELETE", credentials: "include" },
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { message?: string } | null;
+        throw new Error(payload?.message ?? "Không thể xóa bảng điểm");
+      }
+      return response.json();
+    },
+    onSuccess: async () => {
+      setPendingAssessmentRemoval(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ASSIGNED_SCORE_SHEET_ASSESSMENT_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: [ASSIGNED_SCORE_SHEET_STUDENTS_ENDPOINT] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff-assessments"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff"] }),
+      ]);
+      toast({
+        title: "Đã xóa hoàn toàn bảng điểm",
+        description: "Bảng điểm và toàn bộ kết quả của buổi học này đã được xóa.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Không thể xóa bảng điểm",
         description: error instanceof Error ? error.message : "Đã xảy ra lỗi.",
         variant: "destructive",
       });
@@ -1860,6 +1900,10 @@ export default function ScoreConversion() {
                                 0,
                                 assessment.studentCount - completedStudentCount,
                               );
+                              const hasIndividuallyPublishedStudents =
+                                (assessment.individuallyPublishedStudentCount ?? 0) > 0;
+                              const assessmentRemovalBlocked =
+                                Boolean(assessment.published) || hasIndividuallyPublishedStudents;
                               const classLabel =
                                 assessment.className !== assessment.classCode
                                   ? assessment.className
@@ -1974,16 +2018,47 @@ export default function ScoreConversion() {
                                     )}
                                   </td>
                                   <td className="sticky right-0 z-10 border-b border-border bg-card px-2 py-2 text-center shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.12)] group-hover:bg-accent/50">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8 px-2 text-primary"
-                                      aria-label={`Xem danh sách học viên: ${getScoreSheetTemplateLabel(assessment)} - ${assessment.classCode}`}
-                                      onClick={() => setSelectedAssessment(assessment)}
-                                    >
-                                      <Eye className="mr-1 h-3.5 w-3.5" />
-                                      Xem
-                                    </Button>
+                                    <div className="flex flex-col items-center gap-1">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 px-2 text-primary"
+                                        aria-label={`Xem danh sách học viên: ${getScoreSheetTemplateLabel(assessment)} - ${assessment.classCode}`}
+                                        onClick={() => setSelectedAssessment(assessment)}
+                                      >
+                                        <Eye className="mr-1 h-3.5 w-3.5" />
+                                        Xem
+                                      </Button>
+                                      {canDelete && (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-7 w-7 text-destructive hover:text-destructive disabled:opacity-40"
+                                          disabled={
+                                            removeAssessmentMutation.isPending
+                                            || assessmentRemovalBlocked
+                                          }
+                                          onClick={() => {
+                                            if (assessmentRemovalBlocked) return;
+                                            setPendingAssessmentRemoval({
+                                              sessionId: assessment.sessionId,
+                                              label: `${getScoreSheetTemplateLabel(assessment)} — ${assessment.classCode}${assessment.sessionIndex != null ? `, buổi ${assessment.sessionIndex}` : ""}`,
+                                            });
+                                          }}
+                                          title={
+                                            assessment.published
+                                              ? "Thu hồi công bố toàn bảng trước khi xóa"
+                                              : hasIndividuallyPublishedStudents
+                                                ? "Thu hồi công bố riêng của tất cả học viên trước khi xóa"
+                                                : "Xóa hoàn toàn bảng điểm của buổi này"
+                                          }
+                                          aria-label={`Xóa bảng điểm ${getScoreSheetTemplateLabel(assessment)} - ${assessment.classCode}`}
+                                          data-testid={`button-delete-score-assessment-${assessment.sessionId}`}
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      )}
+                                    </div>
                                   </td>
                                 </tr>
                               );
@@ -2085,6 +2160,38 @@ export default function ScoreConversion() {
               }}
             >
               {removeAssessmentStudentMutation.isPending ? "Đang xóa…" : "Xóa"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={Boolean(pendingAssessmentRemoval)}
+        onOpenChange={(open) => {
+          if (!open && !removeAssessmentMutation.isPending) {
+            setPendingAssessmentRemoval(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa hoàn toàn bảng điểm của buổi này?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bảng điểm <strong>{pendingAssessmentRemoval?.label ?? ""}</strong> và toàn bộ điểm đã nhập sẽ bị xóa.
+              Bảng điểm mẫu và các buổi học khác không bị ảnh hưởng. Học viên và giáo viên sẽ không còn thấy bảng điểm này.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removeAssessmentMutation.isPending}>Hủy</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={!pendingAssessmentRemoval || removeAssessmentMutation.isPending}
+              onClick={() => {
+                if (pendingAssessmentRemoval) {
+                  removeAssessmentMutation.mutate(pendingAssessmentRemoval.sessionId);
+                }
+              }}
+            >
+              {removeAssessmentMutation.isPending ? "Đang xóa…" : "Xóa hoàn toàn"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

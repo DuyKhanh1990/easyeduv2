@@ -52,3 +52,9 @@ On `/score-conversion`, a student can be removed from the assessment roster only
 **Why:** The user confirmed that removing a student should hide the learner-facing score sheet, while withdrawing publication should hide it only from the learner and leave the staff roster intact.
 
 **How to apply:** Enforce the publication checks server-side as well as disabling the delete controls. Treat either session-wide publication or the student's individual publication as a deletion lock.
+
+Deleting a conversion score sheet removes that session's assignment and all of its attempts, but leaves the shared template and other sessions untouched. Allow it only after session-wide and all individual publications are withdrawn.
+
+**Why:** The user clarified that deleting the whole score sheet must remove it from the session and from both staff and learner views, including its entered results.
+
+**How to apply:** Delete attempts and clear the class-session assignment in one transaction; recheck publication state server-side before deletion.
