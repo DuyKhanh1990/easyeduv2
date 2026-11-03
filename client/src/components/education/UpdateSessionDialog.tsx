@@ -451,11 +451,6 @@ export function UpdateSessionDialog({
                         {" "}Giáo viên không chia riêng sẽ dùng toàn bộ khung giờ ca này.
                       </p>
                     </div>
-                    <div className="hidden gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[11px] font-bold uppercase tracking-wide text-slate-500 xl:grid xl:grid-cols-[minmax(130px,0.8fr)_minmax(145px,0.8fr)_minmax(285px,1.4fr)]">
-                      <span>Tên giáo viên</span>
-                      <span>Vai trò</span>
-                      <span>Phân công giờ dạy</span>
-                    </div>
                     <div className="divide-y divide-slate-100">
                       {teacherIds.map((teacherId) => {
                         const teacher = activeTeachers.find((item: any) => item.id === teacherId) ||
@@ -468,12 +463,15 @@ export function UpdateSessionDialog({
                         const invalidTime = invalidTimeTeacherIds.includes(teacherId);
                         const isFullShift = timeRange.startTime === shiftStartTime && timeRange.endTime === shiftEndTime;
                         return (
-                          <div key={teacherId} className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] gap-x-3 gap-y-3 px-4 py-4 xl:grid-cols-[minmax(130px,0.8fr)_minmax(145px,0.8fr)_minmax(285px,1.4fr)] xl:items-center xl:gap-3">
-                            <span className="min-w-0 truncate self-center text-sm font-semibold text-slate-800" title={teacher?.fullName || teacherId}>
-                              {teacher?.fullName || teacherId}
-                            </span>
-                            <div className="min-w-0 space-y-1.5 xl:space-y-0">
-                              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 xl:hidden">Vai trò</span>
+                          <div key={teacherId} className="grid grid-cols-1 gap-3 px-4 py-4 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)]">
+                            <div className="min-w-0 space-y-1.5">
+                              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tên giáo viên</span>
+                              <p className="truncate text-sm font-semibold text-slate-800" title={teacher?.fullName || teacherId}>
+                                {teacher?.fullName || teacherId}
+                              </p>
+                            </div>
+                            <div className="min-w-0 space-y-1.5">
+                              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Vai trò</span>
                               <Select
                                 value={details.selectedRoleId || ""}
                                 onValueChange={(value) => {
@@ -502,10 +500,10 @@ export function UpdateSessionDialog({
                                 </SelectContent>
                               </Select>
                             </div>
-                            <div className="col-span-2 min-w-0 space-y-1.5 xl:col-span-1 xl:space-y-1.5">
-                              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 xl:hidden">Phân công giờ dạy</span>
-                              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:flex xl:items-center">
-                                <label className="flex min-w-0 items-center gap-1.5 xl:flex-1">
+                            <div className="min-w-0 space-y-2 sm:col-span-2">
+                              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Phân công giờ dạy</span>
+                              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                                <label className="flex min-w-0 flex-col items-start gap-1">
                                   <span className="text-xs text-slate-500">Từ</span>
                                   <input
                                     type="time"
@@ -515,10 +513,10 @@ export function UpdateSessionDialog({
                                     value={timeRange.startTime}
                                     onChange={(event) => updateTeacherTimeRange(teacherId, "startTime", event.target.value)}
                                     disabled={!shiftStartTime || !shiftEndTime}
-                                    className={`h-10 w-full min-w-[8rem] flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm ${invalidTime ? "border-destructive" : ""}`}
+                                    className={`h-10 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-sm shadow-sm ${invalidTime ? "border-destructive" : ""}`}
                                   />
                                 </label>
-                                <label className="flex min-w-0 items-center gap-1.5 xl:flex-1">
+                                <label className="flex min-w-0 flex-col items-start gap-1">
                                   <span className="text-xs text-slate-500">Đến</span>
                                   <input
                                     type="time"
@@ -528,7 +526,7 @@ export function UpdateSessionDialog({
                                     value={timeRange.endTime}
                                     onChange={(event) => updateTeacherTimeRange(teacherId, "endTime", event.target.value)}
                                     disabled={!shiftStartTime || !shiftEndTime}
-                                    className={`h-10 w-full min-w-[8rem] flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm ${invalidTime ? "border-destructive" : ""}`}
+                                    className={`h-10 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-sm shadow-sm ${invalidTime ? "border-destructive" : ""}`}
                                   />
                                 </label>
                               </div>
