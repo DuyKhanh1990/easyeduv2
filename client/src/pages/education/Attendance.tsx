@@ -56,8 +56,7 @@ import { applyBulkAttendance } from "@/lib/attendance-bulk";
 import { apiRequest } from "@/lib/queryClient";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { useToast } from "@/hooks/use-toast";
-import { FeedbackModal } from "@/components/my-space/calendar/FeedbackModal";
-import type { ReviewSubItem, TeacherReview } from "@/types/my-calendar";
+import { ReviewDialog } from "@/components/education/ReviewDialog";
 
 type AttendanceFilters = {
   classes: string[];
@@ -95,6 +94,9 @@ type StudentAttendance = {
   attendanceNote: string;
   reviewData?: unknown;
   reviewPublished?: boolean;
+  evaluationCriteriaIds?: string[];
+  teacherIds?: string[];
+  teachers?: { id: string; fullName: string }[];
   teacherName: string;
   note: string;
   onlineLink?: string | null;
@@ -132,47 +134,34 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function normalizeReviewData(raw: unknown): TeacherReview[] {
-  if (Array.isArray(raw)) return raw as TeacherReview[];
-  if (!raw || typeof raw !== "object") return [];
-
-  return Object.values(raw as Record<string, any>).flatMap((entry) => {
-    if (!entry || !Array.isArray(entry.items)) return [];
-    const groups = new Map<string, { criteriaId: string; items: ReviewSubItem[] }>();
-    for (const item of entry.items) {
-      const name = item.criteriaName || "Chung";
-      let group = groups.get(name);
-      if (!group) {
-        group = { criteriaId: item.criteriaId || "", items: [] };
-        groups.set(name, group);
-      }
-      group.items.push({
-        subCriteriaName: item.subCriteriaName || "",
-        ...(item.groupName ? { groupName: item.groupName } : {}),
-        comment: item.comment ?? "",
-        ...(item.inputType === "checkbox"
-          ? { inputType: "checkbox" as const, checked: item.checked === true }
-          : {}),
-      });
-    }
-    const criteria = Array.from(groups, ([criteriaName, group]) => ({
-      criteriaName,
-      items: group.items,
-      ...(entry.criteriaRatings?.[group.criteriaId] != null
-        ? { rating: entry.criteriaRatings[group.criteriaId] }
-        : {}),
-    }));
-    return criteria.length ? [{ teacherName: entry.teacherName || "Giáo viên", criteria }] : [];
-  });
+function hasReviewContent(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  const entries = Array.isArray(raw) ? raw : Object.values(raw as Record<string, any>);
+  return entries.some((entry: any) =>
+    Object.values(entry?.criteriaRatings ?? {}).some((rating) => Number(rating) > 0)
+    || (Array.isArray(entry?.items) && entry.items.some((item: any) =>
+      !!item.comment?.trim() || (item.inputType === "checkbox" && item.checked === true),
+    )),
+  );
 }
 
-function hasReviewContent(reviewData: TeacherReview[]): boolean {
-  return reviewData.some((teacher) => teacher.criteria.some((criterion) =>
-    (criterion.rating ?? 0) > 0
-    || criterion.items.some((item) =>
-      !!item.comment?.trim() || (item.inputType === "checkbox" && item.checked === true),
-    ),
-  ));
+function getReviewTeacherOptions(record: StudentAttendance) {
+  if (record.teachers?.length) return record.teachers;
+  if (!record.reviewData || typeof record.reviewData !== "object" || Array.isArray(record.reviewData)) return [];
+  return Object.entries(record.reviewData as Record<string, any>).map(([id, data]) => ({
+    id,
+    fullName: data?.teacherName || "Giáo viên",
+  }));
+}
+
+function getReviewCriteriaIds(record: StudentAttendance): string[] {
+  if (record.evaluationCriteriaIds?.length) return record.evaluationCriteriaIds;
+  if (!record.reviewData || typeof record.reviewData !== "object" || Array.isArray(record.reviewData)) return [];
+  return [...new Set(Object.values(record.reviewData as Record<string, any>)
+    .flatMap((entry) => [
+      ...(Array.isArray(entry?.items) ? entry.items.map((item: any) => item.criteriaId).filter(Boolean) : []),
+      ...Object.keys(entry?.criteriaRatings ?? {}),
+    ]))];
 }
 
 export function Attendance() {
@@ -344,6 +333,10 @@ function AttendanceContent() {
         return [];
       }
     },
+  });
+  const { data: allEvaluationCriteria = [] } = useQuery<any[]>({
+    queryKey: ["/api/evaluation-criteria"],
+    staleTime: 5 * 60 * 1000,
   });
 
   const filteredStudents = useMemo(() => {
@@ -872,8 +865,7 @@ function AttendanceContent() {
                                         ? val !== "makeup_scheduled"
                                         : ["pending", "present", "paused"].includes(val),
                                     );
-                                    const teacherReviews = normalizeReviewData(record.reviewData);
-                                    const hasReview = hasReviewContent(teacherReviews);
+                                    const hasReview = hasReviewContent(record.reviewData);
                                     return (
                                   <TableRow
                                     key={`${record.id}-${idx}`}
@@ -951,7 +943,7 @@ function AttendanceContent() {
                                           onClick={() => setReviewTarget(record)}
                                           data-testid={`button-view-review-${record.id}`}
                                         >
-                                          <MessageSquare className="h-4 w-4" />
+                                          <MessageSquare className="h-4 w-4" fill="currentColor" />
                                         </Button>
                                       ) : (
                                         <span className="text-muted-foreground">—</span>
@@ -1152,13 +1144,37 @@ function AttendanceContent() {
           </div>
         </DialogContent>
       </Dialog>
-      <FeedbackModal
-        open={!!reviewTarget}
-        onClose={() => setReviewTarget(null)}
-        reviewData={reviewTarget ? normalizeReviewData(reviewTarget.reviewData) : []}
-        className={reviewTarget?.className ?? ""}
-        sessionDate={reviewTarget ? `${reviewTarget.dayOfWeek}, ${format(new Date(reviewTarget.sessionDate), "d/M/yyyy")}` : ""}
-      />
+      {reviewTarget && (
+        <ReviewDialog
+          open={!!reviewTarget}
+          onOpenChange={(open) => { if (!open) setReviewTarget(null); }}
+          studentSessionIds={reviewTarget.recordType === "free" ? [] : [reviewTarget.id]}
+          studentNames={[reviewTarget.studentName]}
+          criteria={allEvaluationCriteria.filter((criterion: any) =>
+            getReviewCriteriaIds(reviewTarget).includes(criterion.id),
+          )}
+          teachers={getReviewTeacherOptions(reviewTarget)}
+          existingReviewData={
+            reviewTarget.reviewData
+              && typeof reviewTarget.reviewData === "object"
+              && !Array.isArray(reviewTarget.reviewData)
+              ? reviewTarget.reviewData as any
+              : null
+          }
+          existingPublished={reviewTarget.reviewPublished ?? false}
+          classSessionId={reviewTarget.recordType === "free" ? "" : reviewTarget.classSessionId ?? ""}
+          freeReview={reviewTarget.recordType === "free" ? {
+            classId: reviewTarget.classId,
+            registrationId: reviewTarget.freeRegistrationId ?? reviewTarget.id,
+          } : undefined}
+          onSaved={(reviewData, published) => {
+            queryClient.invalidateQueries({ queryKey: ["/api/attendance"] });
+            setReviewTarget((current) => current
+              ? { ...current, reviewData, reviewPublished: published }
+              : current);
+          }}
+        />
+      )}
     </DashboardLayout>
   );
 }

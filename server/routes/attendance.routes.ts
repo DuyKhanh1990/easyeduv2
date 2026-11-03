@@ -559,6 +559,7 @@ export function registerAttendanceRoutes(app: Express): void {
           classCode: classes.classCode,
           onlineLink: classes.onlineLink,
           learningFormat: classSessions.learningFormat,
+          evaluationCriteriaIds: classSessions.evaluationCriteriaIds,
           sessionDate: classSessions.sessionDate,
           weekday: classSessions.weekday,
           sessionIndex: classSessions.sessionIndex,
@@ -619,6 +620,7 @@ export function registerAttendanceRoutes(app: Express): void {
           startTime: shiftTemplates.startTime,
           endTime: shiftTemplates.endTime,
           learningFormat: classes.learningFormat,
+          evaluationCriteriaIds: classes.evaluationCriteriaIds,
           totalSessions: studentClasses.totalSessions,
           sessionOrder: sql<number>`row_number() over (
             partition by ${freeClassRegistrations.studentClassId}
@@ -659,6 +661,7 @@ export function registerAttendanceRoutes(app: Express): void {
             shiftTemplateId: freeClassRegistrations.shiftTemplateId,
             startTime: shiftTemplates.startTime,
             endTime: shiftTemplates.endTime,
+            evaluationCriteriaIds: classes.evaluationCriteriaIds,
             totalSessions: studentClasses.totalSessions,
           })
           .from(studentClasses)
@@ -808,6 +811,8 @@ export function registerAttendanceRoutes(app: Express): void {
           reviewData: r.reviewData,
           reviewPublished: r.reviewPublished ?? false,
           teacherIds,
+          teachers: teacherIds.map((id: string) => ({ id, fullName: staffNameMap.get(id) || "" })),
+          evaluationCriteriaIds: r.evaluationCriteriaIds ?? [],
           teacherName,
           note: r.note || "",
           onlineLink: r.onlineLink ?? null,
@@ -852,6 +857,10 @@ export function registerAttendanceRoutes(app: Express): void {
           reviewData: row.reviewData,
           reviewPublished: row.reviewPublished ?? false,
           teacherName: row.effectiveTeacherId ? staffNameMap.get(row.effectiveTeacherId) || "" : "",
+          teachers: row.effectiveTeacherId
+            ? [{ id: row.effectiveTeacherId, fullName: staffNameMap.get(row.effectiveTeacherId) || "" }]
+            : [],
+          evaluationCriteriaIds: row.evaluationCriteriaIds ?? [],
           note: row.note || "",
           onlineLink: null,
           learningFormat: row.learningFormat ?? "offline",

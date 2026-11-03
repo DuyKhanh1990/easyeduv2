@@ -9,4 +9,4 @@ description: Default publication and blocked-role behavior for learner comments 
 
 **How to apply:** Keep unconfigured defaults unpublished with no denied roles so existing behavior remains. Enforce blocked-role publication immutability on the server as well as disabling the UI control. Do not apply this setting to grade-book comments.
 
-For `/attendance`, show one review indicator per learner/session only when the saved review has meaningful content. Gray means unpublished; green means published. Staff who can view attendance may open the existing read-only teacher feedback dialog for either state.
+For `/attendance`, show one filled review indicator per learner/session only when the saved review has meaningful content. Gray means unpublished; green means published. Clicking opens the same editable per-session review dialog used in class details; review edits save through the existing regular/free review endpoints, and publication remains controlled by the configured role policy.
