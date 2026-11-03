@@ -469,8 +469,8 @@ export function UpdateSessionDialog({
                         const invalidTime = invalidTimeTeacherIds.includes(teacherId);
                         const isFullShift = timeRange.startTime === shiftStartTime && timeRange.endTime === shiftEndTime;
                         return (
-                          <div key={teacherId} className="grid grid-cols-[minmax(100px,0.7fr)_minmax(120px,0.8fr)_minmax(320px,1.8fr)] items-center gap-3 px-3 py-4">
-                            <span className="min-w-0 truncate text-sm font-semibold text-slate-800" title={teacher?.fullName || teacherId}>
+                          <div key={teacherId} className="grid grid-cols-[minmax(100px,0.7fr)_minmax(120px,0.8fr)_minmax(320px,1.8fr)] items-start gap-3 px-3 py-4">
+                            <span className="flex h-10 min-w-0 items-center truncate text-sm font-semibold text-slate-800" title={teacher?.fullName || teacherId}>
                               {teacher?.fullName || teacherId}
                             </span>
                             <div className="min-w-0">
@@ -531,16 +531,11 @@ export function UpdateSessionDialog({
                                   />
                                 </label>
                               </div>
-                              <p className={invalidTime
-                                ? "text-xs text-destructive"
-                                : isFullShift
-                                  ? "text-right text-xs text-slate-500"
-                                  : "text-right text-[10px] leading-3 text-slate-500"
-                              }>
+                              <p className={`min-h-4 ${invalidTime ? "text-xs text-destructive" : "text-right text-[10px] leading-4 text-slate-500"}`}>
                                 {invalidTime
                                   ? `Giờ phải nằm trong ca chung ${shiftRangeLabel} và giờ bắt đầu phải trước giờ kết thúc.`
                                   : isFullShift
-                                    ? "Dùng toàn bộ ca chung"
+                                    ? ""
                                     : `Ca riêng trong ${shiftRangeLabel}`}
                               </p>
                             </div>
