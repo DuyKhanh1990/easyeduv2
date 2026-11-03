@@ -334,7 +334,7 @@ export function UpdateSessionDialog({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[92dvh] w-[calc(100vw-1.25rem)] gap-0 overflow-hidden border-slate-200 bg-white p-0 shadow-2xl sm:max-w-[1120px] [&>button]:text-slate-700 [&>button]:opacity-100">
+        <DialogContent className="max-h-[92dvh] w-[calc(100vw-1rem)] gap-0 overflow-hidden border-slate-200 bg-white p-0 shadow-2xl sm:max-w-[1400px] [&>button]:text-slate-700 [&>button]:opacity-100">
           <DialogHeader className="relative border-b border-slate-200 bg-slate-100 px-5 py-5 text-left text-slate-900 sm:px-7">
             <div className="flex items-start gap-3 pr-8">
               <span className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700">
@@ -359,7 +359,7 @@ export function UpdateSessionDialog({
           </DialogHeader>
 
           <div className="max-h-[calc(92dvh-145px)] overflow-y-auto">
-            <div className="grid grid-cols-1 divide-y divide-slate-200 md:grid-cols-[minmax(280px,0.72fr)_minmax(0,1.28fr)] md:divide-x md:divide-y-0">
+            <div className="grid grid-cols-1 divide-y divide-slate-200 md:grid-cols-[minmax(250px,0.6fr)_minmax(0,1.4fr)] md:divide-x md:divide-y-0">
               <section className="space-y-5 bg-slate-50/70 px-5 py-6 sm:px-7" aria-label="Thông tin buổi học">
                 <div className="border-b border-slate-200 pb-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Thông tin buổi học</p>
@@ -423,7 +423,7 @@ export function UpdateSessionDialog({
                 </div>
               </section>
 
-              <section className="min-w-0 space-y-5 px-5 py-6 sm:px-7" aria-label="Phân công giáo viên">
+              <section className="min-w-0 space-y-5 px-4 py-6 sm:px-5" aria-label="Phân công giáo viên">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
                   <div className="flex items-center gap-2.5">
                     <span className="h-2.5 w-2.5 rounded-full bg-indigo-600" />
@@ -451,8 +451,14 @@ export function UpdateSessionDialog({
                         {" "}Giáo viên không chia riêng sẽ dùng toàn bộ khung giờ ca này.
                       </p>
                     </div>
-                    <div className="divide-y divide-slate-100">
-                      {teacherIds.map((teacherId) => {
+                    <div className="overflow-x-auto">
+                      <div className="grid min-w-[620px] grid-cols-[minmax(100px,0.7fr)_minmax(120px,0.8fr)_minmax(320px,1.8fr)] gap-3 border-b border-slate-200 bg-slate-50 px-3 py-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                        <span>Tên giáo viên</span>
+                        <span>Vai trò</span>
+                        <span>Phân công giờ dạy</span>
+                      </div>
+                      <div className="min-w-[620px] divide-y divide-slate-100">
+                        {teacherIds.map((teacherId) => {
                         const teacher = activeTeachers.find((item: any) => item.id === teacherId) ||
                           session?.teachers?.find((item: any) => item.id === teacherId);
                         const details = getTeacherRoleDetails(teacherId);
@@ -463,15 +469,11 @@ export function UpdateSessionDialog({
                         const invalidTime = invalidTimeTeacherIds.includes(teacherId);
                         const isFullShift = timeRange.startTime === shiftStartTime && timeRange.endTime === shiftEndTime;
                         return (
-                          <div key={teacherId} className="grid grid-cols-1 gap-3 px-4 py-4 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)]">
-                            <div className="min-w-0 space-y-1.5">
-                              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Tên giáo viên</span>
-                              <p className="truncate text-sm font-semibold text-slate-800" title={teacher?.fullName || teacherId}>
-                                {teacher?.fullName || teacherId}
-                              </p>
-                            </div>
-                            <div className="min-w-0 space-y-1.5">
-                              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Vai trò</span>
+                          <div key={teacherId} className="grid grid-cols-[minmax(100px,0.7fr)_minmax(120px,0.8fr)_minmax(320px,1.8fr)] items-center gap-3 px-3 py-4">
+                            <span className="min-w-0 truncate text-sm font-semibold text-slate-800" title={teacher?.fullName || teacherId}>
+                              {teacher?.fullName || teacherId}
+                            </span>
+                            <div className="min-w-0">
                               <Select
                                 value={details.selectedRoleId || ""}
                                 onValueChange={(value) => {
@@ -500,10 +502,9 @@ export function UpdateSessionDialog({
                                 </SelectContent>
                               </Select>
                             </div>
-                            <div className="min-w-0 space-y-2 sm:col-span-2">
-                              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Phân công giờ dạy</span>
-                              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                                <label className="flex min-w-0 flex-col items-start gap-1">
+                            <div className="min-w-0 space-y-1.5">
+                              <div className="grid min-w-0 grid-cols-2 gap-2">
+                                <label className="flex min-w-0 items-center gap-1">
                                   <span className="text-xs text-slate-500">Từ</span>
                                   <input
                                     type="time"
@@ -513,10 +514,10 @@ export function UpdateSessionDialog({
                                     value={timeRange.startTime}
                                     onChange={(event) => updateTeacherTimeRange(teacherId, "startTime", event.target.value)}
                                     disabled={!shiftStartTime || !shiftEndTime}
-                                    className={`h-10 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-sm shadow-sm ${invalidTime ? "border-destructive" : ""}`}
+                                    className={`h-10 w-full min-w-[8rem] rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm ${invalidTime ? "border-destructive" : ""}`}
                                   />
                                 </label>
-                                <label className="flex min-w-0 flex-col items-start gap-1">
+                                <label className="flex min-w-0 items-center gap-1">
                                   <span className="text-xs text-slate-500">Đến</span>
                                   <input
                                     type="time"
@@ -526,7 +527,7 @@ export function UpdateSessionDialog({
                                     value={timeRange.endTime}
                                     onChange={(event) => updateTeacherTimeRange(teacherId, "endTime", event.target.value)}
                                     disabled={!shiftStartTime || !shiftEndTime}
-                                    className={`h-10 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-sm shadow-sm ${invalidTime ? "border-destructive" : ""}`}
+                                    className={`h-10 w-full min-w-[8rem] rounded-lg border border-slate-200 bg-white px-2 text-sm shadow-sm ${invalidTime ? "border-destructive" : ""}`}
                                   />
                                 </label>
                               </div>
@@ -545,7 +546,8 @@ export function UpdateSessionDialog({
                             </div>
                           </div>
                         );
-                      })}
+                        })}
+                      </div>
                     </div>
                     {hasMissingTeacherRole && (
                       <p className="border-t border-slate-200 px-4 py-3 text-xs text-destructive">
