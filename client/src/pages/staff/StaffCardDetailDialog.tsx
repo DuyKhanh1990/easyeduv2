@@ -532,7 +532,7 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
               </TabsContent>
 
               <TabsContent value="profile-files" className="mt-0">
-                <div className="grid min-h-[420px] grid-cols-1 gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
+                <div className="grid min-h-[420px] grid-cols-1 gap-4 md:grid-cols-[468px_minmax(0,1fr)]">
                   <aside className="rounded-xl border border-slate-200 bg-white p-4">
                     <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800"><FolderOpen className="h-4 w-4 text-blue-600" />Danh mục hồ sơ</h3>
                     <div className="mt-3 space-y-2">
@@ -566,7 +566,6 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                         </Button>
                       </form>
                     </div>
-                    <p className="mt-2 text-[10px] leading-4 text-slate-500">Chỉ tên danh mục được dùng chung; tệp vẫn riêng theo từng nhân sự.</p>
                     {createProfileCategory.isError && <p className="mt-2 text-xs text-red-600">{createProfileCategory.error instanceof Error ? createProfileCategory.error.message : "Không thể tạo danh mục."}</p>}
                     {profileCategoriesQuery.isLoading || profileTypesQuery.isLoading ? <p className="py-6 text-center text-xs text-slate-500">Đang tải danh mục...</p>
                       : profileCategoriesQuery.isError ? <p className="py-6 text-center text-xs text-red-600">Không thể tải danh mục hồ sơ.</p>
@@ -579,10 +578,10 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                             className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-xs transition ${selectedProfileCategoryId === category.id ? "bg-blue-50 font-semibold text-blue-800" : "text-slate-700 hover:bg-slate-50"}`}
                           >
                             <span className="flex min-w-0 items-center gap-2"><FolderOpen className="h-4 w-4 shrink-0 text-blue-600" /><span className="truncate">{category.name}</span></span>
-                            <span className="shrink-0 text-[10px] text-slate-500">{category.attachments?.length ?? 0}</span>
+                            <span className="shrink-0 text-[10px] font-semibold text-orange-700">{category.attachments?.length ?? 0}</span>
                           </button>
                         ))}
-                      </div> : <p className="mt-4 text-xs leading-5 text-slate-500">Chưa có danh mục. Nhập tên rồi bấm nút thêm.</p>}
+                      </div> : null}
                   </aside>
 
                   <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4">
@@ -600,9 +599,9 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                         {profileFileError && <p className="mt-3 text-xs text-red-600">{profileFileError}</p>}
                         {uploadingProfileFiles && <p className="mt-3 text-xs text-blue-700">Đang tải tệp lên...</p>}
                         {selectedCategory.attachments?.length ? <div className="mt-3 divide-y divide-slate-100">
-                          {selectedCategory.attachments.map((file: ContractAttachment) => (
+                          {selectedCategory.attachments.map((file: ContractAttachment, index: number) => (
                             <div key={file.url} className="flex items-center justify-between gap-3 py-3">
-                              <div className="flex min-w-0 items-center gap-2"><FileText className="h-4 w-4 shrink-0 text-blue-600" /><span className="truncate text-xs font-medium text-slate-700">{file.name}</span></div>
+                              <div className="flex min-w-0 items-center gap-2"><span className="w-6 shrink-0 text-xs font-semibold text-slate-500">{index + 1}.</span><FileText className="h-4 w-4 shrink-0 text-blue-600" /><span className="truncate text-xs font-medium text-slate-700">{file.name}</span></div>
                               <div className="flex shrink-0 items-center gap-1">
                                 <Button type="button" variant="ghost" size="icon" aria-label={`Xem ${file.name}`} title="Xem tệp" onClick={() => void previewContractAttachment(file, "profile-files")}><Eye className="h-4 w-4" /></Button>
                                 <Button type="button" variant="ghost" size="icon" aria-label={`Tải ${file.name}`} title="Tải xuống" onClick={() => void downloadContractAttachment(file, "profile-files")}><Upload className="h-4 w-4 rotate-180" /></Button>
