@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ArrowLeft, Award, Briefcase, Building2, CalendarDays, Clock3, Eye, FileText, FolderOpen, FolderPlus, GraduationCap, MapPin, Medal, Upload, UserRound, Users, Plus, Paperclip, type LucideIcon } from "lucide-react";
 import * as mammoth from "mammoth";
 import DOMPurify from "dompurify";
@@ -342,12 +343,44 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
             </div>
 
             <div className="mt-4 hidden space-y-2 border-t border-slate-100 pt-4 md:block">
-              {assignments.map(({ label, icon: Icon, names }) => (
-                <div key={label} className="flex items-start gap-2 text-xs text-slate-600">
-                  <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600" />
-                  <span className="min-w-0 break-words">{names.join(", ") || "Chưa phân công"}<span className="sr-only">, {label}</span></span>
-                </div>
-              ))}
+              {assignments.map(({ label, icon: Icon, names }) => {
+                const visibleLocations = names.slice(0, 3);
+                const hiddenLocations = names.slice(3);
+                return (
+                  <div key={label} className="flex items-start gap-2 text-xs text-slate-600">
+                    <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600" />
+                    {label === "Cơ sở" ? (
+                      <span className="flex min-w-0 flex-wrap items-start gap-x-1 break-words">
+                        <span className="min-w-0 break-words">{visibleLocations.join(", ") || "Chưa phân công"}</span>
+                        {hiddenLocations.length > 0 && (
+                          <TooltipProvider delayDuration={150}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[11px] font-semibold leading-4 text-violet-700 hover:bg-violet-200 focus:outline-none focus:ring-2 focus:ring-violet-400"
+                                  aria-label={`Xem ${hiddenLocations.length} cơ sở còn lại`}
+                                >
+                                  +{hiddenLocations.length}
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="right" align="start" className="z-[100] max-w-[320px] p-2.5">
+                                <div className="mb-1 text-xs font-semibold">Cơ sở còn lại ({hiddenLocations.length})</div>
+                                <ul className="space-y-1 text-xs">
+                                  {hiddenLocations.map((name) => <li key={name} className="break-words">• {name}</li>)}
+                                </ul>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="min-w-0 break-words">{names.join(", ") || "Chưa phân công"}</span>
+                    )}
+                    <span className="sr-only">, {label}</span>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="mt-4 grid grid-cols-3 gap-2 md:grid-cols-1">
