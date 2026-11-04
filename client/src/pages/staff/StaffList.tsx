@@ -677,7 +677,10 @@ export function StaffList() {
     const visibleNames = names.slice(0, 3);
     const hiddenNames = names.slice(3);
     return (
-      <div className="flex max-w-[220px] flex-col items-start gap-1 whitespace-normal">
+        <div className={cn(
+          "flex w-max flex-col items-start gap-1 whitespace-normal",
+          key === "location" ? "max-w-[44ch]" : "max-w-[220px]",
+        )}>
         {visibleNames.map((name) => (
           asBadges ? (
             <span
@@ -688,8 +691,17 @@ export function StaffList() {
               {name}
             </span>
           ) : (
-            <span key={name} className="max-w-full break-words leading-4" title={name}>
-              {name}
+            <span
+              key={name}
+              className={cn(
+                "max-w-full leading-4",
+                key === "location" ? "truncate whitespace-nowrap" : "break-words",
+              )}
+              title={name}
+            >
+              {key === "location" && Array.from(name).length > 44
+                ? `${Array.from(name).slice(0, 44).join("")}…`
+                : name}
             </span>
           )
         ))}
@@ -947,7 +959,7 @@ export function StaffList() {
                   <th className={cn("h-10 px-3 text-left align-middle font-semibold text-xs text-slate-500 uppercase tracking-wide whitespace-nowrap min-w-[200px] sticky left-[140px]", stickyHeaderFullName, "bg-slate-50 dark:bg-slate-900")}>
                     Họ và tên
                   </th>
-                  <th className="h-10 w-[220px] min-w-[220px] px-3 text-left align-middle font-semibold text-xs text-slate-500 uppercase tracking-wide whitespace-nowrap">Cơ sở</th>
+                  <th className="h-10 px-3 text-left align-middle font-semibold text-xs text-slate-500 uppercase tracking-wide whitespace-nowrap">Cơ sở</th>
                   <th className="h-10 px-3 text-left align-middle font-semibold text-xs text-slate-500 uppercase tracking-wide whitespace-nowrap min-w-[150px]">Phòng ban</th>
                   <th className="h-10 px-3 text-left align-middle font-semibold text-xs text-slate-500 uppercase tracking-wide whitespace-nowrap min-w-[150px]">Vai trò</th>
                   <th className="h-10 px-3 text-left align-middle font-semibold text-xs text-slate-500 uppercase tracking-wide whitespace-nowrap min-w-[130px]">Số điện thoại</th>
@@ -1027,7 +1039,7 @@ export function StaffList() {
                             </button>
                           </div>
                         </td>
-                        <td className="w-[220px] min-w-[220px] p-3 align-middle text-slate-600">
+                        <td className="p-3 align-middle text-slate-600">
                           {renderAssignmentSummary(s.assignments, "location")}
                         </td>
                         <td className="p-3 align-middle text-slate-600">
