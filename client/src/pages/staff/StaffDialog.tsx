@@ -428,7 +428,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto bg-slate-50 p-0 gap-0 rounded-2xl border-slate-200 shadow-2xl">
+      <DialogContent className="w-[90vw] max-w-[90vw] max-h-[92vh] overflow-y-auto bg-slate-50 p-0 gap-0 rounded-2xl border-slate-200 shadow-2xl">
         <DialogHeader className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur">
           <DialogTitle className="flex items-center gap-3 text-lg font-bold text-slate-800">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-sm shadow-sky-200">

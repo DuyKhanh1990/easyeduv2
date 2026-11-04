@@ -144,20 +144,22 @@ export const MultiSelect = React.forwardRef<
             )}
           >
             {selectedValues.length > 0 ? (
-              <div className="flex justify-between items-center w-full">
-                <div className="flex flex-wrap items-center">
+              <div className="flex min-w-0 w-full items-center justify-between">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center">
                   {selectedValues.slice(0, maxCount).map((value) => {
                     const option = options.find((o) => o.value === value);
                     const IconComponent = option?.icon;
                     return (
                       <Badge
                         key={value}
-                        className={cn(multiSelectVariants({ variant }))}
+                        className={cn("max-w-full min-w-0", multiSelectVariants({ variant }))}
                       >
                         {IconComponent && (
                           <IconComponent className="h-4 w-4 mr-2" />
                         )}
-                        {option?.label}
+                        <span className="min-w-0 flex-1 truncate" title={option?.label}>
+                          {option?.label}
+                        </span>
                         <X
                           className="ml-2 h-4 w-4 cursor-pointer"
                           onClick={(e) => {
