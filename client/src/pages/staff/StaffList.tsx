@@ -1010,7 +1010,14 @@ export function StaffList() {
                             )}>
                               {getInitials(s.fullName || "?")}
                             </div>
-                            <span className="font-semibold text-slate-700 whitespace-nowrap">{s.fullName}</span>
+                            <button
+                              type="button"
+                              onClick={() => setDetailStaff(s)}
+                              className="whitespace-nowrap text-left font-semibold text-slate-700 hover:text-violet-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+                              aria-label={`Xem hồ sơ nhân sự ${s.fullName}`}
+                            >
+                              {s.fullName}
+                            </button>
                           </div>
                         </td>
                         <td className="p-3 align-middle text-slate-600">
@@ -1144,9 +1151,14 @@ export function StaffList() {
                         <article
                           key={s.id}
                           className={cn(
-                            "flex min-h-[190px] flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition-colors",
+                            "flex min-h-[190px] cursor-pointer flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition-colors",
                             selectedIds.includes(s.id) ? "border-violet-300 ring-2 ring-violet-100" : "border-slate-200 hover:border-slate-300",
                           )}
+                          onClick={(event) => {
+                            const target = event.target as HTMLElement;
+                            if (target.closest("button, input, [role='checkbox'], [data-radix-collection-item]")) return;
+                            setDetailStaff(s);
+                          }}
                         >
                           <div className="flex flex-1 gap-3 p-4 pb-3">
                             <div className="relative mt-1 h-20 w-20 shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-slate-100 to-slate-200">
@@ -1228,7 +1240,16 @@ export function StaffList() {
                                   )}
                                 </div>
                               </div>
-                              <h3 className="truncate text-sm font-bold leading-5 text-slate-800" title={s.fullName}>{s.fullName}</h3>
+                              <h3 className="truncate text-sm font-bold leading-5 text-slate-800" title={s.fullName}>
+                                <button
+                                  type="button"
+                                  onClick={() => setDetailStaff(s)}
+                                  className="max-w-full truncate text-left hover:text-violet-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+                                  aria-label={`Xem hồ sơ nhân sự ${s.fullName}`}
+                                >
+                                  {s.fullName}
+                                </button>
+                              </h3>
                               <p className="mb-2 text-[11px] font-mono text-slate-500">{s.code || "—"}</p>
 
                               <div className="space-y-1.5">
