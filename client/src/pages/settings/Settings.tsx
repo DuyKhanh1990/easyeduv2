@@ -1051,7 +1051,7 @@ export function Settings() {
                 </TabsContent>
 
                 <TabsContent value="student-accounts">
-                  <StudentAccountsManager />
+                  <StudentAccountsManager isActive={systemTab === "student-accounts"} />
                 </TabsContent>
 
                 <TabsContent value="storage">
@@ -1606,12 +1606,18 @@ function HrmAccountsManager() {
   );
 }
 
-function StudentAccountsManager() {
+function StudentAccountsManager({ isActive }: { isActive: boolean }) {
   const { toast } = useToast();
   const [limitInput, setLimitInput] = useState("");
-  const { data, isLoading } = useQuery<{ limit: number | null; activeStudentCount: number; mode: "hrm" | "student" }>({
+  const { data, isLoading, refetch } = useQuery<{ limit: number | null; activeStudentCount: number; mode: "hrm" | "student" }>({
     queryKey: ["/api/system-settings/student-limit"],
+    staleTime: 0,
+    refetchOnMount: "always",
   });
+
+  useEffect(() => {
+    if (isActive) void refetch();
+  }, [isActive, refetch]);
 
   useEffect(() => {
     if (data) setLimitInput(data.limit ? String(data.limit) : "");

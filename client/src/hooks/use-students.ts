@@ -117,11 +117,14 @@ export function useUpdateStudent() {
       }
       return api.students.update.responses[200].parse(await res.json());
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: [api.students.list.path] });
       queryClient.invalidateQueries({ queryKey: [api.students.get.path, data.id] });
       queryClient.invalidateQueries({ queryKey: ["/api/students/customer-learning-status-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/student-limit"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["/api/system-settings/student-limit"],
+        refetchType: "all",
+      });
     },
   });
 }
