@@ -1159,7 +1159,7 @@ export function StaffList() {
                         <article
                           key={s.id}
                           className={cn(
-                            "relative z-0 flex min-h-[190px] cursor-pointer flex-col overflow-visible rounded-2xl border bg-white shadow-sm transition-colors hover:z-20",
+                            "relative z-0 flex min-h-[190px] cursor-pointer flex-col overflow-visible rounded-2xl border bg-white shadow-sm transition-all duration-200 ease-out hover:z-20 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-lg",
                             selectedIds.includes(s.id) ? "border-violet-300 ring-2 ring-violet-100" : "border-slate-200 hover:border-slate-300",
                             isExpanded && "rounded-b-none border-b-0",
                           )}
