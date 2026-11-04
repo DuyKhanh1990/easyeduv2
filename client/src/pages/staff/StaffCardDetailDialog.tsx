@@ -359,15 +359,15 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
                                 <button
                                   type="button"
                                   className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[11px] font-semibold leading-4 text-violet-700 hover:bg-violet-200 focus:outline-none focus:ring-2 focus:ring-violet-400"
-                                  aria-label={`Xem ${hiddenLocations.length} cơ sở còn lại`}
+                                  aria-label={`Xem toàn bộ ${names.length} cơ sở`}
                                 >
                                   +{hiddenLocations.length}
                                 </button>
                               </TooltipTrigger>
-                              <TooltipContent side="right" align="start" className="z-[100] max-w-[320px] p-2.5">
-                                <div className="mb-1 text-xs font-semibold">Cơ sở còn lại ({hiddenLocations.length})</div>
+                              <TooltipContent side="right" align="start" className="z-[100] w-max max-w-[90vw] p-2.5">
+                                <div className="mb-1 text-xs font-semibold">Cơ sở ({names.length})</div>
                                 <ul className="space-y-1 text-xs">
-                                  {hiddenLocations.map((name) => <li key={name} className="break-words">• {name}</li>)}
+                                  {names.map((name) => <li key={name} className="whitespace-nowrap">• {name}</li>)}
                                 </ul>
                               </TooltipContent>
                             </Tooltip>

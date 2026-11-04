@@ -717,12 +717,12 @@ export function StaffList() {
                   +{hiddenNames.length}
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="right" align="start" className="max-w-[320px] p-2.5">
+              <TooltipContent side="right" align="start" className="w-max max-w-[90vw] p-2.5">
                 <div className="mb-1 text-xs font-semibold">
                   {key === "location" ? "Cơ sở" : key === "department" ? "Phòng ban" : "Vai trò"} ({names.length})
                 </div>
                 <ul className="space-y-1 text-xs">
-                  {names.map((name) => <li key={name} className="break-words">• {name}</li>)}
+                  {names.map((name) => <li key={name} className="whitespace-nowrap">• {name}</li>)}
                 </ul>
               </TooltipContent>
             </Tooltip>
