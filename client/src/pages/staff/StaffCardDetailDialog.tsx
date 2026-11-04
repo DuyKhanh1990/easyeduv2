@@ -304,7 +304,7 @@ export function StaffCardDetailDialog({ open, onOpenChange, staff, onEdit }: Sta
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(94vh,960px)] w-[96vw] max-w-[1440px] flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 p-0">
+      <DialogContent className="flex h-[min(94vh,960px)] w-[95vw] max-w-[95vw] flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 p-0">
         <DialogHeader className="sr-only">
           <DialogTitle>Hồ sơ nhân sự: {staff.fullName}</DialogTitle>
           <DialogDescription>Thông tin nhân sự, phân công và lịch sử cập nhật</DialogDescription>
