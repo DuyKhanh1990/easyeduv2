@@ -1727,16 +1727,24 @@ function AccountLimitModeManager() {
         <div className="flex flex-wrap items-center gap-2">
           <Button
             variant={mode === "hrm" ? "default" : "outline"}
+            className={mode === "hrm"
+              ? "border-blue-700 bg-blue-600 text-white shadow-md shadow-blue-200 hover:bg-blue-700 hover:text-white disabled:cursor-default disabled:opacity-100"
+              : "border-slate-300 bg-slate-100 text-slate-500 shadow-inner hover:bg-slate-200 hover:text-slate-600 disabled:cursor-default disabled:opacity-100"}
             onClick={() => updateMode.mutate("hrm")}
             disabled={modeLoading || updateMode.isPending || mode === "hrm"}
+            aria-pressed={mode === "hrm"}
           >
             Quản lý tài khoản HRM
           </Button>
           <Button
             variant={mode === "student" ? "default" : "outline"}
+            className={mode === "student"
+              ? "border-blue-700 bg-blue-600 text-white shadow-md shadow-blue-200 hover:bg-blue-700 hover:text-white disabled:cursor-default disabled:opacity-100"
+              : "border-slate-300 bg-slate-100 text-slate-500 shadow-inner hover:bg-slate-200 hover:text-slate-600 disabled:cursor-default disabled:opacity-100"}
             onClick={() => updateMode.mutate("student")}
             disabled={modeLoading || updateMode.isPending || mode === "student" || !studentLimitData?.limit}
             title={!studentLimitData?.limit ? "Nhập và lưu giới hạn lớn hơn 0 trước khi bật." : undefined}
+            aria-pressed={mode === "student"}
           >
             Học viên/Phụ huynh
           </Button>
