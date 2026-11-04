@@ -54,6 +54,7 @@ const STICKY_BG_HEADER = "bg-white dark:bg-slate-900";
 const STICKY_BG_CELL   = "bg-white dark:bg-slate-950";
 const SHADOW_RIGHT     = "shadow-[4px_0_6px_-2px_rgba(0,0,0,0.10)]";
 const SHADOW_LEFT      = "shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.10)]";
+const STAFF_VIEW_MODE_STORAGE_KEY = "staff-list-view-mode";
 
 const stickyHeaderBase   = cn("z-20 border-b", STICKY_BG_HEADER);
 const stickyHeaderRight  = cn("z-20 border-b", STICKY_BG_HEADER, SHADOW_LEFT);
@@ -197,8 +198,24 @@ export function StaffList() {
   const [filterKey, setFilterKey] = useState(0);
   const [staffPage, setStaffPage] = useState(1);
   const [staffPageSize, setStaffPageSize] = useState(20);
-  const [viewMode, setViewMode] = useState<"table" | "cards">("table");
+  const [viewMode, setViewMode] = useState<"table" | "cards">(() => {
+    if (typeof window === "undefined") return "cards";
+    try {
+      const savedViewMode = window.localStorage.getItem(STAFF_VIEW_MODE_STORAGE_KEY);
+      return savedViewMode === "table" || savedViewMode === "cards" ? savedViewMode : "cards";
+    } catch {
+      return "cards";
+    }
+  });
   const [historyOpen, setHistoryOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STAFF_VIEW_MODE_STORAGE_KEY, viewMode);
+    } catch {
+      // Keep the selected view for the current session if browser storage is unavailable.
+    }
+  }, [viewMode]);
 
   const staffDepartments = useMemo(() =>
     (departments ?? []).filter((d: any) => d.name !== "Phòng Khách hàng"),
