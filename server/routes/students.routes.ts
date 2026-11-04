@@ -1573,6 +1573,14 @@ export function registerStudentsRoutes(app: Express): void {
 
       // Tinode user account is created lazily on first browser login (client-side acc message).
     } catch (err: any) {
+      if (err?.code === "STUDENT_ACCOUNT_LIMIT_REACHED") {
+        return res.status(409).json({
+          code: err.code,
+          message: err.message,
+          limit: err.limit,
+          activeStudentCount: err.activeCount,
+        });
+      }
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);
       if (err?.code === "23505" && err?.constraint === "students_code_unique") {
         return res.status(400).json({ message: "Mã học viên đã tồn tại. Vui lòng sử dụng mã khác." });

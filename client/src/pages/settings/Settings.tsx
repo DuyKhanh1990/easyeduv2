@@ -1036,6 +1036,9 @@ export function Settings() {
                   <button onClick={() => setSystemTab("hrm-accounts")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-1.5", systemTab === "hrm-accounts" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>
                     <UserCog className="w-3.5 h-3.5" />Quản lý số lượng tài khoản HRM
                   </button>
+                  <button onClick={() => setSystemTab("student-accounts")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-1.5", systemTab === "student-accounts" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>
+                    <Users className="w-3.5 h-3.5" />Quản lý số lượng Học viên/Phụ huynh
+                  </button>
                   <button onClick={() => setSystemTab("storage")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-1.5", systemTab === "storage" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>
                     <Server className="w-3.5 h-3.5" />Quản lý dung lượng sử dụng
                   </button>
@@ -1047,6 +1050,10 @@ export function Settings() {
 
                 <TabsContent value="hrm-accounts">
                   <HrmAccountsManager />
+                </TabsContent>
+
+                <TabsContent value="student-accounts">
+                  <StudentAccountsManager />
                 </TabsContent>
 
                 <TabsContent value="storage">
@@ -1592,6 +1599,88 @@ function HrmAccountsManager() {
           <Progress value={percentage} className="h-2" data-testid="progress-staff-limit" />
           <p className="text-xs text-muted-foreground italic">
             * Tài khoản nhân sự bao gồm tất cả các vai trò ngoại trừ &quot;Học viên&quot; và &quot;Phụ huynh&quot;.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function StudentAccountsManager() {
+  const { toast } = useToast();
+  const [limitInput, setLimitInput] = useState("");
+  const { data, isLoading } = useQuery<{ limit: number | null; activeStudentCount: number }>({
+    queryKey: ["/api/system-settings/student-limit"],
+  });
+
+  useEffect(() => {
+    if (data) setLimitInput(data.limit ? String(data.limit) : "");
+  }, [data]);
+
+  const updateLimit = useMutation({
+    mutationFn: async (limit: number) => {
+      await apiRequest("PUT", "/api/system-settings/student-limit", { limit });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/student-limit"] });
+      toast({ title: "Thành công", description: "Đã cập nhật giới hạn Học viên/Phụ huynh." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Lỗi", description: err.message || "Không thể cập nhật giới hạn.", variant: "destructive" });
+    },
+  });
+
+  const handleUpdate = () => {
+    const limit = Number.parseInt(limitInput, 10);
+    if (!Number.isInteger(limit) || limit < 1) {
+      toast({ title: "Lỗi", description: "Số lượng phải là số nguyên dương.", variant: "destructive" });
+      return;
+    }
+    updateLimit.mutate(limit);
+  };
+
+  const activeCount = data?.activeStudentCount ?? 0;
+  const limit = data?.limit ?? null;
+  const percentage = limit ? Math.min(100, Math.round((activeCount / limit) * 100)) : 0;
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="space-y-4 p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <h3 className="mb-1 text-base font-semibold">Giới hạn tài khoản Học viên/Phụ huynh</h3>
+              {isLoading ? (
+                <p className="text-sm text-muted-foreground">Đang tải...</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Số tài khoản đang hoạt động:{" "}
+                  <span className="font-semibold text-primary">{activeCount}</span>
+                  {" / "}
+                  <span className="font-semibold">{limit ?? "Chưa đặt giới hạn"}</span>
+                  {limit !== null && ` · Còn ${Math.max(0, limit - activeCount)}`}
+                </p>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Input
+                className="w-24 text-center"
+                type="number"
+                min={1}
+                placeholder="Số lượng"
+                value={limitInput}
+                onChange={(event) => setLimitInput(event.target.value)}
+                data-testid="input-student-limit"
+              />
+              <Button onClick={handleUpdate} disabled={updateLimit.isPending} data-testid="button-update-student-limit">
+                {updateLimit.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Cập nhật giới hạn
+              </Button>
+            </div>
+          </div>
+          <Progress value={percentage} className="h-2" data-testid="progress-student-limit" />
+          <p className="text-xs italic text-muted-foreground">
+            * Chỉ đếm tài khoản Học viên/Phụ huynh đang hoạt động. Chưa đặt giới hạn thì chưa chặn thêm mới.
           </p>
         </CardContent>
       </Card>

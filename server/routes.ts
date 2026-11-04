@@ -388,6 +388,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.status(201).json({ id: newStudent.id, code: newStudent.code, message: "Đăng ký thành công!" });
     } catch (err: any) {
       console.error("[PublicRegistration] submit error:", err);
+      if (err?.code === "STUDENT_ACCOUNT_LIMIT_REACHED") {
+        return res.status(409).json({ message: err.message });
+      }
       res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại." });
     }
   });

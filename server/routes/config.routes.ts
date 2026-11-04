@@ -2407,6 +2407,48 @@ export function registerConfigRoutes(app: Express): void {
     }
   });
 
+  app.get("/api/system-settings/student-limit", async (_req, res) => {
+    try {
+      const { systemSettings } = await import("@shared/schema");
+      const [setting] = await db.select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, "studentLimit"))
+        .limit(1);
+      const configuredLimit = Number(setting?.value);
+      const limit = Number.isInteger(configuredLimit) && configuredLimit > 0 ? configuredLimit : null;
+      const [activeStudents] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(students)
+        .innerJoin(users, eq(students.userId, users.id))
+        .where(and(
+          inArray(students.type, ["Học viên", "Phụ huynh"]),
+          eq(students.accountStatus, "Hoạt động"),
+          eq(users.isActive, true),
+        ));
+      res.json({ limit, activeStudentCount: Number(activeStudents?.count ?? 0) });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/system-settings/student-limit", async (req, res) => {
+    try {
+      if (!req.isSuperAdmin) return res.status(403).json({ message: "Chỉ Super Admin mới có quyền thay đổi giới hạn này." });
+      const { systemSettings } = await import("@shared/schema");
+      const { limit } = z.object({ limit: z.number().int().min(1) }).parse(req.body);
+      await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended('student-account-limit', 0))`);
+        await tx.insert(systemSettings)
+          .values({ key: "studentLimit", value: String(limit) })
+          .onConflictDoUpdate({ target: systemSettings.key, set: { value: String(limit), updatedAt: new Date() } });
+      });
+      res.json({ limit });
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return res.status(400).json(err.errors);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/system-settings/sidebar-visibility", async (req, res) => {
     try {
       const { systemSettings } = await import("@shared/schema");

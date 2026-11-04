@@ -567,6 +567,13 @@ export function useExcelImportExport({
       let classAssignmentSummary: ImportResult["classAssignmentSummary"];
       let successCount = 0;
       const errorRows: ImportErrorRow[] = [];
+      const pendingCreates: {
+        index: number;
+        row: any[];
+        studentData: any;
+        classCodes: string[];
+        rowLocationId: string;
+      }[] = [];
 
       for (let i = 0; i < dataRows.length; i++) {
         const row = dataRows[i];
@@ -706,46 +713,65 @@ export function useExcelImportExport({
             .filter(Boolean)
         )];
 
-        try {
-          const created = await createStudent.mutateAsync(studentData);
-          successCount++;
-          if (classCodes.length > 0 && created?.id) {
-            for (const classCode of classCodes) {
-              classAssignments.push({
-                studentId: created.id,
-                classCode,
-                locationId: rowLocationId,
-              });
-            }
-          }
-        } catch (err: any) {
-          let reason = err?.message || "Lỗi không xác định";
-          const apiErrorCols: number[] = [];
-          try {
-            const jsonStart = reason.indexOf("{");
-            if (jsonStart !== -1) {
-              const parsed = JSON.parse(reason.substring(jsonStart));
-              if (parsed?.message) reason = parsed.message;
-            }
-          } catch (_) {}
-
-          const reasonLower = reason.toLowerCase();
-          if (reasonLower.includes("username") || reasonLower.includes("tài khoản")) {
-            apiErrorCols.push(importedUsername && importedUsername !== String(row[0] ?? "").trim() ? 24 : 0);
-          } else if (reasonLower.includes("mã học viên") || reasonLower.includes("code")) {
-            apiErrorCols.push(0);
-          }
-          if (reasonLower.includes("phone") || reasonLower.includes("số điện thoại") || reasonLower.includes("sdt")) {
-            apiErrorCols.push(4);
-          }
-          if (reasonLower.includes("email")) {
-            apiErrorCols.push(6);
-          }
-
-          errorRows.push({ row: i + 2, name: studentData.fullName, reason, rawData: row, errorColumns: apiErrorCols });
-        }
+        pendingCreates.push({ index: i, row, studentData, classCodes, rowLocationId });
 
         setUploadProgress(Math.round(20 + ((i + 1) / dataRows.length) * 75));
+      }
+
+      if (pendingCreates.length > 0) {
+        const limitResponse = await fetch("/api/system-settings/student-limit", {
+          credentials: "include",
+          headers: getAuthHeaders(),
+        });
+        if (!limitResponse.ok) throw new Error("Không thể kiểm tra giới hạn tài khoản Học viên/Phụ huynh.");
+        const limitInfo = await limitResponse.json() as { limit: number | null; activeStudentCount: number };
+        if (limitInfo.limit && limitInfo.activeStudentCount + pendingCreates.length > limitInfo.limit) {
+          const remaining = Math.max(0, limitInfo.limit - limitInfo.activeStudentCount);
+          const reason = `File có ${pendingCreates.length} tài khoản mới nhưng chỉ còn ${remaining}/${limitInfo.limit} chỗ. Không có hồ sơ nào được nhập.`;
+          for (const item of pendingCreates) {
+            errorRows.push({
+              row: item.index + 2,
+              name: item.studentData.fullName,
+              reason,
+              rawData: item.row,
+              errorColumns: [],
+            });
+          }
+        } else {
+          for (let createIndex = 0; createIndex < pendingCreates.length; createIndex++) {
+            const { index, row, studentData, classCodes, rowLocationId } = pendingCreates[createIndex];
+            try {
+              const created = await createStudent.mutateAsync(studentData);
+              successCount++;
+              if (classCodes.length > 0 && created?.id) {
+                for (const classCode of classCodes) {
+                  classAssignments.push({ studentId: created.id, classCode, locationId: rowLocationId });
+                }
+              }
+            } catch (err: any) {
+              let reason = err?.message || "Lỗi không xác định";
+              const apiErrorCols: number[] = [];
+              try {
+                const jsonStart = reason.indexOf("{");
+                if (jsonStart !== -1) {
+                  const parsed = JSON.parse(reason.substring(jsonStart));
+                  if (parsed?.message) reason = parsed.message;
+                }
+              } catch (_) {}
+
+              const reasonLower = reason.toLowerCase();
+              if (reasonLower.includes("username") || reasonLower.includes("tài khoản")) {
+                apiErrorCols.push(studentData.username && studentData.username !== String(row[0] ?? "").trim() ? 24 : 0);
+              } else if (reasonLower.includes("mã học viên") || reasonLower.includes("code")) {
+                apiErrorCols.push(0);
+              }
+              if (reasonLower.includes("phone") || reasonLower.includes("số điện thoại") || reasonLower.includes("sdt")) apiErrorCols.push(4);
+              if (reasonLower.includes("email")) apiErrorCols.push(6);
+              errorRows.push({ row: index + 2, name: studentData.fullName, reason, rawData: row, errorColumns: apiErrorCols });
+            }
+            setUploadProgress(Math.round(75 + ((createIndex + 1) / pendingCreates.length) * 20));
+          }
+        }
       }
 
       if (classAssignments.length > 0) {

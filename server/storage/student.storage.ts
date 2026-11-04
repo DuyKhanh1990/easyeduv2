@@ -24,7 +24,7 @@ import type {
   StudentComment, InsertStudentComment,
   User,
 } from "./base";
-import { studentWalletTransactions } from "@shared/schema";
+import { studentWalletTransactions, systemSettings } from "@shared/schema";
 import { calculateClassFundedAmounts } from "./class-transfer-accounting";
 import { buildCustomerClassFilterCondition } from "./customer-class-filter";
 
@@ -863,6 +863,39 @@ export async function createStudent(student: any): Promise<StudentResponse> {
   const effectivePassword = password || "123456";
 
   return await db.transaction(async (tx) => {
+    const accountType = studentData.type ?? "Học viên";
+    const createsActiveStudentAccount =
+      ["Học viên", "Phụ huynh"].includes(accountType) &&
+      (studentData.accountStatus == null || studentData.accountStatus === "Hoạt động");
+    if (createsActiveStudentAccount) {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended('student-account-limit', 0))`);
+      const [limitSetting] = await tx
+        .select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, "studentLimit"))
+        .limit(1);
+      const limit = Number(limitSetting?.value);
+      if (Number.isInteger(limit) && limit > 0) {
+        const [activeCountRow] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(students)
+          .innerJoin(users, eq(students.userId, users.id))
+          .where(and(
+            inArray(students.type, ["Học viên", "Phụ huynh"]),
+            eq(students.accountStatus, "Hoạt động"),
+            eq(users.isActive, true),
+          ));
+        const activeCount = Number(activeCountRow?.count ?? 0);
+        if (activeCount >= limit) {
+          const error: any = new Error(`Đã đạt giới hạn ${limit} tài khoản Học viên/Phụ huynh đang hoạt động.`);
+          error.code = "STUDENT_ACCOUNT_LIMIT_REACHED";
+          error.limit = limit;
+          error.activeCount = activeCount;
+          throw error;
+        }
+      }
+    }
+
     let requestedRelationshipIds = Array.isArray(studentData.relationshipIds)
       ? studentData.relationshipIds.filter(Boolean)
       : [];

@@ -360,6 +360,11 @@ export function CustomersList() {
       };
 
   const createStudent = useCreateStudent();
+  const { data: studentAccountLimit } = useQuery<{ limit: number | null; activeStudentCount: number }>({
+    queryKey: ["/api/system-settings/student-limit"],
+  });
+  const isAtStudentAccountLimit = !!studentAccountLimit?.limit &&
+    studentAccountLimit.activeStudentCount >= studentAccountLimit.limit;
   const updateStudent = useUpdateStudent();
   const deleteStudent = useDeleteStudent();
   const { toast } = useToast();
@@ -1056,9 +1061,16 @@ export function CustomersList() {
             </div>
 
             <div className="flex items-center gap-2 flex-shrink-0">
+              {studentAccountLimit && studentAccountLimit.limit !== null && (
+                <span className="whitespace-nowrap text-xs text-muted-foreground">
+                  Học viên/PH: {studentAccountLimit.activeStudentCount}/{studentAccountLimit.limit}
+                </span>
+              )}
               {crmPerms.canCreate && (
                 <Button
                   onClick={() => setIsAddOpen(true)}
+                  disabled={isAtStudentAccountLimit}
+                  title={isAtStudentAccountLimit ? `Đã đạt giới hạn ${studentAccountLimit?.limit} tài khoản Học viên/Phụ huynh đang hoạt động.` : undefined}
                   size="sm"
                   className="h-9 px-4 rounded-xl text-xs gap-1.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 shadow-lg shadow-sky-200 border-0"
                 >
