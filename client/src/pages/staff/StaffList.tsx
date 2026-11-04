@@ -728,17 +728,37 @@ export function StaffList() {
       <div className="flex flex-col h-full gap-4">
 
         {/* ── Header ── */}
-        <div className="flex justify-between items-start flex-shrink-0 gap-4">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-200">
-                <Users className="w-5 h-5 text-white" />
+        <div className="flex flex-shrink-0 flex-col gap-3 xl:flex-row xl:items-center">
+          <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="flex items-center gap-3 rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-indigo-50 px-3 py-2">
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-md shadow-violet-200">
+                <Users className="h-4 w-4 text-white" />
               </div>
-              <h1 className="text-2xl font-bold text-foreground tracking-tight">Nhân sự</h1>
+              <div>
+                <p className="text-xs font-medium text-violet-600">Tổng nhân sự</p>
+                <p className="text-lg font-bold leading-5 text-violet-900">{totalCount}</p>
+              </div>
             </div>
-            <p className="text-sm text-muted-foreground pl-12">Danh sách nhân sự và giáo viên hệ thống.</p>
+            <div className="flex items-center gap-3 rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-teal-50 px-3 py-2">
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-md shadow-emerald-200">
+                <UserCheck className="h-4 w-4 text-white" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-emerald-600">Đang hoạt động</p>
+                <p className="text-lg font-bold leading-5 text-emerald-900">{activeCount}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 to-pink-50 px-3 py-2">
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 shadow-md shadow-rose-200">
+                <UserX className="h-4 w-4 text-white" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-rose-600">Ngừng hoạt động</p>
+                <p className="text-lg font-bold leading-5 text-rose-900">{inactiveCount}</p>
+              </div>
+            </div>
           </div>
-          <div className="flex gap-2 items-center flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap xl:justify-end">
             {canDeleteBulk && selectedIds.length > 0 && (
               <Button variant="outline" className="text-destructive border-destructive hover:bg-destructive/10 rounded-xl h-9 text-xs">
                 <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Xóa {selectedIds.length} đã chọn
@@ -830,37 +850,6 @@ export function StaffList() {
         </div>
 
         <div className="flex flex-col flex-1 min-h-0 gap-4">
-        {/* ── Stats ── */}
-        <div className="grid grid-cols-3 gap-3 flex-shrink-0">
-          <div className="bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-100 rounded-2xl px-4 py-3 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-md shadow-violet-200 flex-shrink-0">
-              <Users className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <p className="text-xs text-violet-600 font-medium">Tổng nhân sự</p>
-              <p className="text-xl font-bold text-violet-900">{totalCount}</p>
-            </div>
-          </div>
-          <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 rounded-2xl px-4 py-3 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-md shadow-emerald-200 flex-shrink-0">
-              <UserCheck className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <p className="text-xs text-emerald-600 font-medium">Đang hoạt động</p>
-              <p className="text-xl font-bold text-emerald-900">{activeCount}</p>
-            </div>
-          </div>
-          <div className="bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-100 rounded-2xl px-4 py-3 flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center shadow-md shadow-rose-200 flex-shrink-0">
-              <UserX className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <p className="text-xs text-rose-600 font-medium">Ngừng hoạt động</p>
-              <p className="text-xl font-bold text-rose-900">{inactiveCount}</p>
-            </div>
-          </div>
-        </div>
-
         {/* ── Main card ── */}
         <div className="bg-card border border-border shadow-sm rounded-2xl flex flex-col flex-1 overflow-hidden min-h-0">
 
@@ -1155,7 +1144,7 @@ export function StaffList() {
                     />
                     <span>Chọn tất cả nhân sự đã lọc</span>
                   </div>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     {pagedStaff.map((s: any) => {
                       const assignmentRows = [
                         { key: "role", icon: Briefcase, names: assignmentNameList(s.assignments, "role") },
@@ -1338,10 +1327,10 @@ export function StaffList() {
                               variant="outline"
                               size="sm"
                               onClick={() => setDetailStaff(s)}
-                              className="h-7 shrink-0 gap-1 rounded-lg border-slate-200 bg-white px-2.5 text-[10px] font-medium text-blue-700 hover:border-blue-200 hover:bg-blue-50"
+                              className="h-6 shrink-0 gap-0.5 rounded-md border-slate-200 bg-white px-2 text-[9px] font-medium text-blue-700 hover:border-blue-200 hover:bg-blue-50"
                               aria-label={`Xem chi tiết nhân sự ${s.fullName}`}
                             >
-                              Xem chi tiết <ChevronRight className="h-3 w-3" />
+                              Xem chi tiết <ChevronRight className="h-2.5 w-2.5" />
                             </Button>
                           </div>
                         </article>
