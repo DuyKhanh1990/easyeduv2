@@ -1157,7 +1157,7 @@ export function StaffList() {
                         <article
                           key={s.id}
                           className={cn(
-                            "group/card relative z-0 flex min-h-[190px] cursor-pointer flex-col overflow-visible rounded-2xl border bg-white shadow-sm transition-colors hover:z-20",
+                            "group/card relative z-0 flex min-h-[190px] cursor-pointer flex-col overflow-visible rounded-2xl border bg-white shadow-sm transition-colors hover:z-20 group-hover/card:rounded-b-none group-hover/card:border-b-0",
                             selectedIds.includes(s.id) ? "border-violet-300 ring-2 ring-violet-100" : "border-slate-200 hover:border-slate-300",
                           )}
                           onClick={(event) => {
@@ -1327,7 +1327,7 @@ export function StaffList() {
                               </Button>
                             </div>
                           </div>
-                          <div className="absolute left-0 right-0 top-full z-30 hidden rounded-b-2xl border border-t-0 border-slate-200 bg-white px-4 py-3 shadow-lg group-hover/card:block">
+                          <div className="absolute -left-px -right-px top-full z-30 hidden rounded-b-2xl border border-t-0 border-slate-200 bg-white px-4 py-3 group-hover/card:block">
                             <div className="space-y-1.5">
                               {[
                                 { label: "SĐT", value: s.phone, icon: Phone },
