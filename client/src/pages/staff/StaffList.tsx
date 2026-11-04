@@ -7,7 +7,7 @@ import { useDepartments } from "@/hooks/use-departments";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Settings2, Edit2, Trash2, AlertCircle, Download, Upload, X, CheckCircle, TriangleAlert, Search, Users, UserCheck, UserX, ChevronLeft, ChevronRight, History, LayoutGrid, Table2, Briefcase, Building2, MapPin, CalendarDays, MoreVertical } from "lucide-react";
+import { Plus, Settings2, Edit2, Trash2, AlertCircle, Download, Upload, X, CheckCircle, TriangleAlert, Search, Users, UserCheck, UserX, ChevronLeft, ChevronRight, History, LayoutGrid, Table2, Briefcase, Building2, MapPin, CalendarDays, MoreVertical, Phone, UserRound } from "lucide-react";
 import { StaffDialog } from "./StaffDialog";
 import { StaffHistoryTab } from "./StaffHistoryTab";
 import { StaffCardDetailDialog } from "./StaffCardDetailDialog";
@@ -1312,6 +1312,19 @@ export function StaffList() {
                                     </div>
                                   );
                                 })}
+                              </div>
+                              <div className="mt-1.5 space-y-1">
+                                {[
+                                  { label: "SĐT", value: s.phone, icon: Phone },
+                                  { label: "Địa chỉ", value: s.address, icon: MapPin },
+                                  { label: "Tài khoản", value: s.username, icon: UserRound },
+                                ].map(({ label, value, icon: Icon }) => (
+                                  <div key={label} className="flex min-w-0 items-center gap-1.5 text-[10px] leading-4 text-slate-500" title={value || `${label}: chưa có`}>
+                                    <Icon className="h-3 w-3 shrink-0 text-slate-400" />
+                                    <span className="w-10 shrink-0">{label}</span>
+                                    <span className="min-w-0 truncate text-slate-700">{value || "—"}</span>
+                                  </div>
+                                ))}
                               </div>
                             </div>
                           </div>
