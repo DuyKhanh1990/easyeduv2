@@ -1130,6 +1130,8 @@ export async function updateStudent(id: string, updates: any, allowedLocationIds
         relationshipIds: students.relationshipIds,
         pipelineStage: students.pipelineStage,
         userId: students.userId,
+        type: students.type,
+        accountStatus: students.accountStatus,
       })
       .from(students)
       .where(whereClause)
@@ -1139,6 +1141,75 @@ export async function updateStudent(id: string, updates: any, allowedLocationIds
     const oldRelationshipIds: string[] = existing.relationshipIds || [];
     let userId = existing.userId;
     const effectiveUsername = username !== undefined ? String(username).trim() : undefined;
+    const nextType = studentUpdates.type ?? existing.type;
+    const nextAccountStatus = studentUpdates.accountStatus ?? existing.accountStatus;
+    const hasOrWillHaveAccount = Boolean(existing.userId || effectiveUsername);
+    let currentUserIsActive = false;
+    if (existing.userId) {
+      const [linkedUser] = await tx
+        .select({ isActive: users.isActive })
+        .from(users)
+        .where(eq(users.id, existing.userId))
+        .limit(1);
+      currentUserIsActive = linkedUser?.isActive === true;
+    }
+    const nextUserIsActive = studentUpdates.accountStatus !== undefined
+      ? studentUpdates.accountStatus === "Hoạt động"
+      : existing.userId
+        ? currentUserIsActive
+        : Boolean(effectiveUsername) && studentUpdates.accountStatus !== "Không hoạt động";
+    const isCountedStudentAccount = (type: unknown, accountStatus: unknown, userActive: boolean, hasAccount: boolean) =>
+      ["Học viên", "Phụ huynh"].includes(String(type)) &&
+      accountStatus === "Hoạt động" &&
+      userActive &&
+      hasAccount;
+    const currentlyCountsTowardStudentLimit = isCountedStudentAccount(
+      existing.type,
+      existing.accountStatus,
+      currentUserIsActive,
+      Boolean(existing.userId),
+    );
+    const willCountTowardStudentLimit = isCountedStudentAccount(
+      nextType,
+      nextAccountStatus,
+      nextUserIsActive,
+      hasOrWillHaveAccount,
+    );
+    if (!currentlyCountsTowardStudentLimit && willCountTowardStudentLimit) {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended('student-account-limit', 0))`);
+      const [activeMode] = await tx
+        .select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, "accountLimitMode"))
+        .limit(1);
+      if (activeMode?.value === "student") {
+        const [limitSetting] = await tx
+          .select({ value: systemSettings.value })
+          .from(systemSettings)
+          .where(eq(systemSettings.key, "studentLimit"))
+          .limit(1);
+        const limit = Number(limitSetting?.value);
+        if (Number.isInteger(limit) && limit > 0) {
+          const [activeCountRow] = await tx
+            .select({ count: sql<number>`count(*)::int` })
+            .from(students)
+            .innerJoin(users, eq(students.userId, users.id))
+            .where(and(
+              inArray(students.type, ["Học viên", "Phụ huynh"]),
+              eq(students.accountStatus, "Hoạt động"),
+              eq(users.isActive, true),
+            ));
+          const activeCount = Number(activeCountRow?.count ?? 0);
+          if (activeCount >= limit) {
+            const error: any = new Error(`Đã đạt giới hạn ${limit} tài khoản Học viên/Phụ huynh đang hoạt động; không thể kích hoạt thêm.`);
+            error.code = "STUDENT_ACCOUNT_LIMIT_REACHED";
+            error.limit = limit;
+            error.activeCount = activeCount;
+            throw error;
+          }
+        }
+      }
+    }
 
     // username/password live in users, not students. Keep these out of the
     // students UPDATE and synchronize the linked login account explicitly.

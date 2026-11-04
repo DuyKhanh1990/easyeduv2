@@ -7,4 +7,4 @@ description: Preserve existing HRM limits while selecting whether HRM or student
 
 **Why:** The user explicitly requires existing centers' HRM settings (including custom limits such as 100) and HRM behavior to survive code updates unchanged; the new student/parent limit is an optional alternative, not a replacement.
 
-**How to apply:** Gate existing HRM create/activation checks by the active mode while preserving saved `staffLimit`. Gate student creation/import checks by the same mode. Make the Apply action validate the selected side's active count and update only that side's numeric limit plus the active-mode key; never clear the other side's saved value.
+**How to apply:** Gate existing HRM create/activation checks by the active mode while preserving saved `staffLimit`. Gate student creation, imports, and any status/type update that increases the active student/parent account count. Use the shared advisory lock and reject reactivation when the projected count exceeds the limit. Make Apply validate the selected side and update only that side's numeric limit plus the active-mode key; never clear the other saved value.

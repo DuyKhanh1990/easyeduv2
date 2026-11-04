@@ -1626,6 +1626,14 @@ export function registerStudentsRoutes(app: Express): void {
       }
     } catch (err) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);
+      if ((err as any)?.code === "STUDENT_ACCOUNT_LIMIT_REACHED") {
+        return res.status(409).json({
+          code: (err as any).code,
+          message: (err as any).message,
+          limit: (err as any).limit,
+          activeStudentCount: (err as any).activeCount,
+        });
+      }
       if ((err as any)?.code === "23505") {
         const constraint = (err as any)?.constraint;
         if (constraint === "students_code_unique") {
