@@ -1308,10 +1308,14 @@ export function StaffList() {
                                   { label: "Địa chỉ", value: s.address, icon: MapPin },
                                   { label: "Tài khoản", value: s.username, icon: UserRound },
                                 ].map(({ label, value, icon: Icon }) => (
-                                  <div key={label} className="flex min-w-0 items-center gap-1.5 text-[10px] leading-4 text-slate-500" title={value || `${label}: chưa có`}>
-                                    <Icon className="h-3 w-3 shrink-0 text-slate-400" />
-                                    <span className="w-10 shrink-0">{label}</span>
-                                    <span className="min-w-0 truncate text-slate-700">{value || "—"}</span>
+                                  <div
+                                    key={label}
+                                    className="flex min-w-0 items-center gap-2 text-[11px] leading-4 text-slate-600"
+                                    title={`${label}: ${value || "chưa có"}`}
+                                    aria-label={`${label}: ${value || "chưa có"}`}
+                                  >
+                                    <Icon className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                    <span className="min-w-0 truncate">{value || "—"}</span>
                                   </div>
                                 ))}
                               </div>
