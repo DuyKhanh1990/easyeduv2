@@ -121,6 +121,7 @@ export function useUpdateStudent() {
       queryClient.invalidateQueries({ queryKey: [api.students.list.path] });
       queryClient.invalidateQueries({ queryKey: [api.students.get.path, data.id] });
       queryClient.invalidateQueries({ queryKey: ["/api/students/customer-learning-status-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/student-limit"] });
     },
   });
 }

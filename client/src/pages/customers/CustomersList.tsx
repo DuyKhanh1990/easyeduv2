@@ -31,7 +31,7 @@ import { CustomerGuideDialog } from "@/components/customers/CustomerGuideDialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Filter, Settings2, GripVertical, Download, Upload, ChevronLeft, ChevronRight, Users, Building2, UserCog, GraduationCap, UserCircle, Tablet, BookOpen, Trash, ChevronDown, UserPlus, ScrollText, UserCheck, SlidersHorizontal, Scale } from "lucide-react";
+import { Plus, Search, Filter, Settings2, GripVertical, Download, Upload, ChevronLeft, ChevronRight, Users, Building2, UserCog, GraduationCap, UserCircle, Tablet, BookOpen, Trash, ChevronDown, UserPlus, ScrollText, UserCheck, SlidersHorizontal, Scale, AlertCircle } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -52,6 +52,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { ScheduleDialog } from "@/components/education/ScheduleDialog";
@@ -827,8 +828,13 @@ export function CustomersList() {
           setEditingStudent(null);
           toast({ title: t("common.success"), description: t("customers.toastUpdated") });
         },
-        onError: () => {
-          toast({ title: t("common.error"), description: t("customers.toastUpdateError"), variant: "destructive" });
+        onError: (error) => {
+          const isLimitError = error.message?.includes("Vượt quá giới hạn đăng ký");
+          toast({
+            title: isLimitError ? "Vượt quá giới hạn đăng ký" : t("common.error"),
+            description: error.message || t("customers.toastUpdateError"),
+            variant: "destructive",
+          });
         },
       }
     );
@@ -1067,16 +1073,31 @@ export function CustomersList() {
                 </span>
               )}
               {crmPerms.canCreate && (
-                <Button
-                  onClick={() => setIsAddOpen(true)}
-                  disabled={isAtStudentAccountLimit}
-                  title={isAtStudentAccountLimit ? `Đã đạt giới hạn ${studentAccountLimit?.limit} tài khoản Học viên/Phụ huynh đang hoạt động.` : undefined}
-                  size="sm"
-                  className="h-9 px-4 rounded-xl text-xs gap-1.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 shadow-lg shadow-sky-200 border-0"
-                >
-                  <Plus className="w-4 h-4" />
-                  {t("customers.addStudent")}
-                </Button>
+                <div className="relative inline-flex">
+                  <Button
+                    onClick={() => setIsAddOpen(true)}
+                    disabled={isAtStudentAccountLimit}
+                    size="sm"
+                    className="h-9 px-4 rounded-xl text-xs gap-1.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 shadow-lg shadow-sky-200 border-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    {t("customers.addStudent")}
+                  </Button>
+                  {isAtStudentAccountLimit && studentAccountLimit && (
+                    <TooltipProvider delayDuration={100}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="absolute -top-1.5 -right-1.5 z-10 flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-yellow-300 bg-yellow-100">
+                            <AlertCircle className="h-2.5 w-2.5 text-yellow-700" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-[300px] text-xs">
+                          Đã đạt giới hạn đăng ký {studentAccountLimit.activeStudentCount}/{studentAccountLimit.limit} tài khoản Học viên/Phụ huynh hoạt động. Vui lòng liên hệ để mở rộng giới hạn.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                </div>
               )}
               <Button
                 type="button"
@@ -1274,9 +1295,25 @@ export function CustomersList() {
 
             <div className="flex items-center gap-1.5 w-full md:w-auto flex-wrap">
               {crmPerms.canCreate && (
-                <Button variant="outline" size="sm" onClick={() => setIsImportOpen(true)} className="h-8 px-3 rounded-xl text-xs gap-1.5 bg-white border-slate-200 hover:bg-slate-50 shadow-sm">
-                  <Upload className="w-3.5 h-3.5 text-slate-500" /><span>{t("customers.upload")}</span>
-                </Button>
+                <div className="relative inline-flex">
+                  <Button variant="outline" size="sm" onClick={() => setIsImportOpen(true)} className="h-8 px-3 rounded-xl text-xs gap-1.5 bg-white border-slate-200 hover:bg-slate-50 shadow-sm">
+                    <Upload className="w-3.5 h-3.5 text-slate-500" /><span>{t("customers.upload")}</span>
+                  </Button>
+                  {isAtStudentAccountLimit && studentAccountLimit && (
+                    <TooltipProvider delayDuration={100}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="absolute -top-1.5 -right-1.5 z-10 flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-yellow-300 bg-yellow-100">
+                            <AlertCircle className="h-2.5 w-2.5 text-yellow-700" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-[320px] text-xs">
+                          Đã đạt giới hạn đăng ký {studentAccountLimit.activeStudentCount}/{studentAccountLimit.limit}. File vẫn có thể dùng để bổ sung hồ sơ hiện có; các dòng tạo tài khoản mới sẽ bị chặn.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                </div>
               )}
               {crmPerms.canEdit && (
                 <DropdownMenu>
@@ -1897,7 +1934,14 @@ export function CustomersList() {
                   { id: student.id, accountStatus },
                   {
                     onSuccess: () => toast({ title: t("common.success"), description: t("customers.toastStatusUpdated") }),
-                    onError: () => toast({ title: t("common.error"), description: t("customers.toastStatusError"), variant: "destructive" }),
+                    onError: (error) => {
+                      const isLimitError = error.message?.includes("Vượt quá giới hạn đăng ký");
+                      toast({
+                        title: isLimitError ? "Vượt quá giới hạn đăng ký" : t("common.error"),
+                        description: error.message || t("customers.toastStatusError"),
+                        variant: "destructive",
+                      });
+                    },
                   }
                 );
               }}

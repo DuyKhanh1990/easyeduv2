@@ -726,8 +726,8 @@ export function useExcelImportExport({
         if (!limitResponse.ok) throw new Error("Không thể kiểm tra giới hạn tài khoản Học viên/Phụ huynh.");
         const limitInfo = await limitResponse.json() as { limit: number | null; activeStudentCount: number; mode: "hrm" | "student" };
         if (limitInfo.mode === "student" && limitInfo.limit && limitInfo.activeStudentCount + pendingCreates.length > limitInfo.limit) {
-          const remaining = Math.max(0, limitInfo.limit - limitInfo.activeStudentCount);
-          const reason = `File có ${pendingCreates.length} tài khoản mới nhưng chỉ còn ${remaining}/${limitInfo.limit} chỗ. Không có hồ sơ nào được nhập.`;
+          const projectedCount = limitInfo.activeStudentCount + pendingCreates.length;
+          const reason = `Vượt quá giới hạn đăng ký ${projectedCount} tài khoản Học viên/Phụ huynh (giới hạn ${limitInfo.limit}). Không có hồ sơ mới nào được nhập. Vui lòng liên hệ để mở rộng giới hạn.`;
           for (const item of pendingCreates) {
             errorRows.push({
               row: item.index + 2,

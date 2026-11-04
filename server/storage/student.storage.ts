@@ -893,7 +893,7 @@ export async function createStudent(student: any): Promise<StudentResponse> {
             ));
           const activeCount = Number(activeCountRow?.count ?? 0);
           if (activeCount >= limit) {
-            const error: any = new Error(`Đã đạt giới hạn ${limit} tài khoản Học viên/Phụ huynh đang hoạt động.`);
+            const error: any = new Error(`Vượt quá giới hạn đăng ký ${activeCount + 1} tài khoản Học viên/Phụ huynh đang hoạt động (giới hạn ${limit}). Vui lòng liên hệ để mở rộng giới hạn.`);
             error.code = "STUDENT_ACCOUNT_LIMIT_REACHED";
             error.limit = limit;
             error.activeCount = activeCount;
@@ -1201,7 +1201,7 @@ export async function updateStudent(id: string, updates: any, allowedLocationIds
             ));
           const activeCount = Number(activeCountRow?.count ?? 0);
           if (activeCount >= limit) {
-            const error: any = new Error(`Đã đạt giới hạn ${limit} tài khoản Học viên/Phụ huynh đang hoạt động; không thể kích hoạt thêm.`);
+            const error: any = new Error(`Vượt quá giới hạn đăng ký ${activeCount + 1} tài khoản Học viên/Phụ huynh đang hoạt động (giới hạn ${limit}). Vui lòng liên hệ để mở rộng giới hạn.`);
             error.code = "STUDENT_ACCOUNT_LIMIT_REACHED";
             error.limit = limit;
             error.activeCount = activeCount;
