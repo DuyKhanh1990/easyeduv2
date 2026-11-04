@@ -652,6 +652,56 @@ export function StaffList() {
     }, []);
   };
 
+  const renderAssignmentSummary = (assignments: any[], key: string, asBadges = false) => {
+    const names = assignmentNameList(assignments, key);
+    if (!names.length) return <span className="text-slate-400">-</span>;
+
+    const visibleNames = names.slice(0, 3);
+    const hiddenNames = names.slice(3);
+    return (
+      <div className="flex max-w-[220px] flex-col items-start gap-1 whitespace-normal">
+        {visibleNames.map((name) => (
+          asBadges ? (
+            <span
+              key={name}
+              className={cn("max-w-full truncate rounded-full border px-2 py-0.5 text-[11px] font-medium", getRoleBadgeColor(name))}
+              title={name}
+            >
+              {name}
+            </span>
+          ) : (
+            <span key={name} className="max-w-full break-words leading-4" title={name}>
+              {name}
+            </span>
+          )
+        ))}
+        {hiddenNames.length > 0 && (
+          <TooltipProvider delayDuration={150}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[11px] font-semibold leading-4 text-violet-700 hover:bg-violet-200 focus:outline-none focus:ring-2 focus:ring-violet-400"
+                  aria-label={`Xem ${hiddenNames.length} ${key === "location" ? "cơ sở" : key === "department" ? "phòng ban" : "vai trò"} còn lại`}
+                >
+                  +{hiddenNames.length}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" align="start" className="max-w-[320px] p-2.5">
+                <div className="mb-1 text-xs font-semibold">
+                  {key === "location" ? "Cơ sở" : key === "department" ? "Phòng ban" : "Vai trò"} ({names.length})
+                </div>
+                <ul className="space-y-1 text-xs">
+                  {names.map((name) => <li key={name} className="break-words">• {name}</li>)}
+                </ul>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+      </div>
+    );
+  };
+
   const activeCount = useMemo(() => (staff ?? []).filter((s: any) => s.status === "Hoạt động").length, [staff]);
   const inactiveCount = useMemo(() => (staff ?? []).filter((s: any) => s.status !== "Hoạt động").length, [staff]);
   const totalCount = (staff ?? []).length;
@@ -929,7 +979,6 @@ export function StaffList() {
                   </tr>
                 ) : (
                   pagedStaff.map((s: any) => {
-                    const roleName = uniqueNames(s.assignments, "role");
                     return (
                       <tr
                         key={s.id}
@@ -964,21 +1013,14 @@ export function StaffList() {
                             <span className="font-semibold text-slate-700 whitespace-nowrap">{s.fullName}</span>
                           </div>
                         </td>
-                        <td className="p-3 align-middle whitespace-nowrap text-slate-600">
-                          {uniqueNames(s.assignments, "location")}
+                        <td className="p-3 align-middle text-slate-600">
+                          {renderAssignmentSummary(s.assignments, "location")}
                         </td>
-                        <td className="p-3 align-middle whitespace-nowrap text-slate-600">
-                          {uniqueNames(s.assignments, "department")}
+                        <td className="p-3 align-middle text-slate-600">
+                          {renderAssignmentSummary(s.assignments, "department")}
                         </td>
-                        <td className="p-3 align-middle whitespace-nowrap">
-                          {roleName !== "-" ? (
-                            <span className={cn(
-                              "px-2 py-0.5 rounded-full text-[11px] font-medium border whitespace-nowrap",
-                              getRoleBadgeColor(roleName)
-                            )}>
-                              {roleName}
-                            </span>
-                          ) : <span className="text-slate-400">-</span>}
+                        <td className="p-3 align-middle">
+                          {renderAssignmentSummary(s.assignments, "role", true)}
                         </td>
                         <td className="p-3 align-middle whitespace-nowrap text-slate-600">{s.phone || <span className="text-slate-300">—</span>}</td>
                         <td className="p-3 align-middle whitespace-nowrap text-slate-600">
