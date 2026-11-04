@@ -651,9 +651,8 @@ async function getStaffLimitInfo(): Promise<{ limit: number | null; activeCount:
     .from(systemSettings)
     .where(eq(systemSettings.key, "accountLimitMode"))
     .limit(1);
-  if (activeMode?.value === "student") return { limit: null, activeCount: 0 };
   const row = await db.select().from(systemSettings).where(eq(systemSettings.key, "staffLimit"));
-  const limit = row.length > 0 ? parseInt(row[0].value) : null;
+  const configuredLimit = row.length > 0 ? parseInt(row[0].value) : null;
   const activeStaff = await db
     .select({ id: staff.id })
     .from(staff)
@@ -676,7 +675,10 @@ async function getStaffLimitInfo(): Promise<{ limit: number | null; activeCount:
         )
       )
     );
-  return { limit, activeCount: activeStaff.length };
+  return {
+    limit: activeMode?.value === "student" ? null : configuredLimit,
+    activeCount: activeStaff.length,
+  };
 }
 
 export function registerConfigRoutes(app: Express): void {
@@ -2400,10 +2402,19 @@ export function registerConfigRoutes(app: Express): void {
     try {
       const { systemSettings } = await import("@shared/schema");
       const { limit } = z.object({ limit: z.number().int().min(1) }).parse(req.body);
-      await db
-        .insert(systemSettings)
-        .values({ key: "staffLimit", value: String(limit) })
-        .onConflictDoUpdate({ target: systemSettings.key, set: { value: String(limit), updatedAt: new Date() } });
+      const { activeCount } = await getStaffLimitInfo();
+      if (limit < activeCount) {
+        return res.status(400).json({ message: `Giới hạn HRM không thể nhỏ hơn ${activeCount} tài khoản đang hoạt động.` });
+      }
+      await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended('student-account-limit', 0))`);
+        await tx.insert(systemSettings)
+          .values({ key: "staffLimit", value: String(limit) })
+          .onConflictDoUpdate({ target: systemSettings.key, set: { value: String(limit), updatedAt: new Date() } });
+        await tx.insert(systemSettings)
+          .values({ key: "accountLimitMode", value: "hrm" })
+          .onConflictDoUpdate({ target: systemSettings.key, set: { value: "hrm", updatedAt: new Date() } });
+      });
       cacheInvalidate("config:staff");
       res.json({ limit });
     } catch (err: any) {
@@ -2467,6 +2478,30 @@ export function registerConfigRoutes(app: Express): void {
           if (!Number.isInteger(studentLimit) || studentLimit < 1) {
             throw new Error("Hãy lưu giới hạn Học viên/Phụ huynh lớn hơn 0 trước khi bật hạn mức này.");
           }
+          const [activeStudents] = await tx
+            .select({ count: sql<number>`count(*)::int` })
+            .from(students)
+            .innerJoin(users, eq(students.userId, users.id))
+            .where(and(
+              inArray(students.type, ["Học viên", "Phụ huynh"]),
+              eq(students.accountStatus, "Hoạt động"),
+              eq(users.isActive, true),
+            ));
+          if (studentLimit < Number(activeStudents?.count ?? 0)) {
+            throw new Error(`Giới hạn Học viên/Phụ huynh không thể nhỏ hơn ${activeStudents?.count ?? 0} tài khoản đang hoạt động.`);
+          }
+        } else {
+          const [staffLimitSetting] = await tx.select({ value: systemSettings.value })
+            .from(systemSettings)
+            .where(eq(systemSettings.key, "staffLimit"))
+            .limit(1);
+          const staffLimit = Number(staffLimitSetting?.value);
+          if (Number.isInteger(staffLimit) && staffLimit > 0) {
+            const { activeCount } = await getStaffLimitInfo();
+            if (staffLimit < activeCount) {
+              throw new Error(`Giới hạn HRM không thể nhỏ hơn ${activeCount} tài khoản đang hoạt động.`);
+            }
+          }
         }
         await tx.insert(systemSettings)
           .values({ key: "accountLimitMode", value: mode })
@@ -2475,7 +2510,7 @@ export function registerConfigRoutes(app: Express): void {
       res.json({ mode });
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);
-      if (err.message?.includes("Hãy lưu giới hạn")) return res.status(400).json({ message: err.message });
+      if (err.message?.includes("giới hạn")) return res.status(400).json({ message: err.message });
       res.status(500).json({ message: err.message });
     }
   });
@@ -2487,13 +2522,30 @@ export function registerConfigRoutes(app: Express): void {
       const { limit } = z.object({ limit: z.number().int().min(1) }).parse(req.body);
       await db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended('student-account-limit', 0))`);
+        const [activeStudents] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(students)
+          .innerJoin(users, eq(students.userId, users.id))
+          .where(and(
+            inArray(students.type, ["Học viên", "Phụ huynh"]),
+            eq(students.accountStatus, "Hoạt động"),
+            eq(users.isActive, true),
+          ));
+        const activeCount = Number(activeStudents?.count ?? 0);
+        if (limit < activeCount) {
+          throw new Error(`Giới hạn Học viên/Phụ huynh không thể nhỏ hơn ${activeCount} tài khoản đang hoạt động.`);
+        }
         await tx.insert(systemSettings)
           .values({ key: "studentLimit", value: String(limit) })
           .onConflictDoUpdate({ target: systemSettings.key, set: { value: String(limit), updatedAt: new Date() } });
+        await tx.insert(systemSettings)
+          .values({ key: "accountLimitMode", value: "student" })
+          .onConflictDoUpdate({ target: systemSettings.key, set: { value: "student", updatedAt: new Date() } });
       });
       res.json({ limit });
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);
+      if (err.message?.includes("Giới hạn")) return res.status(400).json({ message: err.message });
       res.status(500).json({ message: err.message });
     }
   });

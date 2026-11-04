@@ -1029,16 +1029,13 @@ export function Settings() {
               </div>
             ) : (
               <Tabs value={systemTab} onValueChange={setSystemTab} className="w-full">
-                <AccountLimitModeManager />
+                <AccountLimitModeManager
+                  systemTab={systemTab}
+                  onSelectMode={(mode) => setSystemTab(mode === "hrm" ? "hrm-accounts" : "student-accounts")}
+                />
                 <div className="flex flex-wrap gap-2 mb-4">
                   <button onClick={() => setSystemTab("modules")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-1.5", systemTab === "modules" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>
                     <LayoutGrid className="w-3.5 h-3.5" />Quản lý module
-                  </button>
-                  <button onClick={() => setSystemTab("hrm-accounts")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-1.5", systemTab === "hrm-accounts" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>
-                    <UserCog className="w-3.5 h-3.5" />Quản lý số lượng tài khoản HRM
-                  </button>
-                  <button onClick={() => setSystemTab("student-accounts")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-1.5", systemTab === "student-accounts" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>
-                    <Users className="w-3.5 h-3.5" />Quản lý số lượng Học viên/Phụ huynh
                   </button>
                   <button onClick={() => setSystemTab("storage")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-1.5", systemTab === "storage" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>
                     <Server className="w-3.5 h-3.5" />Quản lý dung lượng sử dụng
@@ -1540,7 +1537,9 @@ function HrmAccountsManager() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/system-settings/staff-limit"] });
-      toast({ title: "Thành công", description: "Đã cập nhật giới hạn tài khoản nhân sự." });
+      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/account-limit-mode"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/student-limit"] });
+      toast({ title: "Đã áp dụng", description: "Hạn mức HRM đã được lưu và kích hoạt." });
     },
     onError: (err: any) => {
       toast({ title: "Lỗi", description: err.message || "Không thể cập nhật giới hạn.", variant: "destructive" });
@@ -1593,7 +1592,7 @@ function HrmAccountsManager() {
                 data-testid="button-update-staff-limit"
               >
                 {updateLimit.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Cập nhật giới hạn
+                Áp dụng giới hạn
               </Button>
             </div>
           </div>
@@ -1624,7 +1623,9 @@ function StudentAccountsManager() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/system-settings/student-limit"] });
-      toast({ title: "Thành công", description: "Đã cập nhật giới hạn Học viên/Phụ huynh." });
+      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/account-limit-mode"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/staff-limit"] });
+      toast({ title: "Đã áp dụng", description: "Hạn mức Học viên/Phụ huynh đã được lưu và kích hoạt." });
     },
     onError: (err: any) => {
       toast({ title: "Lỗi", description: err.message || "Không thể cập nhật giới hạn.", variant: "destructive" });
@@ -1675,13 +1676,13 @@ function StudentAccountsManager() {
               />
               <Button onClick={handleUpdate} disabled={updateLimit.isPending} data-testid="button-update-student-limit">
                 {updateLimit.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Cập nhật giới hạn
+                Áp dụng giới hạn
               </Button>
             </div>
           </div>
           <Progress value={percentage} className="h-2" data-testid="progress-student-limit" />
           <p className="text-xs italic text-muted-foreground">
-            * Chỉ đếm tài khoản Học viên/Phụ huynh đang hoạt động. Chưa đặt giới hạn thì chưa chặn thêm mới.
+            * Bấm Áp dụng giới hạn để lưu số mới và chuyển sang áp dụng cho Học viên/Phụ huynh. Số phải bằng hoặc lớn hơn số tài khoản đang hoạt động.
           </p>
         </CardContent>
       </Card>
@@ -1689,64 +1690,52 @@ function StudentAccountsManager() {
   );
 }
 
-function AccountLimitModeManager() {
-  const { toast } = useToast();
+function AccountLimitModeManager({
+  systemTab,
+  onSelectMode,
+}: {
+  systemTab: string;
+  onSelectMode: (mode: "hrm" | "student") => void;
+}) {
   const { data: modeData, isLoading: modeLoading } = useQuery<{ mode: "hrm" | "student" }>({
     queryKey: ["/api/system-settings/account-limit-mode"],
   });
-  const { data: studentLimitData } = useQuery<{ limit: number | null }>({
-    queryKey: ["/api/system-settings/student-limit"],
-  });
-  const updateMode = useMutation({
-    mutationFn: async (mode: "hrm" | "student") => {
-      await apiRequest("PUT", "/api/system-settings/account-limit-mode", { mode });
-    },
-    onSuccess: (_data, mode) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/account-limit-mode"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/student-limit"] });
-      toast({
-        title: "Đã đổi hạn mức đang áp dụng",
-        description: mode === "hrm" ? "Hạn mức HRM đang được áp dụng." : "Hạn mức Học viên/Phụ huynh đang được áp dụng.",
-      });
-    },
-    onError: (error: any) => {
-      toast({ title: "Không thể đổi hạn mức", description: error.message, variant: "destructive" });
-    },
-  });
   const mode = modeData?.mode ?? "hrm";
+  const selectedMode = systemTab === "student-accounts"
+    ? "student"
+    : systemTab === "hrm-accounts"
+      ? "hrm"
+      : mode;
+  const selectedClass = "border-blue-700 bg-blue-600 text-white shadow-md shadow-blue-200 hover:bg-blue-700 hover:text-white";
+  const unselectedClass = "border-slate-300 bg-slate-100 text-slate-500 shadow-inner hover:bg-slate-200 hover:text-slate-600";
 
   return (
     <Card className="mb-4">
       <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
         <div>
-          <h3 className="text-sm font-semibold">Hạn mức đang áp dụng</h3>
+          <h3 className="text-sm font-semibold">
+            Đang áp dụng: {modeLoading ? "Đang tải..." : mode === "hrm" ? "HRM" : "Học viên/Phụ huynh"}
+          </h3>
           <p className="text-xs text-muted-foreground">
-            Chỉ bên được chọn mới giới hạn tạo mới/kích hoạt. Cấu hình bên còn lại vẫn được lưu.
+            Chọn bên để xem cấu hình. Chỉ bấm “Áp dụng giới hạn” mới chuyển chế độ; cấu hình bên còn lại vẫn được lưu.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
-            variant={mode === "hrm" ? "default" : "outline"}
-            className={mode === "hrm"
-              ? "border-blue-700 bg-blue-600 text-white shadow-md shadow-blue-200 hover:bg-blue-700 hover:text-white disabled:cursor-default disabled:opacity-100"
-              : "border-slate-300 bg-slate-100 text-slate-500 shadow-inner hover:bg-slate-200 hover:text-slate-600 disabled:cursor-default disabled:opacity-100"}
-            onClick={() => updateMode.mutate("hrm")}
-            disabled={modeLoading || updateMode.isPending || mode === "hrm"}
-            aria-pressed={mode === "hrm"}
+            variant={selectedMode === "hrm" ? "default" : "outline"}
+            className={selectedMode === "hrm" ? selectedClass : unselectedClass}
+            onClick={() => onSelectMode("hrm")}
+            aria-pressed={selectedMode === "hrm"}
           >
-            Quản lý tài khoản HRM
+            Cấu hình HRM
           </Button>
           <Button
-            variant={mode === "student" ? "default" : "outline"}
-            className={mode === "student"
-              ? "border-blue-700 bg-blue-600 text-white shadow-md shadow-blue-200 hover:bg-blue-700 hover:text-white disabled:cursor-default disabled:opacity-100"
-              : "border-slate-300 bg-slate-100 text-slate-500 shadow-inner hover:bg-slate-200 hover:text-slate-600 disabled:cursor-default disabled:opacity-100"}
-            onClick={() => updateMode.mutate("student")}
-            disabled={modeLoading || updateMode.isPending || mode === "student" || !studentLimitData?.limit}
-            title={!studentLimitData?.limit ? "Nhập và lưu giới hạn lớn hơn 0 trước khi bật." : undefined}
-            aria-pressed={mode === "student"}
+            variant={selectedMode === "student" ? "default" : "outline"}
+            className={selectedMode === "student" ? selectedClass : unselectedClass}
+            onClick={() => onSelectMode("student")}
+            aria-pressed={selectedMode === "student"}
           >
-            Học viên/Phụ huynh
+            Cấu hình Học viên/Phụ huynh
           </Button>
         </div>
       </CardContent>
