@@ -207,6 +207,7 @@ export function StaffList() {
       return "cards";
     }
   });
+  const [expandedStaffCardId, setExpandedStaffCardId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
@@ -1152,14 +1153,18 @@ export function StaffList() {
                         { key: "location", icon: MapPin, names: assignmentNameList(s.assignments, "location") },
                       ];
                       const active = s.status === "Hoạt động";
+                      const isExpanded = expandedStaffCardId === s.id;
 
                       return (
                         <article
                           key={s.id}
                           className={cn(
-                            "group/card relative z-0 flex min-h-[190px] cursor-pointer flex-col overflow-visible rounded-2xl border bg-white shadow-sm transition-colors hover:z-20 group-hover/card:rounded-b-none group-hover/card:border-b-0",
+                            "relative z-0 flex min-h-[190px] cursor-pointer flex-col overflow-visible rounded-2xl border bg-white shadow-sm transition-colors hover:z-20",
                             selectedIds.includes(s.id) ? "border-violet-300 ring-2 ring-violet-100" : "border-slate-200 hover:border-slate-300",
+                            isExpanded && "rounded-b-none border-b-0",
                           )}
+                          onMouseEnter={() => setExpandedStaffCardId(s.id)}
+                          onMouseLeave={() => setExpandedStaffCardId((current) => current === s.id ? null : current)}
                           onClick={(event) => {
                             const target = event.target as HTMLElement;
                             if (target.closest("button, input, [role='checkbox'], [data-radix-collection-item]")) return;
@@ -1311,7 +1316,7 @@ export function StaffList() {
                             </span>
                             <div className="flex items-center gap-2">
                               <ChevronDown
-                                className="h-4 w-4 text-blue-600 transition-transform duration-200 group-hover/card:rotate-180"
+                                className={cn("h-4 w-4 text-blue-600 transition-transform duration-200", isExpanded && "rotate-180")}
                                 aria-hidden="true"
                                 title="Rê chuột vào thẻ để xem thêm"
                               />
@@ -1327,7 +1332,10 @@ export function StaffList() {
                               </Button>
                             </div>
                           </div>
-                          <div className="absolute -left-px -right-px top-full z-30 hidden rounded-b-2xl border border-t-0 border-slate-200 bg-white px-4 py-3 group-hover/card:block">
+                          <div className={cn(
+                            "absolute -left-px -right-px top-[calc(100%-1px)] z-30 rounded-b-2xl border border-t-0 border-slate-200 bg-white px-4 py-3",
+                            isExpanded ? "block" : "hidden",
+                          )}>
                             <div className="space-y-1.5">
                               {[
                                 { label: "SĐT", value: s.phone, icon: Phone },
