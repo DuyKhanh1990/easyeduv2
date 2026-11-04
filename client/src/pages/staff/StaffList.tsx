@@ -7,7 +7,7 @@ import { useDepartments } from "@/hooks/use-departments";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Settings2, Edit2, Trash2, AlertCircle, Download, Upload, X, CheckCircle, TriangleAlert, Search, Users, UserCheck, UserX, ChevronLeft, ChevronRight, History, LayoutGrid, Table2, Briefcase, Building2, MapPin, CalendarDays, MoreVertical, Phone, UserRound } from "lucide-react";
+import { Plus, Settings2, Edit2, Trash2, AlertCircle, Download, Upload, X, CheckCircle, TriangleAlert, Search, Users, UserCheck, UserX, ChevronLeft, ChevronRight, ChevronDown, History, LayoutGrid, Table2, Briefcase, Building2, MapPin, CalendarDays, MoreVertical, Phone, UserRound } from "lucide-react";
 import { StaffDialog } from "./StaffDialog";
 import { StaffHistoryTab } from "./StaffHistoryTab";
 import { StaffCardDetailDialog } from "./StaffCardDetailDialog";
@@ -1157,7 +1157,7 @@ export function StaffList() {
                         <article
                           key={s.id}
                           className={cn(
-                            "flex min-h-[190px] cursor-pointer flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition-colors",
+                            "group/card relative z-0 flex min-h-[190px] cursor-pointer flex-col overflow-visible rounded-2xl border bg-white shadow-sm transition-colors hover:z-20",
                             selectedIds.includes(s.id) ? "border-violet-300 ring-2 ring-violet-100" : "border-slate-200 hover:border-slate-300",
                           )}
                           onClick={(event) => {
@@ -1302,23 +1302,6 @@ export function StaffList() {
                                   );
                                 })}
                               </div>
-                              <div className="mt-1.5 space-y-1">
-                                {[
-                                  { label: "SĐT", value: s.phone, icon: Phone },
-                                  { label: "Địa chỉ", value: s.address, icon: MapPin },
-                                  { label: "Tài khoản", value: s.username, icon: UserRound },
-                                ].map(({ label, value, icon: Icon }) => (
-                                  <div
-                                    key={label}
-                                    className="flex min-w-0 items-center gap-2 text-[11px] leading-4 text-slate-600"
-                                    title={`${label}: ${value || "chưa có"}`}
-                                    aria-label={`${label}: ${value || "chưa có"}`}
-                                  >
-                                    <Icon className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                                    <span className="min-w-0 truncate">{value || "—"}</span>
-                                  </div>
-                                ))}
-                              </div>
                             </div>
                           </div>
                           <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/60 px-4 py-2.5 text-[10px] text-slate-500">
@@ -1326,16 +1309,42 @@ export function StaffList() {
                               <CalendarDays className="h-3.5 w-3.5" />
                               Hồ sơ tạo: {s.createdAt ? new Date(s.createdAt).toLocaleDateString("vi-VN") : "—"}
                             </span>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setDetailStaff(s)}
-                              className="h-6 shrink-0 gap-0.5 rounded-md border-slate-200 bg-white px-2 text-[9px] font-medium text-blue-700 hover:border-blue-200 hover:bg-blue-50"
-                              aria-label={`Xem chi tiết nhân sự ${s.fullName}`}
-                            >
-                              Xem chi tiết <ChevronRight className="h-2.5 w-2.5" />
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              <ChevronDown
+                                className="h-4 w-4 text-blue-600 transition-transform duration-200 group-hover/card:rotate-180"
+                                aria-hidden="true"
+                                title="Rê chuột vào thẻ để xem thêm"
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setDetailStaff(s)}
+                                className="h-6 shrink-0 gap-0.5 rounded-md border-slate-200 bg-white px-2 text-[9px] font-medium text-blue-700 hover:border-blue-200 hover:bg-blue-50"
+                                aria-label={`Xem chi tiết nhân sự ${s.fullName}`}
+                              >
+                                Xem chi tiết <ChevronRight className="h-2.5 w-2.5" />
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="absolute left-0 right-0 top-full z-30 hidden rounded-b-2xl border border-t-0 border-slate-200 bg-white px-4 py-3 shadow-lg group-hover/card:block">
+                            <div className="space-y-1.5">
+                              {[
+                                { label: "SĐT", value: s.phone, icon: Phone },
+                                { label: "Địa chỉ", value: s.address, icon: MapPin },
+                                { label: "Tài khoản", value: s.username, icon: UserRound },
+                              ].map(({ label, value, icon: Icon }) => (
+                                <div
+                                  key={label}
+                                  className="flex min-w-0 items-center gap-2 text-[11px] leading-4 text-slate-600"
+                                  title={`${label}: ${value || "chưa có"}`}
+                                  aria-label={`${label}: ${value || "chưa có"}`}
+                                >
+                                  <Icon className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                  <span className="min-w-0 truncate">{value || "—"}</span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         </article>
                       );
