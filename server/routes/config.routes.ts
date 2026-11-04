@@ -647,6 +647,11 @@ async function getProgramLocationId(programId: string | null | undefined): Promi
 
 async function getStaffLimitInfo(): Promise<{ limit: number | null; activeCount: number }> {
   const { systemSettings, staff, users } = await import("@shared/schema");
+  const [activeMode] = await db.select({ value: systemSettings.value })
+    .from(systemSettings)
+    .where(eq(systemSettings.key, "accountLimitMode"))
+    .limit(1);
+  if (activeMode?.value === "student") return { limit: null, activeCount: 0 };
   const row = await db.select().from(systemSettings).where(eq(systemSettings.key, "staffLimit"));
   const limit = row.length > 0 ? parseInt(row[0].value) : null;
   const activeStaff = await db
@@ -2410,12 +2415,14 @@ export function registerConfigRoutes(app: Express): void {
   app.get("/api/system-settings/student-limit", async (_req, res) => {
     try {
       const { systemSettings } = await import("@shared/schema");
-      const [setting] = await db.select({ value: systemSettings.value })
+      const settings = await db.select({ key: systemSettings.key, value: systemSettings.value })
         .from(systemSettings)
-        .where(eq(systemSettings.key, "studentLimit"))
-        .limit(1);
+        .where(inArray(systemSettings.key, ["studentLimit", "accountLimitMode"]));
+      const setting = settings.find((row) => row.key === "studentLimit");
+      const modeSetting = settings.find((row) => row.key === "accountLimitMode");
       const configuredLimit = Number(setting?.value);
       const limit = Number.isInteger(configuredLimit) && configuredLimit > 0 ? configuredLimit : null;
+      const mode = modeSetting?.value === "student" ? "student" : "hrm";
       const [activeStudents] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(students)
@@ -2425,8 +2432,50 @@ export function registerConfigRoutes(app: Express): void {
           eq(students.accountStatus, "Hoạt động"),
           eq(users.isActive, true),
         ));
-      res.json({ limit, activeStudentCount: Number(activeStudents?.count ?? 0) });
+      res.json({ limit, activeStudentCount: Number(activeStudents?.count ?? 0), mode });
     } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/system-settings/account-limit-mode", async (_req, res) => {
+    try {
+      const { systemSettings } = await import("@shared/schema");
+      const [setting] = await db.select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, "accountLimitMode"))
+        .limit(1);
+      res.json({ mode: setting?.value === "student" ? "student" : "hrm" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/system-settings/account-limit-mode", async (req, res) => {
+    try {
+      if (!req.isSuperAdmin) return res.status(403).json({ message: "Chỉ Super Admin mới có quyền thay đổi hạn mức đang áp dụng." });
+      const { mode } = z.object({ mode: z.enum(["hrm", "student"]) }).parse(req.body);
+      const { systemSettings } = await import("@shared/schema");
+      await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended('student-account-limit', 0))`);
+        if (mode === "student") {
+          const [studentLimitSetting] = await tx.select({ value: systemSettings.value })
+            .from(systemSettings)
+            .where(eq(systemSettings.key, "studentLimit"))
+            .limit(1);
+          const studentLimit = Number(studentLimitSetting?.value);
+          if (!Number.isInteger(studentLimit) || studentLimit < 1) {
+            throw new Error("Hãy lưu giới hạn Học viên/Phụ huynh lớn hơn 0 trước khi bật hạn mức này.");
+          }
+        }
+        await tx.insert(systemSettings)
+          .values({ key: "accountLimitMode", value: mode })
+          .onConflictDoUpdate({ target: systemSettings.key, set: { value: mode, updatedAt: new Date() } });
+      });
+      res.json({ mode });
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return res.status(400).json(err.errors);
+      if (err.message?.includes("Hãy lưu giới hạn")) return res.status(400).json({ message: err.message });
       res.status(500).json({ message: err.message });
     }
   });

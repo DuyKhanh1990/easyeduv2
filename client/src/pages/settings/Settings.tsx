@@ -1029,6 +1029,7 @@ export function Settings() {
               </div>
             ) : (
               <Tabs value={systemTab} onValueChange={setSystemTab} className="w-full">
+                <AccountLimitModeManager />
                 <div className="flex flex-wrap gap-2 mb-4">
                   <button onClick={() => setSystemTab("modules")} className={cn("px-3 py-1 rounded-md border text-xs font-medium transition-all flex items-center gap-1.5", systemTab === "modules" ? "bg-primary border-primary text-primary-foreground" : "bg-background border-border text-foreground hover:bg-muted/50")}>
                     <LayoutGrid className="w-3.5 h-3.5" />Quản lý module
@@ -1609,7 +1610,7 @@ function HrmAccountsManager() {
 function StudentAccountsManager() {
   const { toast } = useToast();
   const [limitInput, setLimitInput] = useState("");
-  const { data, isLoading } = useQuery<{ limit: number | null; activeStudentCount: number }>({
+  const { data, isLoading } = useQuery<{ limit: number | null; activeStudentCount: number; mode: "hrm" | "student" }>({
     queryKey: ["/api/system-settings/student-limit"],
   });
 
@@ -1685,6 +1686,63 @@ function StudentAccountsManager() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function AccountLimitModeManager() {
+  const { toast } = useToast();
+  const { data: modeData, isLoading: modeLoading } = useQuery<{ mode: "hrm" | "student" }>({
+    queryKey: ["/api/system-settings/account-limit-mode"],
+  });
+  const { data: studentLimitData } = useQuery<{ limit: number | null }>({
+    queryKey: ["/api/system-settings/student-limit"],
+  });
+  const updateMode = useMutation({
+    mutationFn: async (mode: "hrm" | "student") => {
+      await apiRequest("PUT", "/api/system-settings/account-limit-mode", { mode });
+    },
+    onSuccess: (_data, mode) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/account-limit-mode"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/student-limit"] });
+      toast({
+        title: "Đã đổi hạn mức đang áp dụng",
+        description: mode === "hrm" ? "Hạn mức HRM đang được áp dụng." : "Hạn mức Học viên/Phụ huynh đang được áp dụng.",
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Không thể đổi hạn mức", description: error.message, variant: "destructive" });
+    },
+  });
+  const mode = modeData?.mode ?? "hrm";
+
+  return (
+    <Card className="mb-4">
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <div>
+          <h3 className="text-sm font-semibold">Hạn mức đang áp dụng</h3>
+          <p className="text-xs text-muted-foreground">
+            Chỉ bên được chọn mới giới hạn tạo mới/kích hoạt. Cấu hình bên còn lại vẫn được lưu.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant={mode === "hrm" ? "default" : "outline"}
+            onClick={() => updateMode.mutate("hrm")}
+            disabled={modeLoading || updateMode.isPending || mode === "hrm"}
+          >
+            Quản lý tài khoản HRM
+          </Button>
+          <Button
+            variant={mode === "student" ? "default" : "outline"}
+            onClick={() => updateMode.mutate("student")}
+            disabled={modeLoading || updateMode.isPending || mode === "student" || !studentLimitData?.limit}
+            title={!studentLimitData?.limit ? "Nhập và lưu giới hạn lớn hơn 0 trước khi bật." : undefined}
+          >
+            Học viên/Phụ huynh
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

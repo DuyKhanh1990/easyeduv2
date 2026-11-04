@@ -360,10 +360,10 @@ export function CustomersList() {
       };
 
   const createStudent = useCreateStudent();
-  const { data: studentAccountLimit } = useQuery<{ limit: number | null; activeStudentCount: number }>({
+  const { data: studentAccountLimit } = useQuery<{ limit: number | null; activeStudentCount: number; mode: "hrm" | "student" }>({
     queryKey: ["/api/system-settings/student-limit"],
   });
-  const isAtStudentAccountLimit = !!studentAccountLimit?.limit &&
+  const isAtStudentAccountLimit = studentAccountLimit?.mode === "student" && !!studentAccountLimit?.limit &&
     studentAccountLimit.activeStudentCount >= studentAccountLimit.limit;
   const updateStudent = useUpdateStudent();
   const deleteStudent = useDeleteStudent();
@@ -1061,7 +1061,7 @@ export function CustomersList() {
             </div>
 
             <div className="flex items-center gap-2 flex-shrink-0">
-              {studentAccountLimit && studentAccountLimit.limit !== null && (
+              {studentAccountLimit?.mode === "student" && studentAccountLimit.limit !== null && (
                 <span className="whitespace-nowrap text-xs text-muted-foreground">
                   Học viên/PH: {studentAccountLimit.activeStudentCount}/{studentAccountLimit.limit}
                 </span>
