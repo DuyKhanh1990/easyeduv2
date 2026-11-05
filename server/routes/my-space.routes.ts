@@ -30,6 +30,7 @@ import {
   scoreSheetTemplateSchema,
   type ScoreSheetTemplate,
 } from "@shared/score-sheet-template";
+import { resolveScoreSheetAssessmentStatus } from "@shared/score-sheet-assessment-status";
 import {
   students,
   staff,
@@ -566,6 +567,26 @@ function normalizeScoreExamDate(value: unknown): string {
   if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
   const parsed = new Date(text);
   return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+}
+
+function getBangkokWallClockMs(date = new Date()): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value])) as Record<string, string>;
+  return Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour),
+    Number(values.minute),
+  );
 }
 
 async function getLatestPublishedScoreResults(studentIds: string[]) {
@@ -5912,6 +5933,53 @@ export function registerMySpaceRoutes(app: Express): void {
           const { assessmentId, assessment } = access;
           if (!assessment) {
             const error: any = new Error("Cấu hình bảng điểm được giao không còn khả dụng.");
+            error.status = 409;
+            throw error;
+          }
+          let priorAttempt: { id: string } | undefined;
+          if (access.isManual) {
+            if (assessment.manualStudentIds.length > 0) {
+              [priorAttempt] = await tx
+                .select({ id: scoreSheetAssessmentStudentAttempts.id })
+                .from(scoreSheetAssessmentStudentAttempts)
+                .where(and(
+                  eq(scoreSheetAssessmentStudentAttempts.assessmentId, assessmentId),
+                  isNull(scoreSheetAssessmentStudentAttempts.classSessionId),
+                  inArray(scoreSheetAssessmentStudentAttempts.studentId, assessment.manualStudentIds),
+                ))
+                .limit(1);
+            }
+          } else {
+            [priorAttempt] = await tx
+              .select({ id: scoreSheetAssessmentStudentAttempts.id })
+              .from(scoreSheetAssessmentStudentAttempts)
+              .innerJoin(
+                studentSessions,
+                and(
+                  eq(studentSessions.classSessionId, scoreSheetAssessmentStudentAttempts.classSessionId),
+                  eq(studentSessions.studentId, scoreSheetAssessmentStudentAttempts.studentId),
+                ),
+              )
+              .innerJoin(
+                classSessions,
+                eq(classSessions.id, scoreSheetAssessmentStudentAttempts.classSessionId),
+              )
+              .where(and(
+                eq(scoreSheetAssessmentStudentAttempts.assessmentId, assessmentId),
+                eq(scoreSheetAssessmentStudentAttempts.classSessionId, sessionId.data),
+                sql`NOT (${scoreSheetAssessmentStudentAttempts.studentId} = ANY(COALESCE(${classSessions.scoreSheetAssessmentExcludedStudentIds}, ARRAY[]::uuid[])))`,
+              ))
+              .limit(1);
+          }
+          const assessmentStatus = resolveScoreSheetAssessmentStatus({
+            examDate: normalizeScoreExamDate(access.isManual ? assessment.createdAt : access.sessionDate),
+            scoreDeadlineAt: null,
+            studentCount: 0,
+            enteredStudentCount: priorAttempt ? 1 : 0,
+            completedStudentCount: 0,
+          }, getBangkokWallClockMs());
+          if (assessmentStatus === "not_started") {
+            const error: any = new Error("Chưa thi — chưa thể nhập điểm.");
             error.status = 409;
             throw error;
           }

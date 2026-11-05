@@ -1305,6 +1305,10 @@ export function StaffScoreSheet() {
       <StaffScoreSheetAssessmentStudentsDialog
         assessment={selectedAssessment}
         open={!!selectedAssessment}
+        canEnterScores={
+          selectedAssessment !== null
+          && resolveScoreSheetAssessmentStatus(selectedAssessment, nowWallClockMs) !== "not_started"
+        }
         canManagePublication
         onOpenChange={(open) => {
           if (!open) setSelectedAssessment(null);
