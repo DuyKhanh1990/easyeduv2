@@ -2199,7 +2199,11 @@ export async function makeupClassStudents(classId: string, data: any, userId: st
 // ---------------------------------------------------------------------------
 export async function getStudentSessionsForClass(classId: string, studentId: string): Promise<any[]> {
   const rows = await db.query.studentSessions.findMany({
-    where: and(eq(studentSessions.classId, classId), eq(studentSessions.studentId, studentId)),
+    where: and(
+      eq(studentSessions.classId, classId),
+      eq(studentSessions.studentId, studentId),
+      sql`${studentSessions.status} NOT IN ('transferred', 'cancelled')`,
+    ),
     columns: {
       id: true,
       classSessionId: true,

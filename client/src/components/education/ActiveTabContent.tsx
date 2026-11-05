@@ -60,7 +60,7 @@ export function ActiveTabContent({ classId, activeStudents, canDelete = true }: 
     enabled: !!selectedActiveStudent,
   });
   const visibleStudentSessions = (studentSessions ?? []).filter(
-    (session) => session.status !== "transferred",
+    (session) => session.status !== "transferred" && session.status !== "cancelled",
   );
 
   const { data: invoiceSummaries = [] } = useQuery<InvoiceSummary[]>({

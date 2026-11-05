@@ -2364,6 +2364,7 @@ export async function getStudentClassSessions(params: {
     .where(and(
       eq(studentSessions.studentId, studentId),
       eq(studentSessions.classId, classId),
+      sql`${studentSessions.status} NOT IN ('transferred', 'cancelled')`,
     ))
     .orderBy(asc(studentSessions.sessionOrder));
 
