@@ -144,7 +144,7 @@
 - [Teacher attendance overview scope](teacher-attendance-view-scope.md) — “Xem” sees only the logged-in teacher’s assigned classes; “Xem all” and Super Admin retain all rows.
 - [Staff role assignment permissions](staff-role-assignment-permissions.md) — role-assignment grants are per department/role; unchecked roles stay visible but disabled, while staff create/edit rights remain unchanged.
 - [Chat permission scopes](chat-permission-scopes.md) — staff Chat view is membership-only; View all is center-wide, while create and other actions require a view scope.
-- [Class name presentation](class-notification-labels.md) — notifications use name then code; compact schedule cards use name, with name and code in the hover detail.
+- [Class name presentation](class-notification-labels.md) — schedule and My Space calendar cards prioritize class names; retain codes in secondary details.
 - [Automatic invoice dialog defaults](auto-invoice-default-ui.md) — configured setting is only the initial value; authorized roles may override it per scheduling or renewal dialog.
 - [Staff list sort order](staff-list-sort-order.md) — active staff stay first; within each status group, recently edited profiles appear first.
 - [Staff profile file categories](staff-profile-file-categories.md) — reuse category names across staff, but keep each employee’s uploaded files separate.

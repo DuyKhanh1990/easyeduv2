@@ -494,7 +494,10 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
               <p className="text-sm text-muted-foreground">
                 {t("mySpace.calendar.time")} <span className="font-bold text-foreground">{t("mySpace.calendar.flexibleSchedule")}</span>
               </p>
-              <p className="font-bold text-foreground text-base">{t("mySpace.calendar.class")} {session.classCode}</p>
+              <p className="font-bold text-foreground text-base">{t("mySpace.calendar.class")} {session.className || session.classCode}</p>
+              {session.classCode && session.classCode !== session.className && session.classCode !== "TEST" && (
+                <p className="text-xs text-muted-foreground">{t("mySpace.calendar.code")}: {session.classCode}</p>
+              )}
               {!isLoading && !isError && (
                 <>
                   <div className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -643,7 +646,10 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
               <span className="ml-2 text-xs font-semibold text-red-500 bg-red-50 dark:bg-red-950/30 px-2 py-0.5 rounded-full">{t("mySpace.calendar.cancelled")}</span>
             )}
           </p>
-          <p className="font-bold text-foreground text-base">{t("mySpace.calendar.class")} {session.classCode}</p>
+          <p className="font-bold text-foreground text-base">{t("mySpace.calendar.class")} {session.className || session.classCode}</p>
+          {session.classCode && session.classCode !== session.className && session.classCode !== "TEST" && (
+            <p className="text-xs text-muted-foreground">{t("mySpace.calendar.code")}: {session.classCode}</p>
+          )}
           {!isLoading && !isError && (
             <>
               <div className="flex items-center gap-3 text-sm text-muted-foreground">

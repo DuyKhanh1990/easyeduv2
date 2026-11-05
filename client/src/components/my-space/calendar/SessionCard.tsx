@@ -434,8 +434,11 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
               {t("mySpace.calendar.time")} <span className="font-bold text-foreground">{session.isFreeSession ? t("mySpace.calendar.flexibleSchedule") : `${session.startTime} - ${session.endTime}`}</span>
             </p>
             <p className="font-bold text-foreground text-base">
-              {t("mySpace.calendar.class")} {session.classCode === "TEST" ? session.className : session.classCode}
+              {t("mySpace.calendar.class")} {session.className || session.classCode}
             </p>
+            {session.classCode && session.classCode !== session.className && session.classCode !== "TEST" && (
+              <p className="text-xs text-muted-foreground">{t("mySpace.calendar.code")}: {session.classCode}</p>
+            )}
             <p className="text-sm text-muted-foreground">
                 {t("mySpace.calendar.teacher")} <span className="font-medium text-foreground">{session.teacherNames.join(", ") || "—"}</span>
             </p>
@@ -642,7 +645,10 @@ export function SessionCard({ session, sessionDate, onlineRule, highlighted }: S
               <p className="text-sm text-muted-foreground">
                 Thời gian: <span className="font-bold text-foreground">{session.isFreeSession ? "Lịch linh hoạt" : `${session.startTime} - ${session.endTime}`}</span>
               </p>
-              <p className="font-bold text-foreground text-base">Lớp: {session.classCode}</p>
+              <p className="font-bold text-foreground text-base">Lớp: {session.className || session.classCode}</p>
+              {session.classCode && session.classCode !== session.className && session.classCode !== "TEST" && (
+                <p className="text-xs text-muted-foreground">Mã: {session.classCode}</p>
+              )}
             </div>
             <div className="flex flex-col items-end gap-1 shrink-0">
               {attendance && (
@@ -672,8 +678,11 @@ export function SessionCard({ session, sessionDate, onlineRule, highlighted }: S
                 Thời gian: <span className="font-bold text-foreground">{session.isFreeSession ? "Lịch linh hoạt" : `${session.startTime} - ${session.endTime}`}</span>
               </p>
               <p className="font-bold text-foreground text-base">
-                Lớp: {session.classCode === "TEST" ? session.className : session.classCode}
+                Lớp: {session.className || session.classCode}
               </p>
+              {session.classCode && session.classCode !== session.className && session.classCode !== "TEST" && (
+                <p className="text-xs text-muted-foreground">Mã: {session.classCode}</p>
+              )}
               <p className="text-sm text-muted-foreground">
                 GV: <span className="font-medium text-foreground">—</span>
               </p>

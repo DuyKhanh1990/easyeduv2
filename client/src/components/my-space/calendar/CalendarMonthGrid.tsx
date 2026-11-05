@@ -20,8 +20,7 @@ function toDateString(date: Date) {
 }
 
 function sessionTitle(session: MyCalendarSessionLight, mode: CalendarMonthGridProps["mode"]) {
-  if (mode === "student" && session.classCode === "TEST") return session.className;
-  return session.classCode || session.className;
+  return session.className || session.classCode;
 }
 
 function sessionTone(session: MyCalendarSessionLight) {
