@@ -114,7 +114,7 @@
 - [Drizzle array filters](drizzle-array-filter-parameters.md) — use `inArray` for dynamic string arrays; raw `ANY` interpolation can break filtered list endpoints.
 - [Facility shift history](shift-facility-history.md) — shift rows are independent per facility; stopping one preserves its assignment and attendance history.
 - [Staff calendar attendance permissions](staff-calendar-attendance-permissions.md) — assigned staff may attend and review by default; only a configured attendance limit should time-restrict attendance.
-- [My Space grade-book permissions](my-space-grade-book-permissions.md) — My Space score-book mutations use `/my-space/score-sheet`; Education keeps its schedule/class checks and class scope.
+- [My Space grade-book permissions](my-space-grade-book-permissions.md) — conversion boards require assignment to that exact session; class-manager status alone does not grant access.
 - [My Space assignment permissions](my-space-assignment-permissions.md) — assignment Add/Edit rights apply to My Space grading and comments only; keep Education assignment workflows independent.
 - [My Space calendar content deletion](my-space-calendar-content-delete.md) — Delete is independently configurable for assigned content; keep View All, student removal, and session-wide deletion disabled.
 - [Vitest JSX runtime](vitest-jsx-runtime.md) — Node-based Vitest tests may require explicit React imports even when the app build succeeds.

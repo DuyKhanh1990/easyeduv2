@@ -4,5 +4,5 @@ export function canStaffViewAssignedScoreSheetAssessment(input: {
   isClassManager: boolean;
 }) {
   if (!input.hasConversion) return true;
-  return input.isSessionTeacher || input.isClassManager;
+  return input.isSessionTeacher;
 }

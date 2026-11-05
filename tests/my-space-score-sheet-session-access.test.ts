@@ -15,12 +15,12 @@ describe("My Space assigned score sheet access", () => {
     })).toBe(true);
   });
 
-  it("preserves class-manager access to conversion assessments", () => {
+  it("does not grant conversion access based on class-manager status alone", () => {
     expect(canStaffViewAssignedScoreSheetAssessment({
       hasConversion: true,
       isSessionTeacher: false,
       isClassManager: true,
-    })).toBe(true);
+    })).toBe(false);
   });
 
   it("does not change class-level visibility for non-conversion assessments", () => {

@@ -334,7 +334,16 @@ async function getAuthorizedScoreSheetSession(
       SELECT
         cs.score_sheet_assessment_id AS assessment_id,
         cs.session_date,
-        st.start_time AS session_start_time
+        st.start_time AS session_start_time,
+        (
+          ${staffRecord.id} = ANY(COALESCE(cs.teacher_ids, ARRAY[]::uuid[]))
+          OR EXISTS (
+            SELECT 1
+            FROM class_session_teacher_assignments csta
+            WHERE csta.class_session_id = cs.id
+              AND csta.teacher_id = ${staffRecord.id}
+          )
+        ) AS is_session_teacher
       FROM class_sessions cs
       JOIN classes c ON c.id = cs.class_id
       LEFT JOIN shift_templates st ON st.id = cs.shift_template_id
@@ -416,6 +425,12 @@ async function getAuthorizedScoreSheetSession(
   const assessmentId = String(accessRow.assessment_id);
   const assessment = await getScoreSheetAssessmentScoringConfig(assessmentId, queryable);
   if (!accessThroughStaff && !assessment?.templateSnapshot.scoreConversionTemplateId) return null;
+  if (
+    accessThroughStaff
+    && assessment?.templateSnapshot.scoreConversionTemplateId
+    && accessRow.is_session_teacher !== true
+    && !(await hasScoreConversionPermission(req, options.permission ?? "view"))
+  ) return null;
   const currentTemplate = assessment
     ? await getCurrentScoreSheetTemplate(assessment.scoreSheetTemplateId, queryable)
     : null;

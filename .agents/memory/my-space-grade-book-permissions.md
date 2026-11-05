@@ -9,8 +9,8 @@ description: Keep My Space score-book actions separate from Education schedule p
 
 **How to apply:** Keep My Space dialogs on the My Space grade-book API route and gate Create/Edit controls and handlers with their matching flags. Do not repoint Education callers or weaken existing class-scope checks.
 
-For conversion assessments attached to scheduled class sessions, a teacher's visibility must follow the current assignment to that specific session; class-level teacher membership alone is too broad. Preserve class-manager access and do not change regular grade books or manually created assessments.
+For conversion assessments attached to scheduled class sessions in My Space, access and visibility require the current assignment to that specific session. Class-level teacher membership or class-manager status alone does not grant access. Keep regular grade books and manually created assessments unchanged; retain explicit score-conversion administration permissions for authorized education administrators.
 
-**Why:** The user clarified that teachers may teach only some sessions in a class, and a replaced teacher should not keep seeing the conversion assessment for a session they no longer teach.
+**Why:** The user confirmed that a conversion assessment belongs to its individual session, so class-manager status must not grant visibility when the user is not assigned to that session.
 
-**How to apply:** Apply the session-assignment rule only to session-bound conversion rows in the My Space staff assessment list. Keep score records, attempts, publication state, manual assessments, non-conversion sheets, and unrelated permission flows unchanged.
+**How to apply:** Apply the session-assignment rule to session-bound conversion rows and their My Space view/edit APIs. Preserve explicit education-administrator permissions, score records, attempts, publication state, manual assessments, non-conversion sheets, and unrelated permission flows.
