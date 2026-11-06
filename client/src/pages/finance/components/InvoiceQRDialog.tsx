@@ -28,7 +28,7 @@ interface BidvQrStatus {
   isQrEnabled: boolean;
 }
 
-import { getBankCode, sanitizeForBank } from "./qr-utils";
+import { getBankCode, sanitizeForBank, stripVietnameseDiacriticsPreserveCase } from "./qr-utils";
 
 function invoiceStatusLabel(status: string, t: (key: string) => string): string {
   const keys: Record<string, string> = {
@@ -94,16 +94,20 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
   // sau đó giữ nguyên mô tả hóa đơn, note hoặc mã hóa đơn như trước.
   // sanitizeForBank loại bỏ dấu tiếng Việt và ký tự đặc biệt — bắt buộc để ngân hàng chấp nhận
   const invoiceAny = invoice as any;
-  const customerIdentity = [invoice?.name?.trim(), invoice?.studentCode?.trim()]
-    .filter(Boolean)
-    .join(" ");
+  const customerIdentity = stripVietnameseDiacriticsPreserveCase(
+    [invoice?.name?.trim(), invoice?.studentCode?.trim()].filter(Boolean).join(" "),
+  );
   const invoiceDescription = invoice?.description?.trim()
     ? invoice.description.trim()
     : invoiceAny?.note?.trim()
       ? invoiceAny.note.trim()
       : invoice ? `HP_${invoice.code}` : "";
-  const rawTransferContent = [customerIdentity, invoiceDescription].filter(Boolean).join(" ");
-  const transferContent = sanitizeForBank(rawTransferContent);
+  const safeInvoiceDescription = sanitizeForBank(invoiceDescription);
+  const transferContent = [customerIdentity, safeInvoiceDescription]
+    .filter(Boolean)
+    .join(" ")
+    .slice(0, 160)
+    .trimEnd();
   const qrAddInfo = transferContent;
 
   const resolvedBankCode = getBankCode(bankName);
