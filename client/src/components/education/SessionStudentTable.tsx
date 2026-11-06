@@ -357,16 +357,17 @@ export function SessionStudentTable({
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
-                                className="mt-0.5 block max-w-full truncate text-left text-[10px] font-semibold text-orange-600 underline decoration-dotted underline-offset-2 hover:text-orange-700"
+                                className="mt-0.5 block max-w-full truncate text-left text-[10px] font-medium text-orange-600 underline decoration-dotted underline-offset-2 hover:text-orange-700"
                                 aria-label={`Xem thông tin chuyển lớp từ ${ss.transferInfo?.sourceClassName ?? ss.note.split(/\r?\n/)[0]?.replace("Chuyển từ lớp ", "")}`}
                               >
                                 Chuyển từ lớp {ss.transferInfo?.sourceClassName ?? ss.note.split(/\r?\n/)[0]?.replace("Chuyển từ lớp ", "")} sang
                               </button>
                             </TooltipTrigger>
                             <TooltipContent
+                              portal
                               side="top"
                               sideOffset={8}
-                              className="w-[min(620px,calc(100vw-2rem))] max-h-[min(70vh,520px)] overflow-y-auto border-orange-200 p-3 text-left"
+                              className="z-[100] w-[min(620px,calc(100vw-2rem))] max-h-[min(70vh,520px)] overflow-y-auto border-orange-200 p-3 text-left"
                             >
                               <div className="mb-3 text-xs font-semibold text-orange-700">Thông tin chuyển lớp</div>
                               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
