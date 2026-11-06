@@ -218,6 +218,6 @@
 
 @media (min-width: 1024px) {
   .candidate-page-theme .candidate-main-grid {
-    grid-template-columns: minmax(400px, 440px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
   }
 }
