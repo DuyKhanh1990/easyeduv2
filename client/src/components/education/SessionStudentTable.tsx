@@ -79,7 +79,6 @@ const MANUAL_ATT_CFG = Object.fromEntries(
 ) as typeof ATT_CFG;
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
