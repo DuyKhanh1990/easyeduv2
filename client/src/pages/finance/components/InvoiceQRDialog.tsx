@@ -28,7 +28,7 @@ interface BidvQrStatus {
   isQrEnabled: boolean;
 }
 
-import { getBankCode, sanitizeForBank, stripVietnameseDiacriticsPreserveCase } from "./qr-utils";
+import { getBankCode, sanitizeForBank, sanitizeForBankPreservingCase } from "./qr-utils";
 
 function invoiceStatusLabel(status: string, t: (key: string) => string): string {
   const keys: Record<string, string> = {
@@ -90,19 +90,23 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
   const bankAccount = primaryBank?.bankAccount || "—";
   const accountHolder = primaryBank?.accountHolder || "—";
 
-  // Nội dung CK thường: ghi tên + mã học viên trước để nhận diện người chuyển,
-  // sau đó giữ nguyên mô tả hóa đơn, note hoặc mã hóa đơn như trước.
-  // sanitizeForBank loại bỏ dấu tiếng Việt và ký tự đặc biệt — bắt buộc để ngân hàng chấp nhận
+  // Nội dung CK thường: ghi tên + mã học viên trước để nhận diện người chuyển.
+  // Chỉ cho phép chữ ASCII, số và dấu cách trong nội dung gửi ngân hàng.
   const invoiceAny = invoice as any;
-  const customerIdentity = stripVietnameseDiacriticsPreserveCase(
+  const customerIdentity = sanitizeForBankPreservingCase(
     [invoice?.name?.trim(), invoice?.studentCode?.trim()].filter(Boolean).join(" "),
   );
   const invoiceDescription = invoice?.description?.trim()
     ? invoice.description.trim()
     : invoiceAny?.note?.trim()
       ? invoiceAny.note.trim()
-      : invoice ? `HP_${invoice.code}` : "";
-  const safeInvoiceDescription = sanitizeForBank(invoiceDescription);
+      : "";
+  const safeInvoiceDescription = invoiceDescription
+    ? sanitizeForBank(invoiceDescription).replace(/[_-]/g, " ").replace(/\s+/g, " ").trim()
+    : [
+        "chuyen khoan tien hoa don",
+        sanitizeForBankPreservingCase(invoice?.code ?? ""),
+      ].filter(Boolean).join(" ");
   const transferContent = [customerIdentity, safeInvoiceDescription]
     .filter(Boolean)
     .join(" ")

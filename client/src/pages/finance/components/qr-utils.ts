@@ -86,12 +86,12 @@ export function sanitizeForBank(text: string, maxLen = 160): string {
   return cleaned.slice(0, maxLen);
 }
 
-export function stripVietnameseDiacriticsPreserveCase(text: string, maxLen = 160): string {
+export function sanitizeForBankPreservingCase(text: string, maxLen = 160): string {
   const cleaned = text.normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/đ/g, "d")
     .replace(/Đ/g, "D")
-    .replace(/[^a-zA-Z0-9 _\-]/g, " ")
+    .replace(/[^a-zA-Z0-9 ]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
   return cleaned.slice(0, maxLen);
