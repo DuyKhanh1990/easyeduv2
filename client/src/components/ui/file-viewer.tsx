@@ -4,6 +4,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import DOMPurify from "dompurify";
+import { getAuthHeaders } from "@/lib/queryClient";
 
 export interface FileViewerProps {
   open: boolean;
@@ -100,7 +101,11 @@ export function FileViewer({ open, onClose, url, name, canDownload = true }: Fil
 
     void (async () => {
       try {
-        const response = await fetch(fileUrl, { credentials: "include", signal: controller.signal });
+        const response = await fetch(fileUrl, {
+          headers: getAuthHeaders(),
+          credentials: "include",
+          signal: controller.signal,
+        });
         if (!response.ok) throw new Error("Không thể tải nội dung tệp.");
         const { convertToHtml } = await import("mammoth");
         const result = await convertToHtml({ arrayBuffer: await response.arrayBuffer() });
