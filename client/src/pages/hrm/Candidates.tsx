@@ -56,7 +56,6 @@ export default function Candidates() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<CandidateFilter>("all");
-  const [newCandidateCode, setNewCandidateCode] = useState("");
   const [newCandidateName, setNewCandidateName] = useState("");
   const [newCandidatePosition, setNewCandidatePosition] = useState("");
   const [newCandidatePhone, setNewCandidatePhone] = useState("");
@@ -96,13 +95,16 @@ export default function Candidates() {
 
   const addCandidate = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const code = newCandidateCode.trim();
     const name = newCandidateName.trim();
     const position = newCandidatePosition.trim();
-    if (!code || !name || !position) return;
+    if (!name || !position) return;
+    const lastCodeNumber = candidates.reduce((highest, candidate) => {
+      const match = /^UV-(\d+)$/i.exec(candidate.code.trim());
+      return match ? Math.max(highest, Number(match[1])) : highest;
+    }, 0);
     const candidate: Candidate = {
       id: crypto.randomUUID(),
-      code,
+      code: `UV-${String(lastCodeNumber + 1).padStart(2, "0")}`,
       name,
       position,
       phone: newCandidatePhone.trim(),
@@ -118,7 +120,6 @@ export default function Candidates() {
     setCandidates((current) => [...current, candidate]);
     setSelectedCandidateId(candidate.id);
     setActiveFilter("all");
-    setNewCandidateCode("");
     setNewCandidateName("");
     setNewCandidatePosition("");
     setNewCandidatePhone("");
@@ -481,10 +482,6 @@ export default function Candidates() {
           <form onSubmit={addCandidate} className="space-y-5 pt-2">
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="space-y-1.5 text-sm font-medium">
-                Mã <span className="text-destructive">*</span>
-                <Input required value={newCandidateCode} onChange={(event) => setNewCandidateCode(event.target.value)} placeholder="Nhập mã ứng viên" />
-              </label>
-              <label className="space-y-1.5 text-sm font-medium">
                 Tên ứng viên <span className="text-destructive">*</span>
                 <Input required value={newCandidateName} onChange={(event) => setNewCandidateName(event.target.value)} placeholder="Nhập họ tên" />
               </label>
@@ -519,7 +516,7 @@ export default function Candidates() {
             </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setIsAddFormOpen(false)}>Hủy</Button>
-              <Button type="submit" disabled={!newCandidateCode.trim() || !newCandidateName.trim() || !newCandidatePosition.trim()}>
+              <Button type="submit" disabled={!newCandidateName.trim() || !newCandidatePosition.trim()}>
                 Thêm ứng viên
               </Button>
             </div>
