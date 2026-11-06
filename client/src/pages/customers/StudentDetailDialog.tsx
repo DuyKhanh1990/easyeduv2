@@ -875,6 +875,15 @@ export function StudentDetailDialog({
                                                           targetClassName={classesData[selectedClassIndex]?.class?.name}
                                                         />
                                                       )}
+                                                      {["makeup_scheduled", "makeup_done"].includes(attendanceStatus)
+                                                        && session.studentSession?.note?.startsWith("Xếp bù sang ") && (
+                                                        <div
+                                                          className="mt-0.5 whitespace-pre-line text-[10px] font-medium text-orange-500"
+                                                          data-testid={`makeup-note-${session.studentSession.id}`}
+                                                        >
+                                                          {session.studentSession.note}
+                                                        </div>
+                                                      )}
                                                     </div>
                                                  ) : (
                                                     <>Buổi {studentLessonNumber}</>

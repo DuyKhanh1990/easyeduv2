@@ -889,8 +889,19 @@ function AttendanceContent() {
                                         data-testid={`checkbox-row-${record.id}`}
                                       />
                                     </TableCell>
-                                     <TableCell className="w-[180px] overflow-hidden text-sm whitespace-nowrap font-medium">
-                                      <StudentNameLink studentId={record.studentId} name={record.studentName} code={record.studentCode} />
+                                     <TableCell className="w-[180px] overflow-hidden text-sm font-medium">
+                                       <div className="min-w-0">
+                                         <StudentNameLink studentId={record.studentId} name={record.studentName} code={record.studentCode} />
+                                         {["makeup_scheduled", "makeup_done"].includes(record.attendanceStatus)
+                                           && record.note?.startsWith("Xếp bù sang ") && (
+                                           <div
+                                             className="mt-0.5 whitespace-pre-line text-[10px] font-medium text-orange-500"
+                                             data-testid={`makeup-note-${record.id}`}
+                                           >
+                                             {record.note}
+                                           </div>
+                                         )}
+                                       </div>
                                     </TableCell>
                                      <TableCell className="w-[110px] overflow-hidden text-sm whitespace-nowrap text-muted-foreground">
                                       {record.dayOfWeek}, {format(new Date(record.sessionDate), "d/M/yyyy")}
