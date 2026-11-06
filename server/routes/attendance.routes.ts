@@ -485,12 +485,51 @@ export function registerAttendanceRoutes(app: Express): void {
       const allowedLocationIds = req.allowedLocationIds;
       const isSuperAdmin = req.isSuperAdmin;
       const canViewAllAttendance = isSuperAdmin || attendancePermission?.canViewAll === true;
-      const assignedClassCondition = canViewAllAttendance
+      const staffId = req.staffId as string | null | undefined;
+      const managerClassCondition = staffId
+        ? sql`${staffId}::uuid = ANY(COALESCE(${classes.managerIds}, ARRAY[]::uuid[]))`
+        : sql`FALSE`;
+      const assignedSessionCondition = canViewAllAttendance
         ? undefined
-        : req.staffId
+        : staffId
           ? sql`(
-              ${req.staffId} = ANY(COALESCE(${classes.teacherIds}, ARRAY[]::uuid[]))
-              OR ${req.staffId} = ANY(COALESCE(${classes.managerIds}, ARRAY[]::uuid[]))
+              ${managerClassCondition}
+              OR ${staffId}::uuid = ANY(COALESCE(${classSessions.teacherIds}, ARRAY[]::uuid[]))
+              OR EXISTS (
+                SELECT 1
+                FROM class_session_teacher_assignments csta
+                WHERE csta.class_session_id = ${classSessions.id}
+                  AND csta.teacher_id = ${staffId}::uuid
+              )
+            )`
+          : sql`FALSE`;
+      const freeClassAccessCondition = (dateExpression: any) => canViewAllAttendance
+        ? undefined
+        : staffId
+          ? sql`(
+              ${managerClassCondition}
+              OR ${freeClassRegistrations.teacherId} = ${staffId}::uuid
+              OR (
+                ${freeClassRegistrations.teacherId} IS NULL
+                AND EXISTS (
+                  SELECT 1
+                  FROM free_class_day_assignments fcda
+                  WHERE fcda.class_id = ${classes.id}
+                    AND fcda.assignment_date = ${dateExpression}
+                    AND fcda.teacher_id = ${staffId}::uuid
+                )
+              )
+              OR (
+                ${freeClassRegistrations.teacherId} IS NULL
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM free_class_day_assignments fcda
+                  WHERE fcda.class_id = ${classes.id}
+                    AND fcda.assignment_date = ${dateExpression}
+                    AND fcda.teacher_id IS NOT NULL
+                )
+                AND ${staffId}::uuid = ANY(COALESCE(${classes.teacherIds}, ARRAY[]::uuid[]))
+              )
             )`
           : sql`FALSE`;
 
@@ -537,8 +576,8 @@ export function registerAttendanceRoutes(app: Express): void {
         conditions.push(inArray(classes.locationId, allowedLocationIds));
         conditions.push(sql`EXISTS (SELECT 1 FROM student_locations WHERE student_locations.student_id = students.id AND student_locations.location_id = ANY(ARRAY[${sql.raw(allowedLocationIds.map((id: string) => `'${id}'`).join(','))}]::uuid[]))`);
       }
-      if (assignedClassCondition) {
-        conditions.push(assignedClassCondition);
+      if (assignedSessionCondition) {
+        conditions.push(assignedSessionCondition);
       }
 
       const results = await db
@@ -597,8 +636,9 @@ export function registerAttendanceRoutes(app: Express): void {
             AND student_locations.location_id = ANY(ARRAY[${sql.raw(allowedLocationIds.map((id: string) => `'${id}'`).join(","))}]::uuid[])
         )`);
       }
-      if (assignedClassCondition) {
-        freeConditions.push(assignedClassCondition);
+      const freeRowsAccessCondition = freeClassAccessCondition(freeClassRegistrations.registrationDate);
+      if (freeRowsAccessCondition) {
+        freeConditions.push(freeRowsAccessCondition);
       }
 
       const freeRows = await db
@@ -641,6 +681,9 @@ export function registerAttendanceRoutes(app: Express): void {
           isNull(classes.freeClassMode),
           sql`coalesce(array_length(${classes.teacherIds}, 1), 0) = 0`,
         ),
+      );
+      const selfPracticeAccessCondition = freeClassAccessCondition(
+        sql`${getBangkokDateKey()}::date`,
       );
       const selfPracticeRows = startStr <= getBangkokDateKey() && getBangkokDateKey() <= endStr
         ? await db
@@ -688,7 +731,7 @@ export function registerAttendanceRoutes(app: Express): void {
               : allowedLocationIds && allowedLocationIds.length > 0
               ? [inArray(classes.locationId, allowedLocationIds)]
               : []),
-            ...(assignedClassCondition ? [assignedClassCondition] : []),
+            ...(selfPracticeAccessCondition ? [selfPracticeAccessCondition] : []),
           ))
         : [];
 
