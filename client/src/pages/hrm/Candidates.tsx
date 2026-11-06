@@ -1,19 +1,26 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { BriefcaseBusiness, CalendarDays, ChevronRight, Eye, FileText, Plus, RotateCcw, Search, UserRound, Users, X } from "lucide-react";
+import { BriefcaseBusiness, CalendarDays, ChevronRight, Eye, FileText, Plus, Search, UserRound, Users } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import "./Candidates.css";
 
 type CandidateResult = "pass" | "fail" | "";
+type InterviewMode = "offline" | "online";
 type CandidateFile = { id: string; name: string; url: string };
 type Candidate = {
   id: string;
+  code: string;
   name: string;
   position: string;
+  phone: string;
+  email: string;
+  address: string;
+  interviewMode: InterviewMode;
   skills: string;
   result: CandidateResult;
   evaluation: string;
@@ -49,9 +56,13 @@ export default function Candidates() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<CandidateFilter>("all");
+  const [newCandidateCode, setNewCandidateCode] = useState("");
   const [newCandidateName, setNewCandidateName] = useState("");
   const [newCandidatePosition, setNewCandidatePosition] = useState("");
-  const [newCandidateSkills, setNewCandidateSkills] = useState("");
+  const [newCandidatePhone, setNewCandidatePhone] = useState("");
+  const [newCandidateEmail, setNewCandidateEmail] = useState("");
+  const [newCandidateAddress, setNewCandidateAddress] = useState("");
+  const [newCandidateInterviewMode, setNewCandidateInterviewMode] = useState<InterviewMode>("offline");
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
   const fileUrls = useRef<string[]>([]);
@@ -69,7 +80,7 @@ export default function Candidates() {
         || (activeFilter === "passed" && candidate.result === "pass")
         || (activeFilter === "rejected" && candidate.result === "fail");
       const matchesSearch = !query
-        || `${candidate.name} ${candidate.position} ${candidate.skills}`.toLowerCase().includes(query);
+        || `${candidate.code} ${candidate.name} ${candidate.position} ${candidate.phone} ${candidate.email} ${candidate.skills}`.toLowerCase().includes(query);
       return matchesFilter && matchesSearch;
     });
   }, [activeFilter, candidates, searchTerm]);
@@ -85,13 +96,20 @@ export default function Candidates() {
 
   const addCandidate = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const code = newCandidateCode.trim();
     const name = newCandidateName.trim();
-    if (!name) return;
+    const position = newCandidatePosition.trim();
+    if (!code || !name || !position) return;
     const candidate: Candidate = {
       id: crypto.randomUUID(),
+      code,
       name,
-      position: newCandidatePosition.trim(),
-      skills: newCandidateSkills.trim(),
+      position,
+      phone: newCandidatePhone.trim(),
+      email: newCandidateEmail.trim(),
+      address: newCandidateAddress.trim(),
+      interviewMode: newCandidateInterviewMode,
+      skills: "",
       result: "",
       evaluation: "",
       files: [],
@@ -100,9 +118,13 @@ export default function Candidates() {
     setCandidates((current) => [...current, candidate]);
     setSelectedCandidateId(candidate.id);
     setActiveFilter("all");
+    setNewCandidateCode("");
     setNewCandidateName("");
     setNewCandidatePosition("");
-    setNewCandidateSkills("");
+    setNewCandidatePhone("");
+    setNewCandidateEmail("");
+    setNewCandidateAddress("");
+    setNewCandidateInterviewMode("offline");
     setSearchTerm("");
     setIsAddFormOpen(false);
   };
@@ -141,7 +163,7 @@ export default function Candidates() {
     { value: "all", label: "Tất cả", count: candidates.length },
     { value: "pending", label: "Chờ PV", count: candidates.filter((candidate) => !candidate.result).length },
     { value: "interviewed", label: "Đã PV", count: candidates.filter((candidate) => !!candidate.result).length },
-    { value: "passed", label: "Đạt", count: candidates.filter((candidate) => candidate.result === "pass").length },
+    { value: "passed", label: "Trúng tuyển", count: candidates.filter((candidate) => candidate.result === "pass").length },
     { value: "rejected", label: "Loại", count: candidates.filter((candidate) => candidate.result === "fail").length },
   ];
 
@@ -170,7 +192,7 @@ export default function Candidates() {
                   aria-label="Thêm ứng viên"
                   onClick={() => setIsAddFormOpen((open) => !open)}
                 >
-                  {isAddFormOpen ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+                  <Plus className="h-5 w-5" />
                 </Button>
               </div>
 
@@ -204,34 +226,6 @@ export default function Candidates() {
                 ))}
               </div>
 
-              {isAddFormOpen && (
-                <form onSubmit={addCandidate} className="space-y-2 rounded-xl border bg-slate-50 p-3">
-                  <Input
-                    autoFocus
-                    value={newCandidateName}
-                    onChange={(event) => setNewCandidateName(event.target.value)}
-                    placeholder="Họ tên ứng viên"
-                    aria-label="Tên ứng viên mới"
-                  />
-                  <Input
-                    value={newCandidatePosition}
-                    onChange={(event) => setNewCandidatePosition(event.target.value)}
-                    placeholder="Vị trí ứng tuyển"
-                    aria-label="Vị trí ứng tuyển"
-                  />
-                  <Input
-                    value={newCandidateSkills}
-                    onChange={(event) => setNewCandidateSkills(event.target.value)}
-                    placeholder="Kỹ năng"
-                    aria-label="Kỹ năng ứng viên"
-                  />
-                  <div className="flex justify-end">
-                    <Button type="submit" size="sm" disabled={!newCandidateName.trim()}>
-                      Thêm ứng viên
-                    </Button>
-                  </div>
-                </form>
-              )}
             </div>
 
             <div className="flex-1 space-y-2 overflow-y-auto p-3">
@@ -272,7 +266,10 @@ export default function Candidates() {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center justify-between gap-2">
-                          <span className="truncate text-sm font-semibold text-slate-900">{candidate.name}</span>
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <span className="truncate text-sm font-semibold text-slate-900">{candidate.name}</span>
+                            <span className="shrink-0 text-[10px] text-slate-400">#{candidate.code}</span>
+                          </span>
                           <ChevronRight className="h-4 w-4 shrink-0 text-indigo-600" />
                         </span>
                         <span className="mt-1 flex items-center gap-1.5 truncate text-xs text-slate-500">
@@ -306,28 +303,15 @@ export default function Candidates() {
                           : activeFilter === "interviewed"
                             ? "Chưa có ứng viên đã phỏng vấn."
                             : activeFilter === "passed"
-                              ? "Chưa có ứng viên đạt."
+                              ? "Chưa có ứng viên trúng tuyển."
                               : "Chưa có ứng viên bị loại."}
                   </p>
                 </div>
               )}
             </div>
 
-            <div className="flex items-center justify-between border-t bg-white px-4 py-3 text-sm">
+            <div className="flex items-center border-t bg-white px-4 py-3 text-sm">
               <span className="text-muted-foreground">Kết quả: <strong className="text-foreground">{filteredCandidates.length}</strong></span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 gap-1.5 text-primary"
-                onClick={() => {
-                  setActiveFilter("all");
-                  setSearchTerm("");
-                }}
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Đặt lại
-              </Button>
             </div>
           </Card>
 
@@ -340,7 +324,9 @@ export default function Candidates() {
                   </span>
                   <div className="min-w-0">
                     <h2 className="truncate text-xl font-semibold">{selectedCandidate.name}</h2>
-                    <p className="truncate text-sm text-muted-foreground">{selectedCandidate.position || "Chưa nhập vị trí ứng tuyển"}</p>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {selectedCandidate.position || "Chưa nhập vị trí ứng tuyển"} · Mã {selectedCandidate.code}
+                    </p>
                   </div>
                 </div>
                 <span className={`candidate-detail-status rounded-full px-3 py-1 text-sm font-semibold ${
@@ -486,6 +472,60 @@ export default function Candidates() {
           )}
         </div>
       </div>
+      <Dialog open={isAddFormOpen} onOpenChange={setIsAddFormOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[640px]">
+          <DialogHeader>
+            <DialogTitle>Thêm ứng viên</DialogTitle>
+            <DialogDescription>Nhập thông tin cơ bản để tạo hồ sơ ứng viên.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={addCandidate} className="space-y-5 pt-2">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="space-y-1.5 text-sm font-medium">
+                Mã <span className="text-destructive">*</span>
+                <Input required value={newCandidateCode} onChange={(event) => setNewCandidateCode(event.target.value)} placeholder="Nhập mã ứng viên" />
+              </label>
+              <label className="space-y-1.5 text-sm font-medium">
+                Tên ứng viên <span className="text-destructive">*</span>
+                <Input required value={newCandidateName} onChange={(event) => setNewCandidateName(event.target.value)} placeholder="Nhập họ tên" />
+              </label>
+              <label className="space-y-1.5 text-sm font-medium sm:col-span-2">
+                Vị trí tuyển dụng <span className="text-destructive">*</span>
+                <Input required value={newCandidatePosition} onChange={(event) => setNewCandidatePosition(event.target.value)} placeholder="Nhập vị trí ứng tuyển" />
+              </label>
+              <label className="space-y-1.5 text-sm font-medium">
+                Số điện thoại
+                <Input type="tel" value={newCandidatePhone} onChange={(event) => setNewCandidatePhone(event.target.value)} placeholder="Nhập số điện thoại" />
+              </label>
+              <label className="space-y-1.5 text-sm font-medium">
+                Email
+                <Input type="email" value={newCandidateEmail} onChange={(event) => setNewCandidateEmail(event.target.value)} placeholder="name@example.com" />
+              </label>
+              <label className="space-y-1.5 text-sm font-medium sm:col-span-2">
+                Địa chỉ
+                <Input value={newCandidateAddress} onChange={(event) => setNewCandidateAddress(event.target.value)} placeholder="Nhập địa chỉ" />
+              </label>
+              <label className="space-y-1.5 text-sm font-medium sm:col-span-2">
+                Hình thức phỏng vấn
+                <Select value={newCandidateInterviewMode} onValueChange={(value) => setNewCandidateInterviewMode(value as InterviewMode)}>
+                  <SelectTrigger aria-label="Hình thức phỏng vấn">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="offline">Offline</SelectItem>
+                    <SelectItem value="online">Online</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsAddFormOpen(false)}>Hủy</Button>
+              <Button type="submit" disabled={!newCandidateCode.trim() || !newCandidateName.trim() || !newCandidatePosition.trim()}>
+                Thêm ứng viên
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
       </div>
     </DashboardLayout>
   );
