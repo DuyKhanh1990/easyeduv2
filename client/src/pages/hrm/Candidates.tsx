@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { BriefcaseBusiness, CalendarDays, ChevronRight, Eye, FileText, Mail, Phone, Plus, Search, UserRound, Users } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -60,6 +60,8 @@ function getAverage(scores: Candidate["scores"]): number | null {
 
 export default function Candidates() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [isLoadingCandidates, setIsLoadingCandidates] = useState(true);
+  const [candidateDataError, setCandidateDataError] = useState("");
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<CandidateFilter>("all");
   const [newCandidateName, setNewCandidateName] = useState("");
@@ -76,6 +78,16 @@ export default function Candidates() {
   const [isSavingCandidate, setIsSavingCandidate] = useState(false);
   const [isUploadingCandidateFiles, setIsUploadingCandidateFiles] = useState(false);
   const [candidateFileUploadError, setCandidateFileUploadError] = useState("");
+  const pendingCandidateUpdates = useRef<Record<string, Partial<Candidate>>>({});
+  const candidateSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  useEffect(() => {
+    apiRequest("GET", "/api/hrm/candidates")
+      .then((response) => response.json())
+      .then((data) => setCandidates(Array.isArray(data.candidates) ? data.candidates : []))
+      .catch(() => setCandidateDataError("Không thể tải hồ sơ ứng viên từ DB."))
+      .finally(() => setIsLoadingCandidates(false));
+  }, []);
 
   const uploadCandidateFiles = async (files: File[]): Promise<CandidateFile[]> => {
     const formData = new FormData();
@@ -205,14 +217,8 @@ export default function Candidates() {
     setIsSavingCandidate(true);
     setCvImportStatus(null);
     try {
-    const lastCodeNumber = candidates.reduce((highest, candidate) => {
-      const match = /^UV-(\d+)$/i.exec(candidate.code.trim());
-      return match ? Math.max(highest, Number(match[1])) : highest;
-    }, 0);
     const candidateFiles = newCandidateCvFile ? await uploadCandidateFiles([newCandidateCvFile]) : [];
-    const candidate: Candidate = {
-      id: crypto.randomUUID(),
-      code: `UV-${String(lastCodeNumber + 1).padStart(2, "0")}`,
+    const response = await apiRequest("POST", "/api/hrm/candidates", {
       name,
       position,
       phone: newCandidatePhone.trim(),
@@ -224,8 +230,10 @@ export default function Candidates() {
       evaluation: "",
       files: candidateFiles,
       scores: { ...EMPTY_SCORES },
-    };
+    });
+    const candidate: Candidate = await response.json();
     setCandidates((current) => [...current, candidate]);
+    setCandidateDataError("");
     setSelectedCandidateId(candidate.id);
     setActiveFilter("all");
     setNewCandidateName("");
@@ -252,6 +260,18 @@ export default function Candidates() {
     setCandidates((current) => current.map((candidate) =>
       candidate.id === id ? { ...candidate, ...updates } : candidate,
     ));
+    pendingCandidateUpdates.current[id] = { ...pendingCandidateUpdates.current[id], ...updates };
+    clearTimeout(candidateSaveTimers.current[id]);
+    candidateSaveTimers.current[id] = setTimeout(async () => {
+      const pending = pendingCandidateUpdates.current[id];
+      delete pendingCandidateUpdates.current[id];
+      try {
+        await apiRequest("PATCH", `/api/hrm/candidates/${id}`, pending);
+        setCandidateDataError("");
+      } catch {
+        setCandidateDataError("Có thay đổi chưa lưu được vào DB. Hãy thử chỉnh sửa lại.");
+      }
+    }, 500);
   };
 
   const addFiles = async (candidateId: string, selectedFiles: FileList | null) => {
@@ -260,11 +280,9 @@ export default function Candidates() {
     setCandidateFileUploadError("");
     try {
       const nextFiles = await uploadCandidateFiles(Array.from(selectedFiles));
-      setCandidates((current) => current.map((candidate) =>
-        candidate.id === candidateId
-          ? { ...candidate, files: [...candidate.files, ...nextFiles] }
-          : candidate,
-      ));
+      const candidate = candidates.find((item) => item.id === candidateId);
+      if (!candidate) throw new Error("Không tìm thấy hồ sơ ứng viên.");
+      updateCandidate(candidateId, { files: [...candidate.files, ...nextFiles] });
     } catch (error) {
       setCandidateFileUploadError(error instanceof Error ? error.message : "Không thể tải tệp lên S3.");
     } finally {
@@ -299,6 +317,11 @@ export default function Candidates() {
           <h1 className="text-2xl font-semibold">Quản lý ứng viên</h1>
           <p className="mt-1 text-sm text-muted-foreground">Theo dõi hồ sơ, đánh giá và kết quả phỏng vấn.</p>
         </div>
+        {candidateDataError && (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700" role="alert">
+            {candidateDataError}
+          </div>
+        )}
 
         <div className="candidate-main-grid grid grid-cols-1 items-start gap-5">
           <Card className="candidate-list-panel flex min-h-[680px] flex-col overflow-hidden border-slate-200 bg-slate-50/60 lg:sticky lg:top-4">
@@ -417,7 +440,9 @@ export default function Candidates() {
                 <div className="flex min-h-36 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
                   <Users className="h-8 w-8 opacity-35" />
                   <p>
-                    {searchTerm
+                    {isLoadingCandidates
+                      ? "Đang tải hồ sơ ứng viên..."
+                      : searchTerm
                       ? "Không tìm thấy ứng viên phù hợp."
                       : activeFilter === "all"
                         ? "Chưa có ứng viên."

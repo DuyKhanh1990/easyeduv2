@@ -3802,6 +3802,39 @@ export const invoiceCodeSequences = pgTable("invoice_code_sequences", {
   currentValue: integer("current_value").notNull().default(0),
 });
 
+export type HrmCandidateFile = { id: string; name: string; url: string };
+export type HrmCandidateScores = {
+  expertise: string;
+  experience: string;
+  communication: string;
+  attitude: string;
+};
+
+export const hrmCandidateCodeSequences = pgTable("hrm_candidate_code_sequences", {
+  key:          text("key").primaryKey(),
+  currentValue: integer("current_value").notNull().default(0),
+});
+
+export const hrmCandidates = pgTable("hrm_candidates", {
+  id:             uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  code:           varchar("code", { length: 30 }).notNull().unique(),
+  name:           varchar("name", { length: 255 }).notNull(),
+  position:       varchar("position", { length: 255 }).notNull(),
+  phone:          varchar("phone", { length: 60 }).notNull().default(""),
+  email:          varchar("email", { length: 254 }).notNull().default(""),
+  address:        text("address").notNull().default(""),
+  interviewMode:  varchar("interview_mode", { length: 20 }).notNull().default("offline"),
+  skills:         text("skills").notNull().default(""),
+  result:         varchar("result", { length: 20 }).notNull().default(""),
+  evaluation:     text("evaluation").notNull().default(""),
+  files:          jsonb("files").$type<HrmCandidateFile[]>().notNull().default(sql`'[]'::jsonb`),
+  scores:         jsonb("scores").$type<HrmCandidateScores>().notNull().default(sql`'{"expertise":"","experience":"","communication":"","attitude":""}'::jsonb`),
+  createdAt:      timestamp("created_at").defaultNow().notNull(),
+  updatedAt:      timestamp("updated_at").defaultNow().notNull(),
+});
+export type HrmCandidate = typeof hrmCandidates.$inferSelect;
+export type InsertHrmCandidate = typeof hrmCandidates.$inferInsert;
+
 // ─── Database Backups ────────────────────────────────────────────────────────
 // Metadata for backups of the current deployment's database.
 // The backup artifact itself is stored outside PostgreSQL.
