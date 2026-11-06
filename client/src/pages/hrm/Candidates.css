@@ -138,6 +138,23 @@
   border-color: color-mix(in srgb, currentColor 16%, transparent);
 }
 
+.candidate-page-theme .candidate-detail-heading,
+.candidate-page-theme .candidate-detail-heading h2,
+.candidate-page-theme .candidate-detail-heading [data-slot="select-trigger"],
+.candidate-page-theme .candidate-detail-heading .text-sm,
+.candidate-page-theme .candidate-list-card .candidate-list-card-meta {
+  font-size: 13px;
+}
+
+.candidate-page-theme .candidate-list-card {
+  font-size: 13px;
+}
+
+.candidate-page-theme .candidate-list-card .text-xs,
+.candidate-page-theme .candidate-list-card .text-sm {
+  font-size: 13px;
+}
+
 .candidate-page-theme .candidate-detail-card {
   overflow: hidden;
   border-color: var(--candidate-line);

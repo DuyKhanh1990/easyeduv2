@@ -3824,6 +3824,7 @@ export const hrmCandidates = pgTable("hrm_candidates", {
   email:          varchar("email", { length: 254 }).notNull().default(""),
   address:        text("address").notNull().default(""),
   interviewMode:  varchar("interview_mode", { length: 20 }).notNull().default("offline"),
+  interviewScheduledAt: varchar("interview_scheduled_at", { length: 40 }),
   skills:         text("skills").notNull().default(""),
   result:         varchar("result", { length: 20 }).notNull().default(""),
   evaluation:     text("evaluation").notNull().default(""),

@@ -15,7 +15,7 @@ import "./Candidates.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
-type CandidateResult = "pass" | "fail" | "";
+type CandidateResult = "interviewed" | "pass" | "fail" | "";
 type InterviewMode = "offline" | "online";
 type CandidateFile = { id: string; name: string; url: string };
 type Candidate = {
@@ -29,6 +29,7 @@ type Candidate = {
   interviewMode: InterviewMode;
   skills: string;
   result: CandidateResult;
+  interviewScheduledAt: string | null;
   evaluation: string;
   files: CandidateFile[];
   scores: { expertise: string; experience: string; communication: string; attitude: string };
@@ -78,6 +79,8 @@ export default function Candidates() {
   const [isSavingCandidate, setIsSavingCandidate] = useState(false);
   const [isUploadingCandidateFiles, setIsUploadingCandidateFiles] = useState(false);
   const [candidateFileUploadError, setCandidateFileUploadError] = useState("");
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [scheduleDateTime, setScheduleDateTime] = useState("");
   const pendingCandidateUpdates = useRef<Record<string, Partial<Candidate>>>({});
   const candidateSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -191,7 +194,7 @@ export default function Candidates() {
     return candidates.filter((candidate) => {
       const matchesFilter = activeFilter === "all"
         || (activeFilter === "pending" && !candidate.result)
-        || (activeFilter === "interviewed" && !!candidate.result)
+        || (activeFilter === "interviewed" && candidate.result === "interviewed")
         || (activeFilter === "passed" && candidate.result === "pass")
         || (activeFilter === "rejected" && candidate.result === "fail");
       const matchesSearch = !query
@@ -294,6 +297,7 @@ export default function Candidates() {
     updateCandidate(candidate.id, { result: value });
     setActiveFilter((filter) => {
       if (filter === "all") return filter;
+      if (value === "interviewed") return "interviewed";
       if (value === "pass") return "passed";
       if (value === "fail") return "rejected";
       return "pending";
@@ -303,7 +307,7 @@ export default function Candidates() {
   const filters: { value: CandidateFilter; label: string; count: number }[] = [
     { value: "all", label: "Tất cả", count: candidates.length },
     { value: "pending", label: "Chờ PV", count: candidates.filter((candidate) => !candidate.result).length },
-    { value: "interviewed", label: "Đã PV", count: candidates.filter((candidate) => !!candidate.result).length },
+    { value: "interviewed", label: "Đã PV", count: candidates.filter((candidate) => candidate.result === "interviewed").length },
     { value: "passed", label: "Trúng tuyển", count: candidates.filter((candidate) => candidate.result === "pass").length },
     { value: "rejected", label: "Loại", count: candidates.filter((candidate) => candidate.result === "fail").length },
   ];
@@ -384,21 +388,32 @@ export default function Candidates() {
                   .join("")
                   .toUpperCase();
                 const statusLabel = candidate.result === "pass"
-                  ? "Đỗ"
+                  ? "Trúng tuyển"
                   : candidate.result === "fail"
-                    ? "Trượt"
+                    ? "Loại"
+                    : candidate.result === "interviewed"
+                      ? "Đã PV"
                     : "Đang chờ PV";
                 const statusStyle = candidate.result === "pass"
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                   : candidate.result === "fail"
                     ? "border-rose-200 bg-rose-50 text-rose-700"
-                    : "border-amber-200 bg-amber-50 text-amber-700";
+                    : candidate.result === "interviewed"
+                      ? "border-blue-200 bg-blue-50 text-blue-700"
+                      : "border-amber-200 bg-amber-50 text-amber-700";
 
                 return (
-                  <button
+                  <div
                     key={candidate.id}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setSelectedCandidateId(candidate.id)}
+                    onKeyDown={(event) => {
+                      if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                        event.preventDefault();
+                        setSelectedCandidateId(candidate.id);
+                      }
+                    }}
                     aria-current={selectedCandidateId === candidate.id ? "true" : undefined}
                     className={`candidate-list-card w-full rounded-2xl border p-3.5 text-left transition-colors ${
                       selectedCandidateId === candidate.id
@@ -413,8 +428,8 @@ export default function Candidates() {
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center justify-between gap-2">
                           <span className="flex min-w-0 items-center gap-1.5">
-                            <span className="truncate text-sm font-semibold text-slate-900">{candidate.name}</span>
-                            <span className="shrink-0 text-[10px] text-slate-400">#{candidate.code}</span>
+                            <span className="truncate text-[13px] font-semibold text-slate-900">{candidate.name}</span>
+                            <span className="shrink-0 text-[13px] text-slate-400">{candidate.code}</span>
                           </span>
                           <ChevronRight className="h-4 w-4 shrink-0 text-indigo-600" />
                         </span>
@@ -423,17 +438,48 @@ export default function Candidates() {
                           {candidate.position || "Chưa nhập vị trí"}
                         </span>
                         <span className="mt-2 flex items-center justify-between gap-2">
-                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${statusStyle}`}>
-                            {statusLabel}
-                          </span>
-                          <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+                          <Select
+                            value={candidate.result || "pending"}
+                            onValueChange={(value) => setCandidateResult(
+                              candidate,
+                              value === "interviewed" || value === "pass" || value === "fail" ? value : "",
+                            )}
+                          >
+                            <SelectTrigger
+                              aria-label={`Trạng thái ứng viên ${candidate.name}`}
+                              className={`h-auto w-fit gap-1 rounded-full border px-2.5 py-1 text-[13px] font-medium shadow-none ${statusStyle}`}
+                              onClick={(event) => event.stopPropagation()}
+                              onPointerDown={(event) => event.stopPropagation()}
+                            >
+                              <SelectValue>{statusLabel}</SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="interviewed">Đã PV</SelectItem>
+                              <SelectItem value="pass">Trúng tuyển</SelectItem>
+                              <SelectItem value="fail">Loại</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 text-[13px] text-slate-400 hover:text-indigo-700"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedCandidateId(candidate.id);
+                              setScheduleDateTime(candidate.interviewScheduledAt
+                                ? new Date(new Date(candidate.interviewScheduledAt).getTime() - new Date(candidate.interviewScheduledAt).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+                                : "");
+                              setScheduleDialogOpen(true);
+                            }}
+                          >
                             <CalendarDays className="h-3.5 w-3.5" />
-                            Chưa xếp lịch
-                          </span>
+                            {candidate.interviewScheduledAt
+                              ? new Date(candidate.interviewScheduledAt).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })
+                              : "Chưa xếp lịch"}
+                          </button>
                         </span>
                       </span>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
               {filteredCandidates.length === 0 && (
@@ -472,16 +518,32 @@ export default function Candidates() {
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="truncate text-lg font-semibold">{selectedCandidate.name}</h2>
-                      <span className={`candidate-detail-status rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      <h2 className="truncate text-[13px] font-semibold">{selectedCandidate.name}</h2>
+                      <span className="text-[13px] text-slate-400">{selectedCandidate.code}</span>
+                      <Select
+                        value={selectedCandidate.result || "pending"}
+                        onValueChange={(value) => setCandidateResult(
+                          selectedCandidate,
+                          value === "interviewed" || value === "pass" || value === "fail" ? value : "",
+                        )}
+                      >
+                        <SelectTrigger className={`candidate-detail-status h-auto w-fit rounded-full px-2.5 py-1 text-[13px] font-semibold ${
                         selectedCandidate.result === "pass"
                           ? "bg-emerald-50 text-emerald-700"
                           : selectedCandidate.result === "fail"
                             ? "bg-rose-50 text-rose-700"
-                            : "bg-amber-50 text-amber-700"
-                      }`}>
-                        {selectedCandidate.result === "pass" ? "Trúng tuyển" : selectedCandidate.result === "fail" ? "Trượt" : "Đang chờ PV"}
-                      </span>
+                            : selectedCandidate.result === "interviewed"
+                              ? "bg-blue-50 text-blue-700"
+                              : "bg-amber-50 text-amber-700"
+                      }`} aria-label="Trạng thái ứng viên">
+                          <SelectValue>{selectedCandidate.result === "pass" ? "Trúng tuyển" : selectedCandidate.result === "fail" ? "Loại" : selectedCandidate.result === "interviewed" ? "Đã PV" : "Đang chờ PV"}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="interviewed">Đã PV</SelectItem>
+                          <SelectItem value="pass">Trúng tuyển</SelectItem>
+                          <SelectItem value="fail">Loại</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                       <span className="inline-flex items-center gap-1.5">
@@ -500,7 +562,6 @@ export default function Candidates() {
                           {selectedCandidate.phone}
                         </a>
                       )}
-                      <span className="text-xs text-slate-400">Mã {selectedCandidate.code}</span>
                     </div>
                   </div>
                 </div>
@@ -606,29 +667,6 @@ export default function Candidates() {
                 </CardContent>
               </Card>
 
-              <Card className="candidate-detail-card">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Kết quả phỏng vấn</CardTitle>
-                </CardHeader>
-                <CardContent className="max-w-xs">
-                  <Select
-                    value={selectedCandidate.result || "pending"}
-                    onValueChange={(value) => setCandidateResult(
-                      selectedCandidate,
-                      value === "pass" || value === "fail" ? value : "",
-                    )}
-                  >
-                    <SelectTrigger aria-label="Chọn kết quả phỏng vấn">
-                      <SelectValue placeholder="Chọn kết quả" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="pending">Chưa có kết quả</SelectItem>
-                      <SelectItem value="pass">Đỗ</SelectItem>
-                      <SelectItem value="fail">Trượt</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </CardContent>
-              </Card>
             </div>
           ) : (
             <Card className="flex min-h-[420px] items-center justify-center">
@@ -722,6 +760,42 @@ export default function Candidates() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={scheduleDialogOpen} onOpenChange={setScheduleDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Xếp lịch phỏng vấn</DialogTitle>
+            <DialogDescription>
+              {selectedCandidate ? `Chọn ngày và giờ phỏng vấn cho ${selectedCandidate.name}.` : "Chọn ngày và giờ phỏng vấn."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <label className="block space-y-1.5 text-[13px] font-medium">
+              Ngày giờ phỏng vấn
+              <Input
+                type="datetime-local"
+                value={scheduleDateTime}
+                onChange={(event) => setScheduleDateTime(event.target.value)}
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setScheduleDialogOpen(false)}>Hủy</Button>
+              <Button
+                type="button"
+                disabled={!selectedCandidate || !scheduleDateTime}
+                onClick={() => {
+                  if (!selectedCandidate) return;
+                  updateCandidate(selectedCandidate.id, {
+                    interviewScheduledAt: new Date(scheduleDateTime).toISOString(),
+                  });
+                  setScheduleDialogOpen(false);
+                }}
+              >
+                Lưu lịch
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
       </div>
