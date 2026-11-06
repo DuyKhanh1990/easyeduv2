@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { z } from "zod";
-import { createHrmCandidate, listHrmCandidates, updateHrmCandidate } from "../storage/hrm-candidates.storage";
+import { createHrmCandidate, deleteHrmCandidate, listHrmCandidates, updateHrmCandidate } from "../storage/hrm-candidates.storage";
 
 const fileSchema = z.object({
   id: z.string().min(1).max(100),
@@ -61,6 +61,17 @@ export function registerHrmCandidateRoutes(app: Express) {
       if (error instanceof z.ZodError) return res.status(400).json({ message: "Thông tin cập nhật chưa hợp lệ." });
       console.error("[HRM Candidates] update failed", error);
       res.status(500).json({ message: "Không thể cập nhật ứng viên." });
+    }
+  });
+
+  app.delete("/api/hrm/candidates/:id", async (req, res) => {
+    try {
+      const candidate = await deleteHrmCandidate(String(req.params.id));
+      if (!candidate) return res.status(404).json({ message: "Không tìm thấy ứng viên." });
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("[HRM Candidates] delete failed", error);
+      res.status(500).json({ message: "Không thể xóa ứng viên." });
     }
   });
 }

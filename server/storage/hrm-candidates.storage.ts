@@ -35,3 +35,10 @@ export async function updateHrmCandidate(
     .returning();
   return candidate ?? null;
 }
+
+export async function deleteHrmCandidate(id: string) {
+  const [candidate] = await db.delete(hrmCandidates)
+    .where(eq(hrmCandidates.id, id))
+    .returning({ id: hrmCandidates.id });
+  return candidate ?? null;
+}

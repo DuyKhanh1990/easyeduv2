@@ -1,7 +1,11 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { BriefcaseBusiness, CalendarDays, ChevronRight, Eye, FileText, Mail, Phone, Plus, Search, UserRound, Users } from "lucide-react";
+import { BriefcaseBusiness, CalendarDays, ChevronRight, Eye, FileText, Mail, Pencil, Phone, Plus, Search, Trash2, UserRound, Users } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -98,6 +102,9 @@ export default function Candidates() {
   const [cvImportStatus, setCvImportStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
+  const [editingCandidateId, setEditingCandidateId] = useState<string | null>(null);
+  const [candidatePendingDelete, setCandidatePendingDelete] = useState<Candidate | null>(null);
+  const [isDeletingCandidate, setIsDeletingCandidate] = useState(false);
   const [isSavingCandidate, setIsSavingCandidate] = useState(false);
   const [isUploadingCandidateFiles, setIsUploadingCandidateFiles] = useState(false);
   const [candidateFileUploadError, setCandidateFileUploadError] = useState("");
@@ -241,7 +248,7 @@ export default function Candidates() {
     }
   }, [filteredCandidates, selectedCandidateId]);
 
-  const addCandidate = async (event: FormEvent<HTMLFormElement>) => {
+  const saveCandidate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const name = newCandidateName.trim();
     const position = newCandidatePosition.trim();
@@ -249,25 +256,67 @@ export default function Candidates() {
     setIsSavingCandidate(true);
     setCvImportStatus(null);
     try {
-    const candidateFiles = newCandidateCvFile ? await uploadCandidateFiles([newCandidateCvFile]) : [];
-    const response = await apiRequest("POST", "/api/hrm/candidates", {
-      name,
-      position,
-      phone: newCandidatePhone.trim(),
-      email: newCandidateEmail.trim(),
-      address: newCandidateAddress.trim(),
-      interviewMode: newCandidateInterviewMode,
-      skills: "",
-      result: "",
-      evaluation: "",
-      files: candidateFiles,
-      scores: { ...EMPTY_SCORES },
-    });
-    const candidate: Candidate = await response.json();
-    setCandidates((current) => [...current, candidate]);
+      const editingCandidate = editingCandidateId
+        ? candidates.find((candidate) => candidate.id === editingCandidateId)
+        : null;
+      if (editingCandidateId && !editingCandidate) {
+        throw new Error("Không tìm thấy hồ sơ ứng viên cần chỉnh sửa.");
+      }
+      const uploadedFiles = newCandidateCvFile ? await uploadCandidateFiles([newCandidateCvFile]) : [];
+      const values = {
+        name,
+        position,
+        phone: newCandidatePhone.trim(),
+        email: newCandidateEmail.trim(),
+        address: newCandidateAddress.trim(),
+        interviewMode: newCandidateInterviewMode,
+        ...(editingCandidate
+          ? { files: [...editingCandidate.files, ...uploadedFiles] }
+          : {
+              skills: "",
+              result: "",
+              evaluation: "",
+              files: uploadedFiles,
+              scores: { ...EMPTY_SCORES },
+            }),
+      };
+      const response = editingCandidate
+        ? await apiRequest("PATCH", `/api/hrm/candidates/${editingCandidate.id}`, values)
+        : await apiRequest("POST", "/api/hrm/candidates", values);
+      const candidate: Candidate = await response.json();
+      setCandidates((current) => editingCandidate
+        ? current.map((item) => item.id === candidate.id ? candidate : item)
+        : [...current, candidate]);
     setCandidateDataError("");
     setSelectedCandidateId(candidate.id);
-    setActiveFilter("pending");
+      if (!editingCandidate) setActiveFilter("pending");
+      setNewCandidateName("");
+      setNewCandidatePosition("");
+      setNewCandidatePhone("");
+      setNewCandidateEmail("");
+      setNewCandidateAddress("");
+      setNewCandidateInterviewMode("offline");
+      setNewCandidateCvFile(null);
+      setCvImportStatus(null);
+      setSearchTerm("");
+      setEditingCandidateId(null);
+      setIsAddFormOpen(false);
+    } catch (error) {
+      setCvImportStatus({
+        type: "error",
+        message: error instanceof Error
+          ? error.message
+          : editingCandidateId
+            ? "Không thể lưu thay đổi ứng viên."
+            : "Không thể tải CV lên S3; ứng viên chưa được thêm.",
+      });
+    } finally {
+      setIsSavingCandidate(false);
+    }
+  };
+
+  const openAddCandidateDialog = () => {
+    setEditingCandidateId(null);
     setNewCandidateName("");
     setNewCandidatePosition("");
     setNewCandidatePhone("");
@@ -276,15 +325,38 @@ export default function Candidates() {
     setNewCandidateInterviewMode("offline");
     setNewCandidateCvFile(null);
     setCvImportStatus(null);
-    setSearchTerm("");
-    setIsAddFormOpen(false);
-    } catch (error) {
-      setCvImportStatus({
-        type: "error",
-        message: error instanceof Error ? `${error.message} Ứng viên chưa được thêm.` : "Không thể tải CV lên S3; ứng viên chưa được thêm.",
-      });
+    setIsAddFormOpen(true);
+  };
+
+  const openEditCandidateDialog = (candidate: Candidate) => {
+    setEditingCandidateId(candidate.id);
+    setNewCandidateName(candidate.name);
+    setNewCandidatePosition(candidate.position);
+    setNewCandidatePhone(candidate.phone);
+    setNewCandidateEmail(candidate.email);
+    setNewCandidateAddress(candidate.address);
+    setNewCandidateInterviewMode(candidate.interviewMode);
+    setNewCandidateCvFile(null);
+    setCvImportStatus(null);
+    setIsAddFormOpen(true);
+  };
+
+  const deleteCandidate = async () => {
+    if (!candidatePendingDelete) return;
+    setIsDeletingCandidate(true);
+    try {
+      await apiRequest("DELETE", `/api/hrm/candidates/${candidatePendingDelete.id}`);
+      clearTimeout(candidateSaveTimers.current[candidatePendingDelete.id]);
+      delete candidateSaveTimers.current[candidatePendingDelete.id];
+      delete pendingCandidateUpdates.current[candidatePendingDelete.id];
+      setCandidates((current) => current.filter((candidate) => candidate.id !== candidatePendingDelete.id));
+      if (selectedCandidateId === candidatePendingDelete.id) setSelectedCandidateId(null);
+      setCandidateDataError("");
+      setCandidatePendingDelete(null);
+    } catch {
+      setCandidateDataError("Không thể xóa hồ sơ ứng viên. Vui lòng thử lại.");
     } finally {
-      setIsSavingCandidate(false);
+      setIsDeletingCandidate(false);
     }
   };
 
@@ -367,7 +439,7 @@ export default function Candidates() {
                   size="icon"
                   className="h-10 w-10 shrink-0 rounded-xl"
                   aria-label="Thêm ứng viên"
-                  onClick={() => setIsAddFormOpen((open) => !open)}
+                  onClick={openAddCandidateDialog}
                 >
                   <Plus className="h-5 w-5" />
                 </Button>
@@ -458,7 +530,33 @@ export default function Candidates() {
                             <span className="truncate text-[13px] font-semibold text-slate-900">{candidate.name}</span>
                             <span className="shrink-0 text-[13px] text-slate-400">{candidate.code}</span>
                           </span>
-                          <ChevronRight className="h-4 w-4 shrink-0 text-indigo-600" />
+                          <span className="flex shrink-0 items-center gap-0.5">
+                            <button
+                              type="button"
+                              aria-label={`Sửa ${candidate.name}`}
+                              title="Sửa ứng viên"
+                              className="rounded-md p-1.5 text-slate-400 transition hover:bg-white hover:text-indigo-700"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openEditCandidateDialog(candidate);
+                              }}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Xóa ${candidate.name}`}
+                              title="Xóa ứng viên"
+                              className="rounded-md p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setCandidatePendingDelete(candidate);
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                            <ChevronRight className="h-4 w-4 text-indigo-600" />
+                          </span>
                         </span>
                         <span className="mt-1 flex items-center gap-1.5 truncate text-xs text-slate-500">
                           <BriefcaseBusiness className="h-3.5 w-3.5 shrink-0" />
@@ -709,17 +807,28 @@ export default function Candidates() {
           )}
         </div>
       </div>
-      <Dialog open={isAddFormOpen} onOpenChange={setIsAddFormOpen}>
+      <Dialog open={isAddFormOpen} onOpenChange={(open) => {
+        setIsAddFormOpen(open);
+        if (!open) {
+          setEditingCandidateId(null);
+          setNewCandidateCvFile(null);
+          setCvImportStatus(null);
+        }
+      }}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[640px]">
           <DialogHeader>
-            <DialogTitle>Thêm ứng viên</DialogTitle>
-            <DialogDescription>Import CV để nhận diện thông tin hoặc nhập thủ công. Văn bản CV được gửi đến AI đã cấu hình; tệp sẽ được lưu trên S3 khi thêm ứng viên.</DialogDescription>
+            <DialogTitle>{editingCandidateId ? "Chỉnh sửa ứng viên" : "Thêm ứng viên"}</DialogTitle>
+            <DialogDescription>
+              {editingCandidateId
+                ? "Cập nhật thông tin ứng viên. Có thể nhập CV mới để tự nhận diện thông tin và đính kèm vào hồ sơ."
+                : "Import CV để nhận diện thông tin hoặc nhập thủ công. Văn bản CV được gửi đến AI đã cấu hình; tệp sẽ được lưu trên S3 khi thêm ứng viên."}
+            </DialogDescription>
           </DialogHeader>
-          <form onSubmit={addCandidate} className="space-y-5 pt-2">
+          <form onSubmit={saveCandidate} className="space-y-5 pt-2">
             <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 p-4">
               <label className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 ${isReadingCv ? "pointer-events-none opacity-60" : ""}`}>
                 <FileText className="h-4 w-4" />
-                {isReadingCv ? "Đang đọc CV..." : newCandidateCvFile ? "Chọn CV khác" : "Import CV PDF/DOCX"}
+                {isReadingCv ? "Đang đọc CV..." : newCandidateCvFile ? "Chọn CV khác" : editingCandidateId ? "Import CV mới PDF/DOCX" : "Import CV PDF/DOCX"}
                 <input
                   type="file"
                   accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -783,7 +892,7 @@ export default function Candidates() {
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" disabled={isSavingCandidate} onClick={() => setIsAddFormOpen(false)}>Hủy</Button>
               <Button type="submit" disabled={!newCandidateName.trim() || !newCandidatePosition.trim() || isSavingCandidate || isReadingCv}>
-                {isSavingCandidate ? "Đang lưu..." : "Thêm ứng viên"}
+                {isSavingCandidate ? "Đang lưu..." : editingCandidateId ? "Lưu thay đổi" : "Thêm ứng viên"}
               </Button>
             </div>
           </form>
@@ -859,6 +968,35 @@ export default function Candidates() {
         url={viewerFile?.url ?? ""}
         name={viewerFile?.name ?? ""}
       />
+      <AlertDialog
+        open={!!candidatePendingDelete}
+        onOpenChange={(open) => {
+          if (!open && !isDeletingCandidate) setCandidatePendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xóa hồ sơ ứng viên?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Hồ sơ, đánh giá, điểm và lịch phỏng vấn của {candidatePendingDelete?.name} sẽ bị xóa khỏi hệ thống.
+              Tệp đính kèm trên S3 được giữ lại.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingCandidate}>Hủy</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isDeletingCandidate}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(event) => {
+                event.preventDefault();
+                void deleteCandidate();
+              }}
+            >
+              {isDeletingCandidate ? "Đang xóa..." : "Xóa ứng viên"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       </div>
     </DashboardLayout>
   );
