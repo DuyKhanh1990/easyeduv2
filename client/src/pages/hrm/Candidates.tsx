@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { FileViewer } from "@/components/ui/file-viewer";
 import * as mammoth from "mammoth";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -102,6 +103,7 @@ export default function Candidates() {
   const [candidateFileUploadError, setCandidateFileUploadError] = useState("");
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [scheduleDateTime, setScheduleDateTime] = useState("");
+  const [viewerFile, setViewerFile] = useState<{ url: string; name: string } | null>(null);
   const selectedScheduleDate = parseScheduleDate(scheduleDateTime);
   const pendingCandidateUpdates = useRef<Record<string, Partial<Candidate>>>({});
   const candidateSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -623,16 +625,15 @@ export default function Candidates() {
                         <div key={file.id} className="flex items-center gap-3 rounded-md border px-3 py-2">
                           <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                           <span className="min-w-0 flex-1 truncate text-sm">{file.name}</span>
-                          <a
-                            href={file.url}
-                            target="_blank"
-                            rel="noreferrer"
+                          <button
+                            type="button"
                             aria-label={`Xem ${file.name}`}
                             title="Xem tệp"
                             className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                            onClick={() => setViewerFile({ url: file.url, name: file.name })}
                           >
                             <Eye className="h-4 w-4" />
-                          </a>
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -852,6 +853,12 @@ export default function Candidates() {
           </div>
         </DialogContent>
       </Dialog>
+      <FileViewer
+        open={!!viewerFile}
+        onClose={() => setViewerFile(null)}
+        url={viewerFile?.url ?? ""}
+        name={viewerFile?.name ?? ""}
+      />
       </div>
     </DashboardLayout>
   );
