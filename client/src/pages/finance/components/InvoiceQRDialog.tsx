@@ -90,14 +90,19 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
   const bankAccount = primaryBank?.bankAccount || "—";
   const accountHolder = primaryBank?.accountHolder || "—";
 
-  // Nội dung CK: dùng mô tả hóa đơn nếu có, fallback về note, rồi mới fallback về mã hóa đơn
+  // Nội dung CK thường: ghi tên + mã học viên trước để nhận diện người chuyển,
+  // sau đó giữ nguyên mô tả hóa đơn, note hoặc mã hóa đơn như trước.
   // sanitizeForBank loại bỏ dấu tiếng Việt và ký tự đặc biệt — bắt buộc để ngân hàng chấp nhận
   const invoiceAny = invoice as any;
-  const rawTransferContent = invoice?.description?.trim()
+  const customerIdentity = [invoice?.name?.trim(), invoice?.studentCode?.trim()]
+    .filter(Boolean)
+    .join(" ");
+  const invoiceDescription = invoice?.description?.trim()
     ? invoice.description.trim()
     : invoiceAny?.note?.trim()
       ? invoiceAny.note.trim()
       : invoice ? `HP_${invoice.code}` : "";
+  const rawTransferContent = [customerIdentity, invoiceDescription].filter(Boolean).join(" ");
   const transferContent = sanitizeForBank(rawTransferContent);
   const qrAddInfo = transferContent;
 
