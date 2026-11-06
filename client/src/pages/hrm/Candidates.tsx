@@ -7,7 +7,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import * as mammoth from "mammoth";
+import * as pdfjsLib from "pdfjs-dist";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { apiRequest } from "@/lib/queryClient";
 import "./Candidates.css";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 type CandidateResult = "pass" | "fail" | "";
 type InterviewMode = "offline" | "online";
@@ -62,6 +68,9 @@ export default function Candidates() {
   const [newCandidateEmail, setNewCandidateEmail] = useState("");
   const [newCandidateAddress, setNewCandidateAddress] = useState("");
   const [newCandidateInterviewMode, setNewCandidateInterviewMode] = useState<InterviewMode>("offline");
+  const [newCandidateCvFile, setNewCandidateCvFile] = useState<File | null>(null);
+  const [isReadingCv, setIsReadingCv] = useState(false);
+  const [cvImportStatus, setCvImportStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
   const fileUrls = useRef<string[]>([]);
@@ -69,6 +78,80 @@ export default function Candidates() {
   useEffect(() => () => {
     fileUrls.current.forEach((url) => URL.revokeObjectURL(url));
   }, []);
+
+  const handleCvImport = async (file: File) => {
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    if (!["pdf", "docx"].includes(extension || "")) {
+      setCvImportStatus({ type: "error", message: "Chỉ hỗ trợ CV định dạng PDF hoặc DOCX." });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setCvImportStatus({ type: "error", message: "CV vượt quá 10 MB. Vui lòng chọn tệp nhỏ hơn." });
+      return;
+    }
+
+    setNewCandidateCvFile(file);
+    setCvImportStatus(null);
+    setIsReadingCv(true);
+    try {
+      let cvText = "";
+      if (extension === "docx") {
+        const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+        cvText = result.value;
+      } else {
+        const document = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+        const pageTexts: string[] = [];
+        for (let pageNumber = 1; pageNumber <= Math.min(document.numPages, 20); pageNumber++) {
+          const page = await document.getPage(pageNumber);
+          const content = await page.getTextContent();
+          pageTexts.push(content.items.map((item) => ("str" in item ? item.str : "")).join(" "));
+        }
+        await document.destroy();
+        cvText = pageTexts.join("\n");
+      }
+
+      cvText = cvText.replace(/\s+/g, " ").trim().slice(0, 40_000);
+      if (!cvText) {
+        throw new Error("CV không có văn bản để đọc. Nếu đây là bản scan, bạn có thể nhập thông tin thủ công.");
+      }
+
+      const response = await apiRequest("POST", "/api/ai/parse-candidate-cv", { text: cvText });
+      const parsed = await response.json();
+      const filledFields: string[] = [];
+      if (typeof parsed.name === "string" && parsed.name.trim()) {
+        setNewCandidateName(parsed.name.trim());
+        filledFields.push("tên");
+      }
+      if (typeof parsed.position === "string" && parsed.position.trim()) {
+        setNewCandidatePosition(parsed.position.trim());
+        filledFields.push("vị trí");
+      }
+      if (typeof parsed.phone === "string" && parsed.phone.trim()) {
+        setNewCandidatePhone(parsed.phone.trim());
+        filledFields.push("số điện thoại");
+      }
+      if (typeof parsed.email === "string" && parsed.email.trim()) {
+        setNewCandidateEmail(parsed.email.trim());
+        filledFields.push("email");
+      }
+      if (typeof parsed.address === "string" && parsed.address.trim()) {
+        setNewCandidateAddress(parsed.address.trim());
+        filledFields.push("địa chỉ");
+      }
+      setCvImportStatus(filledFields.length
+        ? { type: "success", message: `Đã nhận diện: ${filledFields.join(", ")}. Vui lòng kiểm tra lại trước khi thêm.` }
+        : { type: "error", message: "Không nhận diện được trường thông tin nào. Bạn có thể nhập thủ công." });
+    } catch (error) {
+      let message = error instanceof Error ? error.message : "Không thể đọc CV.";
+      try {
+        const responseBody = JSON.parse(message.replace(/^\d+:\s*/, ""));
+        if (responseBody.message) message = responseBody.message;
+      } catch {}
+      setCvImportStatus({ type: "error", message });
+    } finally {
+      setIsReadingCv(false);
+    }
+  };
 
   const filteredCandidates = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -102,6 +185,16 @@ export default function Candidates() {
       const match = /^UV-(\d+)$/i.exec(candidate.code.trim());
       return match ? Math.max(highest, Number(match[1])) : highest;
     }, 0);
+    const candidateFiles: CandidateFile[] = [];
+    if (newCandidateCvFile) {
+      const url = URL.createObjectURL(newCandidateCvFile);
+      fileUrls.current.push(url);
+      candidateFiles.push({
+        id: crypto.randomUUID(),
+        name: newCandidateCvFile.name,
+        url,
+      });
+    }
     const candidate: Candidate = {
       id: crypto.randomUUID(),
       code: `UV-${String(lastCodeNumber + 1).padStart(2, "0")}`,
@@ -114,7 +207,7 @@ export default function Candidates() {
       skills: "",
       result: "",
       evaluation: "",
-      files: [],
+      files: candidateFiles,
       scores: { ...EMPTY_SCORES },
     };
     setCandidates((current) => [...current, candidate]);
@@ -126,6 +219,8 @@ export default function Candidates() {
     setNewCandidateEmail("");
     setNewCandidateAddress("");
     setNewCandidateInterviewMode("offline");
+    setNewCandidateCvFile(null);
+    setCvImportStatus(null);
     setSearchTerm("");
     setIsAddFormOpen(false);
   };
@@ -477,9 +572,39 @@ export default function Candidates() {
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[640px]">
           <DialogHeader>
             <DialogTitle>Thêm ứng viên</DialogTitle>
-            <DialogDescription>Nhập thông tin cơ bản để tạo hồ sơ ứng viên.</DialogDescription>
+            <DialogDescription>Import CV để nhận diện thông tin hoặc nhập thủ công. Nội dung văn bản CV sẽ được gửi đến AI đã cấu hình để trích xuất.</DialogDescription>
           </DialogHeader>
           <form onSubmit={addCandidate} className="space-y-5 pt-2">
+            <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 p-4">
+              <label className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50 ${isReadingCv ? "pointer-events-none opacity-60" : ""}`}>
+                <FileText className="h-4 w-4" />
+                {isReadingCv ? "Đang đọc CV..." : newCandidateCvFile ? "Chọn CV khác" : "Import CV PDF/DOCX"}
+                <input
+                  type="file"
+                  accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  className="sr-only"
+                  disabled={isReadingCv}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = "";
+                    if (file) void handleCvImport(file);
+                  }}
+                />
+              </label>
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                Chỉ trích xuất văn bản tối đa 20 trang và 10 MB. CV scan/ảnh chưa đọc được; bạn vẫn có thể nhập tay.
+              </p>
+              {newCandidateCvFile && (
+                <p className="mt-2 truncate text-xs font-medium text-slate-700">
+                  Tệp sẽ đính kèm vào hồ sơ: {newCandidateCvFile.name}
+                </p>
+              )}
+              {cvImportStatus && (
+                <p className={`mt-2 text-xs ${cvImportStatus.type === "success" ? "text-emerald-700" : "text-rose-700"}`} role="status">
+                  {cvImportStatus.message}
+                </p>
+              )}
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="space-y-1.5 text-sm font-medium">
                 Tên ứng viên <span className="text-destructive">*</span>
