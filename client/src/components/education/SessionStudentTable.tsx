@@ -27,6 +27,42 @@ function avatarGrad(name = "") {
   return AVATAR_GRADS[Math.abs(h) % AVATAR_GRADS.length];
 }
 
+function formatTransferSessionDate(value: string | Date | null | undefined): string {
+  if (!value) return "—";
+  const [year, month, day] = String(value).slice(0, 10).split("-");
+  return year && month && day ? `${day}/${month}/${year}` : String(value);
+}
+
+function formatTransferSessionTime(value: string | null | undefined): string {
+  return value ? value.slice(0, 5) : "—";
+}
+
+function TransferSessionList({ sessions }: { sessions: any[] }) {
+  if (sessions.length === 0) {
+    return <p className="text-xs text-slate-500 italic">Chưa có dữ liệu buổi học.</p>;
+  }
+  return (
+    <ol className="space-y-1.5">
+      {sessions.map((session, index) => {
+        const date = new Date(`${String(session.sessionDate).slice(0, 10)}T00:00:00`);
+        const weekday = Number.isNaN(date.getTime())
+          ? ""
+          : ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"][date.getDay()];
+        return (
+          <li key={`${session.sessionIndex ?? "session"}-${session.sessionDate}-${index}`} className="rounded-md bg-white px-2 py-1.5 text-xs">
+            <span className="font-medium">{session.sessionIndex != null ? `Buổi ${session.sessionIndex} · ` : ""}</span>
+            {weekday ? `${weekday}, ` : ""}
+            {formatTransferSessionDate(session.sessionDate)}
+            <span className="ml-1 whitespace-nowrap text-slate-600">
+              {formatTransferSessionTime(session.startTime)}–{formatTransferSessionTime(session.endTime)}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 // ── Attendance badge config ───────────────────────────────────────────────────
 const ATT_CFG: Record<string, { dot: string; text: string; label: string }> = {
   present:     { dot: "bg-emerald-500", text: "text-emerald-600", label: "Có học" },
@@ -43,6 +79,7 @@ const MANUAL_ATT_CFG = Object.fromEntries(
 ) as typeof ATT_CFG;
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -316,7 +353,42 @@ export function SessionStudentTable({
                       </div>
                       <div className="min-w-0">
                         <StudentNameLink studentId={ss.studentId} name={ss.student?.fullName} code={ss.student?.code} />
-                        {ss.note && (
+                        {ss.note?.startsWith("Chuyển từ lớp ") ? (
+                          <Tooltip delayDuration={150}>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="mt-0.5 block max-w-full truncate text-left text-[10px] font-semibold text-orange-600 underline decoration-dotted underline-offset-2 hover:text-orange-700"
+                                aria-label={`Xem thông tin chuyển lớp từ ${ss.transferInfo?.sourceClassName ?? ss.note.split(/\r?\n/)[0]?.replace("Chuyển từ lớp ", "")}`}
+                              >
+                                Chuyển từ lớp {ss.transferInfo?.sourceClassName ?? ss.note.split(/\r?\n/)[0]?.replace("Chuyển từ lớp ", "")} sang
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              sideOffset={8}
+                              className="w-[min(620px,calc(100vw-2rem))] max-h-[min(70vh,520px)] overflow-y-auto border-orange-200 p-3 text-left"
+                            >
+                              <div className="mb-3 text-xs font-semibold text-orange-700">Thông tin chuyển lớp</div>
+                              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <section className="min-w-0 rounded-lg bg-orange-50 p-2.5">
+                                  <h4 className="mb-2 text-sm font-semibold text-slate-800">
+                                    {ss.transferInfo?.sourceClassName ?? ss.note.split(/\r?\n/)[0]?.replace("Chuyển từ lớp ", "")}
+                                    <span className="ml-1 text-[10px] font-normal text-slate-500">(lớp chuyển)</span>
+                                  </h4>
+                                  <TransferSessionList sessions={ss.transferInfo?.sourceSessions ?? []} />
+                                </section>
+                                <section className="min-w-0 rounded-lg bg-sky-50 p-2.5">
+                                  <h4 className="mb-2 text-sm font-semibold text-slate-800">
+                                    {ss.transferInfo?.targetClassName ?? classData?.name ?? "Lớp đích"}
+                                    <span className="ml-1 text-[10px] font-normal text-slate-500">(lớp đích)</span>
+                                  </h4>
+                                  <TransferSessionList sessions={ss.transferInfo?.targetSessions ?? []} />
+                                </section>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : ss.note ? (
                           <div
                             className={`text-[10px] font-medium mt-0.5 whitespace-pre-line ${
                               ss.note.includes("Chuyển")
@@ -326,7 +398,7 @@ export function SessionStudentTable({
                           >
                             {ss.note}
                           </div>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   </TableCell>

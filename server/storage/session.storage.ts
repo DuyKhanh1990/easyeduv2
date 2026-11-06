@@ -2749,6 +2749,115 @@ export async function getStudentSessionsByClassSession(classSessionId: string): 
     orderBy: (table, { asc }) => [asc(table.sessionOrder)],
   });
 
+  const transferRows = sessions.filter((session) => session.note?.startsWith("Chuyển từ lớp "));
+  const transferDetailsByKey = new Map<string, any>();
+  if (transferRows.length > 0) {
+    const sourceClassNames = [...new Set(transferRows.map((session) =>
+      session.note?.split(/\r?\n/, 1)[0]?.replace(/^Chuyển từ lớp\s+/, "").trim() ?? "",
+    ).filter(Boolean))];
+    const targetClassId = transferRows[0].classId;
+    const [targetClass] = await db.select({ id: classes.id, name: classes.name })
+      .from(classes)
+      .where(eq(classes.id, targetClassId))
+      .limit(1);
+    const sourceClasses = sourceClassNames.length
+      ? await db.select({ id: classes.id, name: classes.name })
+          .from(classes)
+          .where(inArray(classes.name, sourceClassNames))
+      : [];
+    const sourceClassIds = sourceClasses.map((row) => row.id);
+    const targetStudentClassIds = [...new Set(
+      transferRows.map((session) => session.studentClassId).filter(Boolean),
+    )] as string[];
+    const targetNotes = [...new Set(transferRows.map((session) => session.note).filter(Boolean))] as string[];
+
+    const [targetTransferSessions, sourceTransferSessions] = await Promise.all([
+      targetStudentClassIds.length && targetNotes.length
+        ? db.select({
+            studentId: studentSessions.studentId,
+            studentClassId: studentSessions.studentClassId,
+            note: studentSessions.note,
+            sessionIndex: classSessions.sessionIndex,
+            sessionDate: classSessions.sessionDate,
+            weekday: classSessions.weekday,
+            startTime: shiftTemplates.startTime,
+            endTime: shiftTemplates.endTime,
+          })
+            .from(studentSessions)
+            .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+            .leftJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
+            .where(and(
+              eq(studentSessions.classId, targetClassId),
+              inArray(studentSessions.studentClassId, targetStudentClassIds),
+              inArray(studentSessions.note, targetNotes),
+              sql`${studentSessions.status} NOT IN ('transferred', 'cancelled')`,
+            ))
+            .orderBy(asc(classSessions.sessionIndex))
+        : Promise.resolve([]),
+      sourceClassIds.length
+        ? db.select({
+            studentId: studentSessions.studentId,
+            className: classes.name,
+            note: studentSessions.note,
+            sessionIndex: classSessions.sessionIndex,
+            sessionDate: classSessions.sessionDate,
+            weekday: classSessions.weekday,
+            startTime: shiftTemplates.startTime,
+            endTime: shiftTemplates.endTime,
+          })
+            .from(studentSessions)
+            .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+            .innerJoin(classes, eq(studentSessions.classId, classes.id))
+            .leftJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
+            .where(and(
+              inArray(studentSessions.studentId, [...new Set(transferRows.map((session) => session.studentId))]),
+              inArray(studentSessions.classId, sourceClassIds),
+              eq(studentSessions.status, "transferred"),
+            ))
+            .orderBy(asc(classSessions.sessionIndex))
+        : Promise.resolve([]),
+    ]);
+
+    const formatRangeLabel = (rows: Array<{ sessionIndex: number | null }>) => {
+      const indexes = rows.map((row) => row.sessionIndex).filter((index): index is number => index != null);
+      if (indexes.length === 0) return "";
+      const first = Math.min(...indexes);
+      const last = Math.max(...indexes);
+      return rows.length === 1
+        ? `buổi ${first}`
+        : `buổi ${first}–${last} (${rows.length} buổi)`;
+    };
+
+    for (const transferRow of transferRows) {
+      const sourceClassName = transferRow.note?.split(/\r?\n/, 1)[0]
+        ?.replace(/^Chuyển từ lớp\s+/, "")
+        .trim() ?? "";
+      const targetSessions = targetTransferSessions.filter((row) =>
+        row.studentId === transferRow.studentId
+        && row.studentClassId === transferRow.studentClassId
+        && row.note === transferRow.note,
+      );
+      const targetRangeLabel = formatRangeLabel(targetSessions);
+      const sourceRangeMatch = transferRow.note?.match(/Đã chuyển\s+buổi\s+(\d+)(?:\s*[–-]\s*(\d+))?/i);
+      const sourceStart = sourceRangeMatch ? Number(sourceRangeMatch[1]) : null;
+      const sourceEnd = sourceRangeMatch ? Number(sourceRangeMatch[2] ?? sourceRangeMatch[1]) : null;
+      const sourceSessions = sourceTransferSessions.filter((row) =>
+        row.studentId === transferRow.studentId
+        && row.className === sourceClassName
+        && Boolean(targetRangeLabel && row.note?.includes(`Đã nhận ${targetRangeLabel}`))
+        && (sourceStart == null || sourceEnd == null
+          || (row.sessionIndex != null && row.sessionIndex >= sourceStart && row.sessionIndex <= sourceEnd)),
+      );
+      const key = `${transferRow.studentId}:${transferRow.studentClassId ?? ""}:${transferRow.note ?? ""}`;
+      transferDetailsByKey.set(key, {
+        sourceClassName,
+        targetClassName: targetClass?.name ?? "",
+        sourceSessions,
+        targetSessions,
+      });
+    }
+  }
+
   const studentClassIds = [...new Set(sessions.map((s) => s.studentClassId).filter(Boolean))] as string[];
   const scRows = studentClassIds.length
     ? await db
@@ -2769,9 +2878,11 @@ export async function getStudentSessionsByClassSession(classSessionId: string): 
   }
 
   return sessions.map((s) => {
-    if (!s.studentClassId) return { ...s, scheduledWeekdays: null };
+    const transferKey = `${s.studentId}:${s.studentClassId ?? ""}:${s.note ?? ""}`;
+    const transferInfo = transferDetailsByKey.get(transferKey);
+    if (!s.studentClassId) return { ...s, scheduledWeekdays: null, ...(transferInfo ? { transferInfo } : {}) };
     const sc = scMap[s.studentClassId];
-    if (!sc) return { ...s, scheduledWeekdays: null };
+    if (!sc) return { ...s, scheduledWeekdays: null, ...(transferInfo ? { transferInfo } : {}) };
 
     // Check cycle_history FIRST — before falling back to the current scheduledWeekdays.
     // This is critical when a renewal changed the student from a specific cycle (e.g. T2)
@@ -2787,12 +2898,12 @@ export async function getStudentSessionsByClassSession(classSessionId: string): 
       }
       // history exists but no entry covers this session (session is before all history entries).
       // Fall back to the student's current scheduledWeekdays.
-      return { ...s, scheduledWeekdays: sc.scheduledWeekdays ?? null };
+      return { ...s, scheduledWeekdays: sc.scheduledWeekdays ?? null, ...(transferInfo ? { transferInfo } : {}) };
     }
 
     // Students with no custom cycle attend all sessions → scheduledWeekdays = null (Tất cả)
     if (!sc.scheduledWeekdays || sc.scheduledWeekdays.length === 0) {
-      return { ...s, scheduledWeekdays: null };
+      return { ...s, scheduledWeekdays: null, ...(transferInfo ? { transferInfo } : {}) };
     }
 
     // No cycle_history. Check if this session's actual weekday is outside the student's
@@ -2800,10 +2911,10 @@ export async function getStudentSessionsByClassSession(classSessionId: string): 
     // to a new day but cycle_history was not written (legacy data from older bug).
     // In that case, derive the effective cycle from the session's actual weekday.
     if (sessionWeekday != null && !sc.scheduledWeekdays.includes(sessionWeekday)) {
-      return { ...s, scheduledWeekdays: [sessionWeekday] };
+      return { ...s, scheduledWeekdays: [sessionWeekday], ...(transferInfo ? { transferInfo } : {}) };
     }
 
-    return { ...s, scheduledWeekdays: sc.scheduledWeekdays };
+    return { ...s, scheduledWeekdays: sc.scheduledWeekdays, ...(transferInfo ? { transferInfo } : {}) };
   });
 }
 

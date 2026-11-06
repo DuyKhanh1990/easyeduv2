@@ -151,3 +151,4 @@
 - [Staff profile file categories](staff-profile-file-categories.md) — reuse category names across staff, but keep each employee’s uploaded files separate.
 - [Reserved attendance makeup eligibility](reserved-attendance-makeup.md) — Bảo lưu attendance on an individual lesson can be scheduled for makeup like Nghỉ chờ bù; preserve the existing makeup flow.
 - [Student-session review publication](student-session-review-publication.md) — Default publication applies only to new per-session reviews; blocked roles can save comments but cannot change publish state.
+- [Radix hover-card runtime issue](radix-hover-card-runtime.md) — HoverCard caused a runtime hook failure in the preview; prefer the app’s existing Tooltip for simple hover details unless the dependency issue is resolved.
