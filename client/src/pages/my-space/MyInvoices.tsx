@@ -22,6 +22,7 @@ interface InvoiceCard {
   category: string | null;
   amount: string;
   status: string;
+  paymentMethod?: string | null;
   dueDate: string | null;
   paidAt: string | null;
   createdAt: string;
@@ -160,7 +161,9 @@ function InvoiceCardItem({ inv, highlighted, refCallback, onQrClick, t, lang }: 
         <p className="text-sm text-muted-foreground">
           {t("mySpace.invoices.status")} <span className={status.color}>{status.label}</span>
         </p>
-        {inv.type !== "Chi" && (inv.status === "unpaid" || inv.status === "partial" || inv.status === "debt") && (
+        {inv.type !== "Chi"
+          && inv.paymentMethod !== "cash"
+          && (inv.status === "unpaid" || inv.status === "partial" || inv.status === "debt") && (
           <button
             onClick={() => onQrClick?.(inv)}
             className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-medium transition-colors"
