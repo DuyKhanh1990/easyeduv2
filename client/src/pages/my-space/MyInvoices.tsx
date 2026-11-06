@@ -18,6 +18,7 @@ interface InvoiceCard {
   code: string | null;
   label: string | null;
   studentName: string | null;
+  studentCode: string | null;
   type: string;
   category: string | null;
   amount: string;
@@ -75,6 +76,7 @@ function toQrInvoice(inv: InvoiceCard): any {
     scheduleId: inv.isSchedule ? inv.id : undefined,
     code: inv.code ?? "",
     name: inv.studentName ?? "",
+    studentCode: inv.studentCode ?? "",
     grandTotal: inv.amount,
     remainingAmount: "0",
     status: inv.status,

@@ -3913,6 +3913,7 @@ export function registerMySpaceRoutes(app: Express): void {
                 code: sch.code || inv.code,
                 label: sch.label,
                 studentName: inv.studentName ?? displayName,
+                studentCode: inv.studentCode ?? null,
                 type: inv.type,
                 category: inv.category,
                 amount: sch.amount,
@@ -3934,6 +3935,7 @@ export function registerMySpaceRoutes(app: Express): void {
               code: inv.code,
               label: null,
               studentName: inv.studentName ?? displayName,
+              studentCode: inv.studentCode ?? null,
               type: inv.type,
               category: inv.category,
               amount: inv.grandTotal,
@@ -3988,6 +3990,7 @@ export function registerMySpaceRoutes(app: Express): void {
             dueDate: invoices.dueDate,
             createdAt: invoices.createdAt,
             studentName: sql<string | null>`null`,
+            studentCode: sql<string | null>`null`,
             className: classes.name,
             classCode: classes.classCode,
           })
@@ -4021,6 +4024,7 @@ export function registerMySpaceRoutes(app: Express): void {
           dueDate: invoices.dueDate,
           createdAt: invoices.createdAt,
           studentName: students.fullName,
+          studentCode: students.code,
           className: classes.name,
           classCode: classes.classCode,
         })
