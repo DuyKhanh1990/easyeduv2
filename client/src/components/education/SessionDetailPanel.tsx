@@ -381,13 +381,27 @@ export function SessionDetailPanel({
   const displayedTeachers = session?.teachers?.length > 0
     ? session.teachers
     : classData?.teachers || [];
+  const getTeacherAssignedTime = (teacherId: string) => {
+    const assignment = session?.teacherTimeAssignments?.find(
+      (item: any) => item.teacherId === teacherId,
+    );
+    if (!assignment) return "";
+    const start = String(assignment.startTime || "").slice(0, 5);
+    const end = String(assignment.endTime || "").slice(0, 5);
+    return start && end ? `${start} - ${end}` : "";
+  };
   const teacherName = displayedTeachers.length > 0
     ? displayedTeachers.map((teacher: any, index: number) => (
         <Fragment key={teacher.id || index}>
           {teacher.fullName}
-          {teacher.roleName && (
-            <span className="ml-1 text-xs font-normal text-black">({teacher.roleName})</span>
-          )}
+          {(() => {
+            const details = [teacher.roleName, getTeacherAssignedTime(teacher.id)]
+              .filter(Boolean)
+              .join(" ");
+            return details ? (
+              <span className="ml-1 text-xs font-normal text-black">({details})</span>
+            ) : null;
+          })()}
           {index < displayedTeachers.length - 1 ? ", " : ""}
         </Fragment>
       ))
