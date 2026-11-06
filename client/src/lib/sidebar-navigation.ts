@@ -138,6 +138,7 @@ export const navigation: NavEntry[] = [
     icon: Briefcase,
     items: [
       { name: "Nhân sự", href: "/staff", icon: Briefcase },
+      { name: "Ứng viên", href: "/hrm/candidates", icon: Users, permissionHref: "/staff" },
       { name: "Đơn từ", href: "/don-tu", icon: FileText },
       {
         name: "Hoa hồng",

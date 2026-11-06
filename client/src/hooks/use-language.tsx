@@ -955,6 +955,7 @@ const navMap: Record<string, string> = {
 
   // ── HRM items ────────────────────────────────────────────────
   "Nhân sự": "Staff",
+  "Ứng viên": "Candidates",
   "Đơn từ": "Leave Requests",
   "Ca làm việc": "Work Shifts",
   "Bảng chấm công": "Attendance Sheet",

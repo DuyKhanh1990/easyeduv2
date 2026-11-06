@@ -22,6 +22,7 @@ const CRMConfig = lazy(() => import("@/pages/customers/CRMConfig").then(m => ({ 
 const NotificationLogs = lazy(() => import("@/pages/notifications/NotificationLogs").then(m => ({ default: m.NotificationLogs })));
 
 const StaffList = lazy(() => import("@/pages/staff/StaffList").then(m => ({ default: m.StaffList })));
+const Candidates = lazy(() => import("@/pages/hrm/Candidates"));
 const ShiftManagement = lazy(() => import("@/pages/shifts/ShiftManagement").then(m => ({ default: m.ShiftManagement })));
 const Settings = lazy(() => import("@/pages/settings/Settings").then(m => ({ default: m.Settings })));
 
@@ -88,6 +89,7 @@ function Router() {
         <Route path="/customers" component={CustomersList} />
         <Route path="/notification-logs" component={NotificationLogs} />
         <Route path="/staff" component={StaffList} />
+        <Route path="/hrm/candidates" component={Candidates} />
         <Route path="/shifts" component={ShiftManagement} />
         <Route path="/teacher-salary" component={TeacherSalary} />
         <Route path="/cham-cong" component={ChamCong} />
