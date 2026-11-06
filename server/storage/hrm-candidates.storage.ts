@@ -5,6 +5,7 @@ import {
   hrmCandidates,
   type InsertHrmCandidate,
 } from "@shared/schema";
+import { deletePortalUploadFromUrl } from "../lib/s3";
 
 export async function listHrmCandidates() {
   return db.select().from(hrmCandidates).orderBy(asc(hrmCandidates.createdAt));
@@ -37,6 +38,16 @@ export async function updateHrmCandidate(
 }
 
 export async function deleteHrmCandidate(id: string) {
+  const [existing] = await db.select().from(hrmCandidates).where(eq(hrmCandidates.id, id));
+  if (!existing) return null;
+
+  const results = await Promise.allSettled(
+    (existing.files ?? []).map((file) => deletePortalUploadFromUrl(file.url)),
+  );
+  if (results.some((result) => result.status === "rejected")) {
+    throw new Error("Không thể xóa toàn bộ tệp đính kèm trên S3; hồ sơ vẫn được giữ lại.");
+  }
+
   const [candidate] = await db.delete(hrmCandidates)
     .where(eq(hrmCandidates.id, id))
     .returning({ id: hrmCandidates.id });

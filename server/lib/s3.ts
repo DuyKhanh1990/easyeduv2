@@ -323,6 +323,34 @@ export async function uploadFileToS3FromDisk(
   return fileUrl;
 }
 
+export async function deletePortalUploadFromUrl(fileUrl: string): Promise<void> {
+  let parsed: URL;
+  try {
+    parsed = new URL(fileUrl);
+  } catch {
+    throw new Error("URL tệp ứng viên không hợp lệ.");
+  }
+
+  const expectedHost = new URL(`${protocol}://${aliasHost}`).hostname;
+  const bucketPath = `/${bucket}/`;
+  const portalPrefix = `${portalUploadFolder}/`;
+  if (parsed.protocol !== `${protocol}:` || parsed.hostname !== expectedHost || !parsed.pathname.startsWith(bucketPath)) {
+    throw new Error("Tệp không thuộc kho lưu trữ của hệ thống.");
+  }
+
+  let key: string;
+  try {
+    key = decodeURIComponent(parsed.pathname.slice(bucketPath.length));
+  } catch {
+    throw new Error("Đường dẫn tệp ứng viên không hợp lệ.");
+  }
+  if (!key.startsWith(portalPrefix) || key.split("/").some((part) => part === "." || part === "..")) {
+    throw new Error("Tệp không thuộc thư mục hồ sơ ứng viên hợp lệ.");
+  }
+
+  await s3Client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+}
+
 /**
  * Upload a database backup as a private S3 object.
  * Unlike normal portal uploads, this intentionally returns only the object key

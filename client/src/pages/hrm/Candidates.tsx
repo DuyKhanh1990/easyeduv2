@@ -978,8 +978,7 @@ export default function Candidates() {
           <AlertDialogHeader>
             <AlertDialogTitle>Xóa hồ sơ ứng viên?</AlertDialogTitle>
             <AlertDialogDescription>
-              Hồ sơ, đánh giá, điểm và lịch phỏng vấn của {candidatePendingDelete?.name} sẽ bị xóa khỏi hệ thống.
-              Tệp đính kèm trên S3 được giữ lại.
+              Hồ sơ, đánh giá, điểm, lịch phỏng vấn và toàn bộ tệp đính kèm của {candidatePendingDelete?.name} sẽ bị xóa khỏi hệ thống.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
