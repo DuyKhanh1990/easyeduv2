@@ -49,7 +49,7 @@ function MultiSelectFilter({
       <PopoverTrigger asChild>
         <Button
           variant="outline"
-          className="h-9 w-[130px] min-w-[130px] shrink-0 justify-between gap-2 text-sm font-normal"
+          className="h-9 min-w-[145px] flex-1 justify-between gap-2 text-sm font-normal"
           data-testid={`filter-${label}`}
         >
           <span className={cn("truncate", selected.length === 0 && "text-muted-foreground")}>
@@ -164,7 +164,7 @@ export function ChoBuBaoLuuFilters({
 
   return (
     <div className="flex w-full min-w-0 flex-nowrap items-center gap-2 overflow-x-auto">
-      <div className="relative w-[200px] shrink-0">
+      <div className="relative min-w-[220px] flex-[2]">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
           value={searchInput}
@@ -179,7 +179,7 @@ export function ChoBuBaoLuuFilters({
         value={dateRange}
         onChange={handleDateRangeChange}
         placeholder="Chọn khoảng ngày học"
-        className="w-[210px] shrink-0 justify-start"
+        className="min-w-[220px] flex-[1.5] justify-start"
       />
 
       <MultiSelectFilter
