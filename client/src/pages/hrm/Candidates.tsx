@@ -148,14 +148,14 @@ export default function Candidates() {
   return (
     <DashboardLayout>
       <div className="candidate-page-theme">
-      <div className="mx-auto max-w-7xl space-y-5">
+      <div className="w-full max-w-none space-y-5">
         <div className="candidate-page-heading">
           <div className="mb-1 text-[10px] font-bold uppercase tracking-[.18em] text-indigo-700">EasyEdu · Tuyển dụng</div>
           <h1 className="text-2xl font-semibold">Quản lý ứng viên</h1>
           <p className="mt-1 text-sm text-muted-foreground">Theo dõi hồ sơ, đánh giá và kết quả phỏng vấn.</p>
         </div>
 
-        <div className="candidate-main-grid grid grid-cols-1 items-start gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
+        <div className="candidate-main-grid grid grid-cols-1 items-start gap-5">
           <Card className="candidate-list-panel flex min-h-[680px] flex-col overflow-hidden border-slate-200 bg-slate-50/60 lg:sticky lg:top-4">
             <div className="space-y-4 border-b bg-white p-4">
               <div className="flex items-start justify-between gap-3">
@@ -185,7 +185,7 @@ export default function Candidates() {
                 />
               </div>
 
-              <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1" aria-label="Lọc trạng thái ứng viên">
+              <div className="candidate-filter-row" aria-label="Lọc trạng thái ứng viên">
                 {filters.map((filter) => (
                   <button
                     key={filter.value}

@@ -7,6 +7,12 @@
   color: var(--candidate-ink);
 }
 
+@media (min-width: 1024px) {
+  .candidate-page-theme {
+    margin: -0.5rem -1rem;
+  }
+}
+
 .candidate-page-theme .candidate-page-heading {
   padding: 18px 22px;
   border: 1px solid var(--candidate-line);
@@ -201,5 +207,17 @@
   .candidate-page-theme *::before,
   .candidate-page-theme *::after {
     transition-duration: 0.01ms !important;
+  }
+}
+
+.candidate-page-theme .candidate-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (min-width: 1024px) {
+  .candidate-page-theme .candidate-main-grid {
+    grid-template-columns: minmax(400px, 440px) minmax(0, 1fr);
   }
 }
