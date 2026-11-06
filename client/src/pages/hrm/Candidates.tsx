@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Eye, FileText, Plus, UserRound, Users } from "lucide-react";
+import { BriefcaseBusiness, CalendarDays, ChevronRight, Eye, FileText, Plus, RotateCcw, Search, UserRound, Users, X } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,12 +12,14 @@ type CandidateFile = { id: string; name: string; url: string };
 type Candidate = {
   id: string;
   name: string;
+  position: string;
+  skills: string;
   result: CandidateResult;
   evaluation: string;
   files: CandidateFile[];
   scores: { expertise: string; experience: string; communication: string; attitude: string };
 };
-type CandidateTab = "all" | "pass" | "fail";
+type CandidateFilter = "all" | "pending" | "interviewed" | "passed" | "rejected";
 
 const EMPTY_SCORES: Candidate["scores"] = {
   expertise: "",
@@ -45,18 +47,31 @@ function getAverage(scores: Candidate["scores"]): number | null {
 export default function Candidates() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<CandidateTab>("all");
+  const [activeFilter, setActiveFilter] = useState<CandidateFilter>("all");
   const [newCandidateName, setNewCandidateName] = useState("");
+  const [newCandidatePosition, setNewCandidatePosition] = useState("");
+  const [newCandidateSkills, setNewCandidateSkills] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isAddFormOpen, setIsAddFormOpen] = useState(false);
   const fileUrls = useRef<string[]>([]);
 
   useEffect(() => () => {
     fileUrls.current.forEach((url) => URL.revokeObjectURL(url));
   }, []);
 
-  const filteredCandidates = useMemo(
-    () => activeTab === "all" ? candidates : candidates.filter((candidate) => candidate.result === activeTab),
-    [activeTab, candidates],
-  );
+  const filteredCandidates = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    return candidates.filter((candidate) => {
+      const matchesFilter = activeFilter === "all"
+        || (activeFilter === "pending" && !candidate.result)
+        || (activeFilter === "interviewed" && !!candidate.result)
+        || (activeFilter === "passed" && candidate.result === "pass")
+        || (activeFilter === "rejected" && candidate.result === "fail");
+      const matchesSearch = !query
+        || `${candidate.name} ${candidate.position} ${candidate.skills}`.toLowerCase().includes(query);
+      return matchesFilter && matchesSearch;
+    });
+  }, [activeFilter, candidates, searchTerm]);
   const selectedCandidate = filteredCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? null;
 
   useEffect(() => {
@@ -74,6 +89,8 @@ export default function Candidates() {
     const candidate: Candidate = {
       id: crypto.randomUUID(),
       name,
+      position: newCandidatePosition.trim(),
+      skills: newCandidateSkills.trim(),
       result: "",
       evaluation: "",
       files: [],
@@ -81,8 +98,12 @@ export default function Candidates() {
     };
     setCandidates((current) => [...current, candidate]);
     setSelectedCandidateId(candidate.id);
-    setActiveTab("all");
+    setActiveFilter("all");
     setNewCandidateName("");
+    setNewCandidatePosition("");
+    setNewCandidateSkills("");
+    setSearchTerm("");
+    setIsAddFormOpen(false);
   };
 
   const updateCandidate = (id: string, updates: Partial<Candidate>) => {
@@ -107,16 +128,20 @@ export default function Candidates() {
 
   const setCandidateResult = (candidate: Candidate, value: CandidateResult) => {
     updateCandidate(candidate.id, { result: value });
-    setActiveTab((tab) => {
-      if (tab === "all" || !value || tab === value) return tab;
-      return value;
+    setActiveFilter((filter) => {
+      if (filter === "all") return filter;
+      if (value === "pass") return "passed";
+      if (value === "fail") return "rejected";
+      return "pending";
     });
   };
 
-  const tabs: { value: CandidateTab; label: string; count: number }[] = [
+  const filters: { value: CandidateFilter; label: string; count: number }[] = [
     { value: "all", label: "Tất cả", count: candidates.length },
-    { value: "pass", label: "Đỗ", count: candidates.filter((candidate) => candidate.result === "pass").length },
-    { value: "fail", label: "Trượt", count: candidates.filter((candidate) => candidate.result === "fail").length },
+    { value: "pending", label: "Chờ PV", count: candidates.filter((candidate) => !candidate.result).length },
+    { value: "interviewed", label: "Đã PV", count: candidates.filter((candidate) => !!candidate.result).length },
+    { value: "passed", label: "Đạt", count: candidates.filter((candidate) => candidate.result === "pass").length },
+    { value: "rejected", label: "Loại", count: candidates.filter((candidate) => candidate.result === "fail").length },
   ];
 
   return (
@@ -127,79 +152,179 @@ export default function Candidates() {
           <p className="mt-1 text-sm text-muted-foreground">Theo dõi hồ sơ, đánh giá và kết quả phỏng vấn.</p>
         </div>
 
-        <div className="flex flex-wrap gap-2 border-b" role="tablist" aria-label="Lọc ứng viên">
-          {tabs.map((tab) => (
-            <button
-              key={tab.value}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tab.value}
-              onClick={() => setActiveTab(tab.value)}
-              className={`inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
-                activeTab === tab.value
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {tab.label}
-              <span className={`rounded-full px-2 py-0.5 text-xs ${
-                activeTab === tab.value ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
-              }`}>{tab.count}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <Card className="h-fit lg:sticky lg:top-4">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Users className="h-4 w-4 text-primary" />
-                Danh sách ứng viên
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <form onSubmit={addCandidate} className="flex gap-2">
-                <Input
-                  value={newCandidateName}
-                  onChange={(event) => setNewCandidateName(event.target.value)}
-                  placeholder="Tên ứng viên"
-                  aria-label="Tên ứng viên mới"
-                />
-                <Button type="submit" size="icon" aria-label="Thêm ứng viên" disabled={!newCandidateName.trim()}>
-                  <Plus className="h-4 w-4" />
+        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
+          <Card className="flex min-h-[680px] flex-col overflow-hidden border-slate-200 bg-slate-50/60 lg:sticky lg:top-4">
+            <div className="space-y-4 border-b bg-white p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold">Danh sách Ứng viên</h2>
+                  <p className="text-sm text-muted-foreground">Quản lý hồ sơ phỏng vấn</p>
+                </div>
+                <Button
+                  type="button"
+                  size="icon"
+                  className="h-10 w-10 shrink-0 rounded-xl"
+                  aria-label="Thêm ứng viên"
+                  onClick={() => setIsAddFormOpen((open) => !open)}
+                >
+                  {isAddFormOpen ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
                 </Button>
-              </form>
+              </div>
 
-              <div className="max-h-[55vh] space-y-1 overflow-y-auto">
-                {filteredCandidates.map((candidate) => (
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Tìm tên, vị trí, kỹ năng..."
+                  aria-label="Tìm ứng viên theo tên, vị trí hoặc kỹ năng"
+                  className="h-11 rounded-xl bg-white pl-9"
+                />
+              </div>
+
+              <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1" aria-label="Lọc trạng thái ứng viên">
+                {filters.map((filter) => (
+                  <button
+                    key={filter.value}
+                    type="button"
+                    aria-pressed={activeFilter === filter.value}
+                    onClick={() => setActiveFilter(filter.value)}
+                    className={`shrink-0 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors ${
+                      activeFilter === filter.value
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    {filter.label}
+                    <span className="ml-1 opacity-70">{filter.count}</span>
+                  </button>
+                ))}
+              </div>
+
+              {isAddFormOpen && (
+                <form onSubmit={addCandidate} className="space-y-2 rounded-xl border bg-slate-50 p-3">
+                  <Input
+                    autoFocus
+                    value={newCandidateName}
+                    onChange={(event) => setNewCandidateName(event.target.value)}
+                    placeholder="Họ tên ứng viên"
+                    aria-label="Tên ứng viên mới"
+                  />
+                  <Input
+                    value={newCandidatePosition}
+                    onChange={(event) => setNewCandidatePosition(event.target.value)}
+                    placeholder="Vị trí ứng tuyển"
+                    aria-label="Vị trí ứng tuyển"
+                  />
+                  <Input
+                    value={newCandidateSkills}
+                    onChange={(event) => setNewCandidateSkills(event.target.value)}
+                    placeholder="Kỹ năng"
+                    aria-label="Kỹ năng ứng viên"
+                  />
+                  <div className="flex justify-end">
+                    <Button type="submit" size="sm" disabled={!newCandidateName.trim()}>
+                      Thêm ứng viên
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </div>
+
+            <div className="flex-1 space-y-2 overflow-y-auto p-3">
+              {filteredCandidates.map((candidate) => {
+                const initials = candidate.name
+                  .trim()
+                  .split(/\s+/)
+                  .slice(-2)
+                  .map((part) => part[0] ?? "")
+                  .join("")
+                  .toUpperCase();
+                const statusLabel = candidate.result === "pass"
+                  ? "Đỗ"
+                  : candidate.result === "fail"
+                    ? "Trượt"
+                    : "Đang chờ PV";
+                const statusStyle = candidate.result === "pass"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : candidate.result === "fail"
+                    ? "border-rose-200 bg-rose-50 text-rose-700"
+                    : "border-amber-200 bg-amber-50 text-amber-700";
+
+                return (
                   <button
                     key={candidate.id}
                     type="button"
                     onClick={() => setSelectedCandidateId(candidate.id)}
-                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
+                    className={`w-full rounded-2xl border p-3.5 text-left transition-colors ${
                       selectedCandidateId === candidate.id
-                        ? "bg-primary/10 text-primary"
-                        : "hover:bg-muted"
+                        ? "border-indigo-200 bg-indigo-50/80 shadow-sm"
+                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                     }`}
                   >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                      <UserRound className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{candidate.name}</span>
-                    {candidate.result && (
-                      <span className={`text-xs font-semibold ${candidate.result === "pass" ? "text-emerald-600" : "text-rose-600"}`}>
-                        {candidate.result === "pass" ? "Đỗ" : "Trượt"}
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-400 to-violet-600 text-sm font-semibold text-white">
+                        {initials || <UserRound className="h-5 w-5" />}
                       </span>
-                    )}
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="truncate text-sm font-semibold text-slate-900">{candidate.name}</span>
+                          <ChevronRight className="h-4 w-4 shrink-0 text-indigo-600" />
+                        </span>
+                        <span className="mt-1 flex items-center gap-1.5 truncate text-xs text-slate-500">
+                          <BriefcaseBusiness className="h-3.5 w-3.5 shrink-0" />
+                          {candidate.position || "Chưa nhập vị trí"}
+                        </span>
+                        <span className="mt-2 flex items-center justify-between gap-2">
+                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${statusStyle}`}>
+                            {statusLabel}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+                            <CalendarDays className="h-3.5 w-3.5" />
+                            Chưa xếp lịch
+                          </span>
+                        </span>
+                      </span>
+                    </div>
                   </button>
-                ))}
-                {filteredCandidates.length === 0 && (
-                  <div className="py-8 text-center text-sm text-muted-foreground">
-                    {activeTab === "all" ? "Chưa có ứng viên." : `Chưa có ứng viên ${activeTab === "pass" ? "đỗ" : "trượt"}.`}
-                  </div>
-                )}
-              </div>
-            </CardContent>
+                );
+              })}
+              {filteredCandidates.length === 0 && (
+                <div className="flex min-h-36 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+                  <Users className="h-8 w-8 opacity-35" />
+                  <p>
+                    {searchTerm
+                      ? "Không tìm thấy ứng viên phù hợp."
+                      : activeFilter === "all"
+                        ? "Chưa có ứng viên."
+                        : activeFilter === "pending"
+                          ? "Không có ứng viên đang chờ phỏng vấn."
+                          : activeFilter === "interviewed"
+                            ? "Chưa có ứng viên đã phỏng vấn."
+                            : activeFilter === "passed"
+                              ? "Chưa có ứng viên đạt."
+                              : "Chưa có ứng viên bị loại."}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between border-t bg-white px-4 py-3 text-sm">
+              <span className="text-muted-foreground">Kết quả: <strong className="text-foreground">{filteredCandidates.length}</strong></span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 text-primary"
+                onClick={() => {
+                  setActiveFilter("all");
+                  setSearchTerm("");
+                }}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Đặt lại
+              </Button>
+            </div>
           </Card>
 
           {selectedCandidate ? (
@@ -341,11 +466,11 @@ export default function Candidates() {
           ) : (
             <Card className="flex min-h-[420px] items-center justify-center">
               <CardContent className="flex flex-col items-center gap-3 pt-6 text-center text-muted-foreground">
-                {activeTab === "all" ? <Users className="h-10 w-10 opacity-40" /> : <Check className="h-10 w-10 opacity-40" />}
+                <Users className="h-10 w-10 opacity-40" />
                 <p className="text-sm">
-                  {activeTab === "all"
-                    ? "Thêm hoặc chọn ứng viên để xem thông tin."
-                    : `Chưa có ứng viên ${activeTab === "pass" ? "đỗ" : "trượt"} nào.`}
+                  {searchTerm
+                    ? "Không tìm thấy ứng viên phù hợp."
+                    : "Thêm hoặc chọn ứng viên để xem thông tin."}
                 </p>
               </CardContent>
             </Card>
