@@ -143,11 +143,6 @@ function InvoiceCardItem({ inv, highlighted, refCallback, onQrClick, t, lang }: 
         <p className="text-sm text-muted-foreground">
           {t("mySpace.invoices.dueDate")} <span className="text-foreground">{formatDate(inv.dueDate, lang)}</span>
         </p>
-        {inv.description && (
-          <p className="text-sm text-muted-foreground">
-            {t("mySpace.invoices.description")} <span className="text-foreground">{inv.description}</span>
-          </p>
-        )}
       </div>
 
       <div className="flex flex-col items-start sm:items-end gap-1.5 shrink-0">
