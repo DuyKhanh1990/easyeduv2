@@ -200,7 +200,8 @@ export default function MyInvoices() {
       return res.json();
     },
     staleTime: 0,
-    refetchOnMount: true,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
 
   const isStudent = myPerms?.isStudent ?? false;
