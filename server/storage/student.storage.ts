@@ -2260,6 +2260,7 @@ export async function getStudentClassSessions(params: {
   const [classRow] = await db.select({
     classType: classes.classType,
     feePackageId: classes.feePackageId,
+    name: classes.name,
   }).from(classes).where(eq(classes.id, classId)).limit(1);
 
   if (classRow?.classType === "free") {
@@ -2394,16 +2395,111 @@ export async function getStudentClassSessions(params: {
     }
   }
 
+  const transferRows = pageRows.filter((row) =>
+    row.student_sessions?.note?.startsWith("Chuyển từ lớp "),
+  );
+  const transferInfoBySessionId = new Map<string, any>();
+  if (transferRows.length > 0) {
+    const sourceClassNames = [...new Set(transferRows.map((row) =>
+      (row.student_sessions.note ?? "").split(/\r?\n/, 1)[0].replace(/^Chuyển từ lớp\s+/, "").trim(),
+    ).filter(Boolean))];
+    const sourceClasses = sourceClassNames.length
+      ? await db.select({ id: classes.id, name: classes.name })
+          .from(classes)
+          .where(inArray(classes.name, sourceClassNames))
+      : [];
+    const sourceClassIds = sourceClasses.map((row) => row.id);
+
+    const sourceTransferSessions = sourceClassIds.length
+      ? await db.select({
+          studentId: studentSessions.studentId,
+          className: classes.name,
+          note: studentSessions.note,
+          sessionIndex: classSessions.sessionIndex,
+          sessionDate: classSessions.sessionDate,
+          weekday: classSessions.weekday,
+          startTime: shiftTemplates.startTime,
+          endTime: shiftTemplates.endTime,
+        })
+          .from(studentSessions)
+          .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+          .innerJoin(classes, eq(studentSessions.classId, classes.id))
+          .leftJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
+          .where(and(
+            eq(studentSessions.studentId, studentId),
+            inArray(studentSessions.classId, sourceClassIds),
+            eq(studentSessions.status, "transferred"),
+          ))
+          .orderBy(asc(classSessions.sessionIndex))
+      : [];
+
+    const formatRangeLabel = (sessions: Array<{ sessionIndex: number | null }>) => {
+      const indexes = sessions.map((session) => session.sessionIndex).filter((index): index is number => index != null);
+      if (indexes.length === 0) return "";
+      const first = Math.min(...indexes);
+      const last = Math.max(...indexes);
+      return sessions.length === 1
+        ? `buổi ${first}`
+        : `buổi ${first}–${last} (${sessions.length} buổi)`;
+    };
+
+    for (const row of transferRows) {
+      const studentSession = row.student_sessions;
+      const transferNote = studentSession.note ?? "";
+      const sourceClassName = transferNote.split(/\r?\n/, 1)[0]
+        .replace(/^Chuyển từ lớp\s+/, "")
+        .trim();
+      const targetSessions = rows
+        .filter((targetRow) =>
+          targetRow.student_sessions?.studentClassId === studentSession.studentClassId
+          && targetRow.student_sessions?.note === studentSession.note,
+        )
+        .map((targetRow) => ({
+          sessionIndex: targetRow.class_sessions?.sessionIndex ?? null,
+          sessionDate: targetRow.class_sessions?.sessionDate ?? null,
+          weekday: targetRow.class_sessions?.weekday ?? null,
+          startTime: targetRow.shift_templates?.startTime ?? null,
+          endTime: targetRow.shift_templates?.endTime ?? null,
+        }));
+      const targetRangeLabel = formatRangeLabel(targetSessions);
+      const sourceRangeMatch = transferNote.match(/Đã chuyển\s+buổi\s+(\d+)(?:\s*[–-]\s*(\d+))?/i);
+      const sourceStart = sourceRangeMatch ? Number(sourceRangeMatch[1]) : null;
+      const sourceEnd = sourceRangeMatch ? Number(sourceRangeMatch[2] ?? sourceRangeMatch[1]) : null;
+      const sourceSessions = sourceTransferSessions.filter((sourceSession) =>
+        sourceSession.className === sourceClassName
+        && Boolean(targetRangeLabel && sourceSession.note?.includes(`Đã nhận ${targetRangeLabel}`))
+        && (sourceStart == null || sourceEnd == null
+          || (sourceSession.sessionIndex != null
+            && sourceSession.sessionIndex >= sourceStart
+            && sourceSession.sessionIndex <= sourceEnd)),
+      );
+
+      transferInfoBySessionId.set(studentSession.id, {
+        sourceClassName,
+        targetClassName: classRow?.name ?? "",
+        sourceSessions,
+        targetSessions,
+      });
+    }
+  }
+
   return {
-    sessions: pageRows.map(s => ({
-      studentSession: s.student_sessions,
-      classSession:   s.class_sessions,
-      shiftTemplate:  s.shift_templates,
-      feePackage:     s.course_fee_packages,
-      allocatedFee: s.student_sessions?.id
-        ? (allocationMap.get(s.student_sessions.id) ?? (s.student_sessions.sessionPrice != null ? Number(s.student_sessions.sessionPrice) : null))
-        : null,
-    })),
+    sessions: pageRows.map(s => {
+      const transferInfo = s.student_sessions?.id
+        ? transferInfoBySessionId.get(s.student_sessions.id)
+        : undefined;
+      return {
+        studentSession: transferInfo
+          ? { ...s.student_sessions, transferInfo }
+          : s.student_sessions,
+        classSession:   s.class_sessions,
+        shiftTemplate:  s.shift_templates,
+        feePackage:     s.course_fee_packages,
+        allocatedFee: s.student_sessions?.id
+          ? (allocationMap.get(s.student_sessions.id) ?? (s.student_sessions.sessionPrice != null ? Number(s.student_sessions.sessionPrice) : null))
+          : null,
+      };
+    }),
     total,
     page,
     limit,

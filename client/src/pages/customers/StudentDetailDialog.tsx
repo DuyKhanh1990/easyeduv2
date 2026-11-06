@@ -16,6 +16,7 @@ import { StudentScoreTab } from "@/components/customers/StudentScoreTab";
 import { StudentReviewTab } from "@/components/customers/StudentReviewTab";
 import { StudentOverviewTab } from "@/components/customers/StudentOverviewTab";
 import { StudentAppointmentsTab } from "@/components/customers/StudentAppointmentsTab";
+import { ClassTransferNote } from "@/components/education/ClassTransferNote";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/hooks/use-language";
 
@@ -856,16 +857,25 @@ export function StudentDetailDialog({
                                             : '- VND';
                                           return (
                                             <tr key={session.studentSession?.id || idx} className="border-b border-gray-200 hover:bg-gray-50">
-                                               <td className="p-2">
+                                                <td className="p-2">
                                                  {session.classSession?.id ? (
-                                                   <button
-                                                     type="button"
-                                                     className="font-medium text-sky-600 hover:text-sky-800 hover:underline"
-                                                     onClick={() => navigateToClassSession(session)}
-                                                      aria-label={`Mở Buổi ${studentLessonNumber} trong lịch học`}
-                                                   >
-                                                      Buổi {studentLessonNumber}
-                                                   </button>
+                                                    <div className="flex flex-col items-start">
+                                                      <button
+                                                        type="button"
+                                                        className="font-medium text-sky-600 hover:text-sky-800 hover:underline"
+                                                        onClick={() => navigateToClassSession(session)}
+                                                        aria-label={`Mở Buổi ${studentLessonNumber} trong lịch học`}
+                                                      >
+                                                        Buổi {studentLessonNumber}
+                                                      </button>
+                                                      {session.studentSession?.note?.startsWith("Chuyển từ lớp ") && (
+                                                        <ClassTransferNote
+                                                          note={session.studentSession.note}
+                                                          transferInfo={session.studentSession.transferInfo}
+                                                          targetClassName={classesData[selectedClassIndex]?.class?.name}
+                                                        />
+                                                      )}
+                                                    </div>
                                                  ) : (
                                                     <>Buổi {studentLessonNumber}</>
                                                  )}
