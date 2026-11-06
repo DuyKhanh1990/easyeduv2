@@ -34,7 +34,7 @@ type Candidate = {
   files: CandidateFile[];
   scores: { expertise: string; experience: string; communication: string; attitude: string };
 };
-type CandidateFilter = "all" | "pending" | "interviewed" | "passed" | "rejected";
+type CandidateFilter = "pending" | "interviewed" | "passed" | "rejected";
 
 const EMPTY_SCORES: Candidate["scores"] = {
   expertise: "",
@@ -64,7 +64,7 @@ export default function Candidates() {
   const [isLoadingCandidates, setIsLoadingCandidates] = useState(true);
   const [candidateDataError, setCandidateDataError] = useState("");
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<CandidateFilter>("all");
+  const [activeFilter, setActiveFilter] = useState<CandidateFilter>("pending");
   const [newCandidateName, setNewCandidateName] = useState("");
   const [newCandidatePosition, setNewCandidatePosition] = useState("");
   const [newCandidatePhone, setNewCandidatePhone] = useState("");
@@ -192,14 +192,19 @@ export default function Candidates() {
   const filteredCandidates = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     return candidates.filter((candidate) => {
-      const matchesFilter = activeFilter === "all"
-        || (activeFilter === "pending" && !candidate.result)
+      const matchesFilter = (activeFilter === "pending" && !candidate.result)
         || (activeFilter === "interviewed" && candidate.result === "interviewed")
         || (activeFilter === "passed" && candidate.result === "pass")
         || (activeFilter === "rejected" && candidate.result === "fail");
       const matchesSearch = !query
         || `${candidate.code} ${candidate.name} ${candidate.position} ${candidate.phone} ${candidate.email} ${candidate.skills}`.toLowerCase().includes(query);
       return matchesFilter && matchesSearch;
+    }).sort((a, b) => {
+      const aTime = a.interviewScheduledAt ? Date.parse(a.interviewScheduledAt) : Number.POSITIVE_INFINITY;
+      const bTime = b.interviewScheduledAt ? Date.parse(b.interviewScheduledAt) : Number.POSITIVE_INFINITY;
+      const safeATime = Number.isFinite(aTime) ? aTime : Number.POSITIVE_INFINITY;
+      const safeBTime = Number.isFinite(bTime) ? bTime : Number.POSITIVE_INFINITY;
+      return safeATime - safeBTime;
     });
   }, [activeFilter, candidates, searchTerm]);
   const selectedCandidate = filteredCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? null;
@@ -238,7 +243,7 @@ export default function Candidates() {
     setCandidates((current) => [...current, candidate]);
     setCandidateDataError("");
     setSelectedCandidateId(candidate.id);
-    setActiveFilter("all");
+    setActiveFilter("pending");
     setNewCandidateName("");
     setNewCandidatePosition("");
     setNewCandidatePhone("");
@@ -296,7 +301,6 @@ export default function Candidates() {
   const setCandidateResult = (candidate: Candidate, value: CandidateResult) => {
     updateCandidate(candidate.id, { result: value });
     setActiveFilter((filter) => {
-      if (filter === "all") return filter;
       if (value === "interviewed") return "interviewed";
       if (value === "pass") return "passed";
       if (value === "fail") return "rejected";
@@ -305,9 +309,8 @@ export default function Candidates() {
   };
 
   const filters: { value: CandidateFilter; label: string; count: number }[] = [
-    { value: "all", label: "Tất cả", count: candidates.length },
-    { value: "pending", label: "Chờ PV", count: candidates.filter((candidate) => !candidate.result).length },
-    { value: "interviewed", label: "Đã PV", count: candidates.filter((candidate) => candidate.result === "interviewed").length },
+    { value: "pending", label: "Chờ Phỏng vấn", count: candidates.filter((candidate) => !candidate.result).length },
+    { value: "interviewed", label: "Đã phỏng vấn", count: candidates.filter((candidate) => candidate.result === "interviewed").length },
     { value: "passed", label: "Trúng tuyển", count: candidates.filter((candidate) => candidate.result === "pass").length },
     { value: "rejected", label: "Loại", count: candidates.filter((candidate) => candidate.result === "fail").length },
   ];
@@ -391,9 +394,9 @@ export default function Candidates() {
                   ? "Trúng tuyển"
                   : candidate.result === "fail"
                     ? "Loại"
-                    : candidate.result === "interviewed"
-                      ? "Đã PV"
-                    : "Đang chờ PV";
+                      : candidate.result === "interviewed"
+                        ? "Đã phỏng vấn"
+                        : "Chờ Phỏng vấn";
                 const statusStyle = candidate.result === "pass"
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                   : candidate.result === "fail"
@@ -454,7 +457,7 @@ export default function Candidates() {
                               <SelectValue>{statusLabel}</SelectValue>
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="interviewed">Đã PV</SelectItem>
+                              <SelectItem value="interviewed">Đã phỏng vấn</SelectItem>
                               <SelectItem value="pass">Trúng tuyển</SelectItem>
                               <SelectItem value="fail">Loại</SelectItem>
                             </SelectContent>
@@ -490,10 +493,8 @@ export default function Candidates() {
                       ? "Đang tải hồ sơ ứng viên..."
                       : searchTerm
                       ? "Không tìm thấy ứng viên phù hợp."
-                      : activeFilter === "all"
-                        ? "Chưa có ứng viên."
-                        : activeFilter === "pending"
-                          ? "Không có ứng viên đang chờ phỏng vấn."
+                      : activeFilter === "pending"
+                          ? "Không có ứng viên chờ phỏng vấn."
                           : activeFilter === "interviewed"
                             ? "Chưa có ứng viên đã phỏng vấn."
                             : activeFilter === "passed"
@@ -536,10 +537,10 @@ export default function Candidates() {
                               ? "bg-blue-50 text-blue-700"
                               : "bg-amber-50 text-amber-700"
                       }`} aria-label="Trạng thái ứng viên">
-                          <SelectValue>{selectedCandidate.result === "pass" ? "Trúng tuyển" : selectedCandidate.result === "fail" ? "Loại" : selectedCandidate.result === "interviewed" ? "Đã PV" : "Đang chờ PV"}</SelectValue>
+                          <SelectValue>{selectedCandidate.result === "pass" ? "Trúng tuyển" : selectedCandidate.result === "fail" ? "Loại" : selectedCandidate.result === "interviewed" ? "Đã phỏng vấn" : "Chờ Phỏng vấn"}</SelectValue>
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="interviewed">Đã PV</SelectItem>
+                          <SelectItem value="interviewed">Đã phỏng vấn</SelectItem>
                           <SelectItem value="pass">Trúng tuyển</SelectItem>
                           <SelectItem value="fail">Loại</SelectItem>
                         </SelectContent>
