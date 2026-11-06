@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 export type ChoBuBaoLuuFilters = {
@@ -7,6 +7,7 @@ export type ChoBuBaoLuuFilters = {
   dateTo: string;
   classIds: string[];
   teacherIds: string[];
+  studentIds: string[];
 };
 
 export interface ChoBuBaoLuuRow {
@@ -39,6 +40,7 @@ export interface ChoBuBaoLuuResponse {
   pageSize: number;
   availableClasses: { id: string; label: string }[];
   availableTeachers: { id: string; label: string }[];
+  availableStudents: { id: string; label: string }[];
 }
 
 export function getDefaultChoBuBaoLuuDateRange() {
@@ -67,12 +69,13 @@ export function useChoBuBaoLuuTab(enabled: boolean) {
     dateTo: defaultDateRange.dateTo,
     classIds: [],
     teacherIds: [],
+    studentIds: [],
   });
 
-  const setFilters = (patch: Partial<ChoBuBaoLuuFilters>) => {
+  const setFilters = useCallback((patch: Partial<ChoBuBaoLuuFilters>) => {
     setFiltersState((prev) => ({ ...prev, ...patch }));
     setPage(1);
-  };
+  }, []);
 
   const { data: response, isLoading } = useQuery<ChoBuBaoLuuResponse>({
     queryKey: ["/api/learning-overview/cho-bu-bao-luu", page, pageSize, filters],
@@ -86,6 +89,7 @@ export function useChoBuBaoLuuTab(enabled: boolean) {
       });
       filters.classIds.forEach((id) => params.append("classes", id));
       filters.teacherIds.forEach((id) => params.append("teachers", id));
+      filters.studentIds.forEach((id) => params.append("students", id));
       const res = await fetch(`/api/learning-overview/cho-bu-bao-luu?${params.toString()}`);
       if (!res.ok) throw new Error("Lỗi tải dữ liệu Chờ bù - Bảo lưu");
       return res.json();
@@ -104,6 +108,7 @@ export function useChoBuBaoLuuTab(enabled: boolean) {
     setFilters,
     availableClasses: response?.availableClasses ?? [],
     availableTeachers: response?.availableTeachers ?? [],
+    availableStudents: response?.availableStudents ?? [],
     isLoading,
   };
 }

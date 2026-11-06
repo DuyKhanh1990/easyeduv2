@@ -138,6 +138,7 @@ export function LearningOverview() {
                 onFiltersChange={choBuBaoLuu.setFilters}
                 availableClasses={choBuBaoLuu.availableClasses}
                 availableTeachers={choBuBaoLuu.availableTeachers}
+                availableStudents={choBuBaoLuu.availableStudents}
                 isLoading={choBuBaoLuu.isLoading}
               />
             </TabsContent>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -49,7 +49,7 @@ function MultiSelectFilter({
       <PopoverTrigger asChild>
         <Button
           variant="outline"
-          className="h-9 min-w-[155px] justify-between gap-2 text-sm font-normal"
+          className="h-9 w-[130px] min-w-[130px] shrink-0 justify-between gap-2 text-sm font-normal"
           data-testid={`filter-${label}`}
         >
           <span className={cn("truncate", selected.length === 0 && "text-muted-foreground")}>
@@ -116,18 +116,33 @@ export function ChoBuBaoLuuFilters({
   onFiltersChange,
   availableClasses,
   availableTeachers,
+  availableStudents,
 }: {
   filters: FilterState;
   onFiltersChange: (patch: Partial<FilterState>) => void;
   availableClasses: FilterOption[];
   availableTeachers: FilterOption[];
+  availableStudents: FilterOption[];
 }) {
+  const [searchInput, setSearchInput] = useState(filters.search);
+
+  useEffect(() => {
+    setSearchInput(filters.search);
+  }, [filters.search]);
+
+  useEffect(() => {
+    if (searchInput === filters.search) return;
+    const timeout = window.setTimeout(() => onFiltersChange({ search: searchInput }), 300);
+    return () => window.clearTimeout(timeout);
+  }, [searchInput, filters.search, onFiltersChange]);
+
   const hasFilters =
-    filters.search.trim() !== "" ||
+    searchInput.trim() !== "" ||
     filters.dateFrom !== "" ||
     filters.dateTo !== "" ||
     filters.classIds.length > 0 ||
-    filters.teacherIds.length > 0;
+    filters.teacherIds.length > 0 ||
+    filters.studentIds.length > 0;
 
   const dateRange: DateRange = {
     from: filters.dateFrom ? new Date(`${filters.dateFrom}T00:00:00`) : undefined,
@@ -148,12 +163,12 @@ export function ChoBuBaoLuuFilters({
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="relative min-w-[220px] flex-1">
+    <div className="flex w-full min-w-0 flex-nowrap items-center gap-2 overflow-x-auto">
+      <div className="relative w-[200px] shrink-0">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
-          value={filters.search}
-          onChange={(event) => onFiltersChange({ search: event.target.value })}
+          value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)}
           placeholder="Tìm theo tên hoặc mã học viên..."
           className="h-9 pl-8 text-sm"
           data-testid="input-cho-bu-search"
@@ -164,7 +179,7 @@ export function ChoBuBaoLuuFilters({
         value={dateRange}
         onChange={handleDateRangeChange}
         placeholder="Chọn khoảng ngày học"
-        className="w-[240px] justify-start"
+        className="w-[210px] shrink-0 justify-start"
       />
 
       <MultiSelectFilter
@@ -181,6 +196,13 @@ export function ChoBuBaoLuuFilters({
         selected={filters.teacherIds}
         onChange={(teacherIds) => onFiltersChange({ teacherIds })}
       />
+      <MultiSelectFilter
+        label="Học viên"
+        placeholder="Lọc học viên"
+        options={availableStudents}
+        selected={filters.studentIds}
+        onChange={(studentIds) => onFiltersChange({ studentIds })}
+      />
 
       {hasFilters && (
         <Button
@@ -192,6 +214,7 @@ export function ChoBuBaoLuuFilters({
             ...getDefaultChoBuBaoLuuDateRange(),
             classIds: [],
             teacherIds: [],
+            studentIds: [],
           })}
           data-testid="button-clear-cho-bu-filters"
         >

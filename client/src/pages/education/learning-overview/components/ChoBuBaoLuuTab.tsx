@@ -143,6 +143,7 @@ export function ChoBuBaoLuuTab({
   onFiltersChange,
   availableClasses,
   availableTeachers,
+  availableStudents,
   isLoading,
 }: {
   data: ClassGroup[];
@@ -155,6 +156,7 @@ export function ChoBuBaoLuuTab({
   onFiltersChange: (patch: Partial<FilterState>) => void;
   availableClasses: { id: string; label: string }[];
   availableTeachers: { id: string; label: string }[];
+  availableStudents: { id: string; label: string }[];
   isLoading: boolean;
 }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -272,14 +274,6 @@ export function ChoBuBaoLuuTab({
     setIsMakeupDialogOpen(true);
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-48">
-        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm flex flex-col h-full overflow-hidden">
       {/* Fixed filter bar */}
@@ -291,6 +285,7 @@ export function ChoBuBaoLuuTab({
               onFiltersChange={onFiltersChange}
               availableClasses={availableClasses}
               availableTeachers={availableTeachers}
+              availableStudents={availableStudents}
             />
           </div>
           {selectedRowsList.length > 0 && (
@@ -308,7 +303,11 @@ export function ChoBuBaoLuuTab({
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-6 pt-4">
-        {data.length === 0 ? (
+        {isLoading ? (
+          <div className="flex h-48 items-center justify-center rounded-md border bg-muted/20">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : data.length === 0 ? (
           <div className="flex h-48 items-center justify-center rounded-md border bg-muted/20 text-sm text-muted-foreground">
             Không có học viên nào phù hợp với bộ lọc
           </div>

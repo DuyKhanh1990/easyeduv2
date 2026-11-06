@@ -9957,6 +9957,7 @@ export function registerClassesRoutes(app: Express): void {
         : "";
       const classIds = readQueryArray(req.query.classes);
       const teacherIds = readQueryArray(req.query.teachers);
+      const studentIds = readQueryArray(req.query.students);
 
       const filterConditions = [
         sql`ss.attendance_status IN ('makeup_wait', 'paused')`,
@@ -9972,6 +9973,9 @@ export function registerClassesRoutes(app: Express): void {
       }
       if (teacherIds.length > 0) {
         filterConditions.push(sql`cs.teacher_ids && ARRAY[${sql.join(teacherIds.map((id) => sql`${id}::uuid`), sql`, `)}]::uuid[]`);
+      }
+      if (studentIds.length > 0) {
+        filterConditions.push(sql`ss.student_id IN (${sql.join(studentIds.map((id) => sql`${id}::uuid`), sql`, `)})`);
       }
       const whereSql = sql.join(filterConditions, sql` AND `);
 
@@ -10028,7 +10032,7 @@ export function registerClassesRoutes(app: Express): void {
       const rows = result.rows as any[];
       const total = rows.length > 0 ? parseInt(rows[0].total_count) : 0;
 
-      const [classOptions, teacherOptions] = await Promise.all([
+      const [classOptions, teacherOptions, studentOptions] = await Promise.all([
         db.execute(sql`
           SELECT DISTINCT c.id, c.name AS label
           FROM student_sessions ss
@@ -10043,6 +10047,17 @@ export function registerClassesRoutes(app: Express): void {
           JOIN staff sf ON sf.id = ANY(cs.teacher_ids)
           WHERE ss.attendance_status IN ('makeup_wait', 'paused')
           ORDER BY sf.full_name
+        `),
+        db.execute(sql`
+          SELECT DISTINCT s.id,
+            CASE
+              WHEN s.code IS NOT NULL AND s.code <> '' THEN s.full_name || ' (' || s.code || ')'
+              ELSE s.full_name
+            END AS label
+          FROM student_sessions ss
+          JOIN students s ON s.id = ss.student_id
+          WHERE ss.attendance_status IN ('makeup_wait', 'paused')
+          ORDER BY label
         `),
       ]);
 
@@ -10079,6 +10094,7 @@ export function registerClassesRoutes(app: Express): void {
         pageSize,
         availableClasses: classOptions.rows,
         availableTeachers: teacherOptions.rows,
+        availableStudents: studentOptions.rows,
       });
     } catch (err: any) {
       console.error("Cho bu bao luu error:", err);
