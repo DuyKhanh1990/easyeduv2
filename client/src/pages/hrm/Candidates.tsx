@@ -7,6 +7,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import * as mammoth from "mammoth";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -35,6 +37,25 @@ type Candidate = {
   scores: { expertise: string; experience: string; communication: string; attitude: string };
 };
 type CandidateFilter = "pending" | "interviewed" | "passed" | "rejected";
+
+function toLocalDateTimeInput(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function parseScheduleDate(value: string): Date | undefined {
+  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+  if (!year || !month || !day) return undefined;
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
+    ? date
+    : undefined;
+}
+
+function formatShortDate(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${String(date.getFullYear()).slice(-2)}`;
+}
 
 const EMPTY_SCORES: Candidate["scores"] = {
   expertise: "",
@@ -81,6 +102,7 @@ export default function Candidates() {
   const [candidateFileUploadError, setCandidateFileUploadError] = useState("");
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [scheduleDateTime, setScheduleDateTime] = useState("");
+  const selectedScheduleDate = parseScheduleDate(scheduleDateTime);
   const pendingCandidateUpdates = useRef<Record<string, Partial<Candidate>>>({});
   const candidateSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -468,9 +490,12 @@ export default function Candidates() {
                             onClick={(event) => {
                               event.stopPropagation();
                               setSelectedCandidateId(candidate.id);
-                              setScheduleDateTime(candidate.interviewScheduledAt
-                                ? new Date(new Date(candidate.interviewScheduledAt).getTime() - new Date(candidate.interviewScheduledAt).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
-                                : "");
+                              const scheduledDate = candidate.interviewScheduledAt
+                                ? new Date(candidate.interviewScheduledAt)
+                                : new Date();
+                              setScheduleDateTime(toLocalDateTimeInput(
+                                Number.isNaN(scheduledDate.getTime()) ? new Date() : scheduledDate,
+                              ));
                               setScheduleDialogOpen(true);
                             }}
                           >
@@ -772,19 +797,47 @@ export default function Candidates() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <label className="block space-y-1.5 text-[13px] font-medium">
-              Ngày giờ phỏng vấn
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="block text-[13px] font-medium">Ngày phỏng vấn</label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button type="button" variant="outline" className="w-full justify-start text-left font-normal">
+                      <CalendarDays className="mr-2 h-4 w-4 text-muted-foreground" />
+                      {selectedScheduleDate ? formatShortDate(selectedScheduleDate) : "Chọn ngày"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={selectedScheduleDate}
+                      onSelect={(date) => {
+                        if (!date) return;
+                        const time = scheduleDateTime.split("T")[1] || "09:00";
+                        setScheduleDateTime(`${toLocalDateTimeInput(date).slice(0, 10)}T${time}`);
+                      }}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              <label className="block space-y-1.5 text-[13px] font-medium">
+                Giờ phỏng vấn
               <Input
-                type="datetime-local"
-                value={scheduleDateTime}
-                onChange={(event) => setScheduleDateTime(event.target.value)}
+                  type="time"
+                  value={scheduleDateTime.split("T")[1] || ""}
+                  onChange={(event) => {
+                    const date = scheduleDateTime.slice(0, 10) || toLocalDateTimeInput(new Date()).slice(0, 10);
+                    setScheduleDateTime(`${date}T${event.target.value}`);
+                  }}
               />
-            </label>
+              </label>
+            </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setScheduleDialogOpen(false)}>Hủy</Button>
               <Button
                 type="button"
-                disabled={!selectedCandidate || !scheduleDateTime}
+                disabled={!selectedCandidate || !selectedScheduleDate || !scheduleDateTime.split("T")[1]}
                 onClick={() => {
                   if (!selectedCandidate) return;
                   updateCandidate(selectedCandidate.id, {
