@@ -3,6 +3,7 @@ import { X, Download, FileText, FileImage, FileVideo, FileAudio, FileSpreadsheet
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import DOMPurify from "dompurify";
 
 export interface FileViewerProps {
   open: boolean;
@@ -71,12 +72,51 @@ function getViewerUrl(category: FileCategory, url: string): string {
 
 export function FileViewer({ open, onClose, url, name, canDownload = true }: FileViewerProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [docxHtml, setDocxHtml] = useState("");
+  const [docxLoading, setDocxLoading] = useState(false);
+  const [docxError, setDocxError] = useState("");
   const category = getFileCategory(name, url);
   const CategoryIcon = getCategoryIcon(category);
   const absoluteUrl = url.startsWith("http") ? url : `${window.location.origin}${url}`;
+  const isDocx = name.split(".").pop()?.toLowerCase() === "docx";
   useEffect(() => {
     if (!open) setIsFullscreen(false);
   }, [open]);
+  useEffect(() => {
+    if (!open || !isDocx || !url) {
+      setDocxHtml("");
+      setDocxError("");
+      setDocxLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setDocxHtml("");
+    setDocxError("");
+    setDocxLoading(true);
+    const fileUrl = url.startsWith(window.location.origin)
+      ? url
+      : `/api/media/proxy?url=${encodeURIComponent(url)}`;
+
+    void (async () => {
+      try {
+        const response = await fetch(fileUrl, { credentials: "include", signal: controller.signal });
+        if (!response.ok) throw new Error("Không thể tải nội dung tệp.");
+        const { convertToHtml } = await import("mammoth");
+        const result = await convertToHtml({ arrayBuffer: await response.arrayBuffer() });
+        setDocxHtml(DOMPurify.sanitize(result.value, { USE_PROFILES: { html: true } }));
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("[FileViewer] DOCX preview failed", error);
+          setDocxError("Không thể xem trực tiếp tệp Word này. Bạn có thể tải tệp xuống để xem.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setDocxLoading(false);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [open, isDocx, url]);
   const toggleFullscreen = () => setIsFullscreen((value) => !value);
   const closeViewer = () => {
     setIsFullscreen(false);
@@ -185,7 +225,27 @@ export function FileViewer({ open, onClose, url, name, canDownload = true }: Fil
             </div>
           )}
 
-          {(category === "word" || category === "excel" || category === "ppt") && (
+          {category === "word" && isDocx && (
+            <div className={`w-full overflow-auto bg-white p-6 sm:p-10 ${isFullscreen ? "h-full min-h-0" : "min-h-[60vh] max-h-[75vh]"}`}>
+              {docxLoading ? (
+                <div className="flex min-h-[50vh] items-center justify-center text-sm text-muted-foreground">
+                  Đang tải bản xem trước...
+                </div>
+              ) : docxError ? (
+                <div className="flex min-h-[50vh] items-center justify-center text-center text-sm text-muted-foreground">
+                  {docxError}
+                </div>
+              ) : (
+                <article
+                  className="prose prose-sm mx-auto max-w-3xl text-slate-800"
+                  dangerouslySetInnerHTML={{ __html: docxHtml }}
+                  data-testid="file-viewer-docx"
+                />
+              )}
+            </div>
+          )}
+
+          {((category === "word" && !isDocx) || category === "excel" || category === "ppt") && (
             <div className={`relative w-full ${isFullscreen ? "h-full min-h-0" : "min-h-[75vh]"}`}>
               <iframe
                 src={getViewerUrl(category, url)}
