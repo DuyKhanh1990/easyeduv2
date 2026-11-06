@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { BriefcaseBusiness, CalendarDays, ChevronRight, Eye, FileText, Plus, Search, UserRound, Users } from "lucide-react";
+import { FormEvent, useMemo, useState } from "react";
+import { BriefcaseBusiness, CalendarDays, ChevronRight, Eye, FileText, Mail, Phone, Plus, Search, UserRound, Users } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import * as mammoth from "mammoth";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, getAuthHeaders } from "@/lib/queryClient";
 import "./Candidates.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -73,11 +73,32 @@ export default function Candidates() {
   const [cvImportStatus, setCvImportStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
-  const fileUrls = useRef<string[]>([]);
+  const [isSavingCandidate, setIsSavingCandidate] = useState(false);
+  const [isUploadingCandidateFiles, setIsUploadingCandidateFiles] = useState(false);
+  const [candidateFileUploadError, setCandidateFileUploadError] = useState("");
 
-  useEffect(() => () => {
-    fileUrls.current.forEach((url) => URL.revokeObjectURL(url));
-  }, []);
+  const uploadCandidateFiles = async (files: File[]): Promise<CandidateFile[]> => {
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file));
+    const response = await fetch("/api/upload", {
+      method: "POST",
+      body: formData,
+      headers: getAuthHeaders(),
+      credentials: "include",
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error || "Không thể tải tệp lên S3.");
+    }
+    if (!Array.isArray(data.files) || data.files.length !== files.length || data.files.some((file: any) => !file?.url)) {
+      throw new Error("S3 không trả về đủ liên kết tệp.");
+    }
+    return data.files.map((file: { name: string; url: string }) => ({
+      id: crypto.randomUUID(),
+      name: file.name,
+      url: file.url,
+    }));
+  };
 
   const handleCvImport = async (file: File) => {
     const extension = file.name.split(".").pop()?.toLowerCase();
@@ -176,25 +197,19 @@ export default function Candidates() {
     }
   }, [filteredCandidates, selectedCandidateId]);
 
-  const addCandidate = (event: FormEvent<HTMLFormElement>) => {
+  const addCandidate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const name = newCandidateName.trim();
     const position = newCandidatePosition.trim();
     if (!name || !position) return;
+    setIsSavingCandidate(true);
+    setCvImportStatus(null);
+    try {
     const lastCodeNumber = candidates.reduce((highest, candidate) => {
       const match = /^UV-(\d+)$/i.exec(candidate.code.trim());
       return match ? Math.max(highest, Number(match[1])) : highest;
     }, 0);
-    const candidateFiles: CandidateFile[] = [];
-    if (newCandidateCvFile) {
-      const url = URL.createObjectURL(newCandidateCvFile);
-      fileUrls.current.push(url);
-      candidateFiles.push({
-        id: crypto.randomUUID(),
-        name: newCandidateCvFile.name,
-        url,
-      });
-    }
+    const candidateFiles = newCandidateCvFile ? await uploadCandidateFiles([newCandidateCvFile]) : [];
     const candidate: Candidate = {
       id: crypto.randomUUID(),
       code: `UV-${String(lastCodeNumber + 1).padStart(2, "0")}`,
@@ -223,6 +238,14 @@ export default function Candidates() {
     setCvImportStatus(null);
     setSearchTerm("");
     setIsAddFormOpen(false);
+    } catch (error) {
+      setCvImportStatus({
+        type: "error",
+        message: error instanceof Error ? `${error.message} Ứng viên chưa được thêm.` : "Không thể tải CV lên S3; ứng viên chưa được thêm.",
+      });
+    } finally {
+      setIsSavingCandidate(false);
+    }
   };
 
   const updateCandidate = (id: string, updates: Partial<Candidate>) => {
@@ -231,18 +254,22 @@ export default function Candidates() {
     ));
   };
 
-  const addFiles = (candidateId: string, selectedFiles: FileList | null) => {
+  const addFiles = async (candidateId: string, selectedFiles: FileList | null) => {
     if (!selectedFiles?.length) return;
-    const nextFiles = Array.from(selectedFiles).map((file) => {
-      const url = URL.createObjectURL(file);
-      fileUrls.current.push(url);
-      return { id: crypto.randomUUID(), name: file.name, url };
-    });
-    setCandidates((current) => current.map((candidate) =>
-      candidate.id === candidateId
-        ? { ...candidate, files: [...candidate.files, ...nextFiles] }
-        : candidate,
-    ));
+    setIsUploadingCandidateFiles(true);
+    setCandidateFileUploadError("");
+    try {
+      const nextFiles = await uploadCandidateFiles(Array.from(selectedFiles));
+      setCandidates((current) => current.map((candidate) =>
+        candidate.id === candidateId
+          ? { ...candidate, files: [...candidate.files, ...nextFiles] }
+          : candidate,
+      ));
+    } catch (error) {
+      setCandidateFileUploadError(error instanceof Error ? error.message : "Không thể tải tệp lên S3.");
+    } finally {
+      setIsUploadingCandidateFiles(false);
+    }
   };
 
   const setCandidateResult = (candidate: Candidate, value: CandidateResult) => {
@@ -413,47 +440,71 @@ export default function Candidates() {
 
           {selectedCandidate ? (
             <div className="space-y-4">
-              <div className="candidate-detail-heading flex flex-wrap items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-3">
+              <div className="candidate-detail-heading flex flex-wrap items-center gap-3">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
                   <span className="candidate-detail-avatar flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700">
                     {selectedCandidate.name.trim().split(/\s+/).slice(-2).map((part) => part[0] ?? "").join("").toUpperCase()}
                   </span>
-                  <div className="min-w-0">
-                    <h2 className="truncate text-xl font-semibold">{selectedCandidate.name}</h2>
-                    <p className="truncate text-sm text-muted-foreground">
-                      {selectedCandidate.position || "Chưa nhập vị trí ứng tuyển"} · Mã {selectedCandidate.code}
-                    </p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="truncate text-lg font-semibold">{selectedCandidate.name}</h2>
+                      <span className={`candidate-detail-status rounded-full px-2.5 py-1 text-xs font-semibold ${
+                        selectedCandidate.result === "pass"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : selectedCandidate.result === "fail"
+                            ? "bg-rose-50 text-rose-700"
+                            : "bg-amber-50 text-amber-700"
+                      }`}>
+                        {selectedCandidate.result === "pass" ? "Trúng tuyển" : selectedCandidate.result === "fail" ? "Trượt" : "Đang chờ PV"}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                      <span className="inline-flex items-center gap-1.5">
+                        <BriefcaseBusiness className="h-4 w-4 shrink-0 text-slate-400" />
+                        {selectedCandidate.position || "Chưa nhập vị trí ứng tuyển"}
+                      </span>
+                      {selectedCandidate.email && (
+                        <a className="inline-flex items-center gap-1.5 hover:text-primary" href={`mailto:${selectedCandidate.email}`}>
+                          <Mail className="h-4 w-4 shrink-0 text-slate-400" />
+                          {selectedCandidate.email}
+                        </a>
+                      )}
+                      {selectedCandidate.phone && (
+                        <a className="inline-flex items-center gap-1.5 hover:text-primary" href={`tel:${selectedCandidate.phone}`}>
+                          <Phone className="h-4 w-4 shrink-0 text-slate-400" />
+                          {selectedCandidate.phone}
+                        </a>
+                      )}
+                      <span className="text-xs text-slate-400">Mã {selectedCandidate.code}</span>
+                    </div>
                   </div>
                 </div>
-                <span className={`candidate-detail-status rounded-full px-3 py-1 text-sm font-semibold ${
-                  selectedCandidate.result === "pass"
-                    ? "bg-emerald-50 text-emerald-700"
-                    : selectedCandidate.result === "fail"
-                      ? "bg-rose-50 text-rose-700"
-                      : "bg-amber-50 text-amber-700"
-                }`}>
-                  {selectedCandidate.result === "pass" ? "Đỗ" : selectedCandidate.result === "fail" ? "Trượt" : "Đang chờ PV"}
-                </span>
               </div>
 
               <Card className="candidate-detail-card">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
                   <CardTitle className="text-base">Hồ sơ ứng viên</CardTitle>
-                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted">
+                  <label className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium ${
+                    isUploadingCandidateFiles ? "cursor-wait opacity-60" : "cursor-pointer hover:bg-muted"
+                  }`}>
                     <Plus className="h-4 w-4" />
-                    Thêm tệp
+                    {isUploadingCandidateFiles ? "Đang tải..." : "Thêm tệp"}
                     <input
                       type="file"
                       multiple
                       className="sr-only"
+                      disabled={isUploadingCandidateFiles}
                       onChange={(event) => {
-                        addFiles(selectedCandidate.id, event.target.files);
+                        void addFiles(selectedCandidate.id, event.target.files);
                         event.target.value = "";
                       }}
                     />
                   </label>
                 </CardHeader>
                 <CardContent>
+                  {candidateFileUploadError && (
+                    <p className="mb-3 text-sm text-destructive" role="alert">{candidateFileUploadError}</p>
+                  )}
                   {selectedCandidate.files.length ? (
                     <div className="space-y-2">
                       {selectedCandidate.files.map((file) => (
@@ -572,7 +623,7 @@ export default function Candidates() {
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[640px]">
           <DialogHeader>
             <DialogTitle>Thêm ứng viên</DialogTitle>
-            <DialogDescription>Import CV để nhận diện thông tin hoặc nhập thủ công. Nội dung văn bản CV sẽ được gửi đến AI đã cấu hình để trích xuất.</DialogDescription>
+            <DialogDescription>Import CV để nhận diện thông tin hoặc nhập thủ công. Văn bản CV được gửi đến AI đã cấu hình; tệp sẽ được lưu trên S3 khi thêm ứng viên.</DialogDescription>
           </DialogHeader>
           <form onSubmit={addCandidate} className="space-y-5 pt-2">
             <div className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 p-4">
@@ -640,9 +691,9 @@ export default function Candidates() {
               </label>
             </div>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setIsAddFormOpen(false)}>Hủy</Button>
-              <Button type="submit" disabled={!newCandidateName.trim() || !newCandidatePosition.trim()}>
-                Thêm ứng viên
+              <Button type="button" variant="outline" disabled={isSavingCandidate} onClick={() => setIsAddFormOpen(false)}>Hủy</Button>
+              <Button type="submit" disabled={!newCandidateName.trim() || !newCandidatePosition.trim() || isSavingCandidate || isReadingCv}>
+                {isSavingCandidate ? "Đang lưu..." : "Thêm ứng viên"}
               </Button>
             </div>
           </form>
