@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 function formatDate(value: string | Date | null | undefined): string {
@@ -16,7 +17,7 @@ function TransferSessionList({ sessions }: { sessions: any[] }) {
   }
 
   return (
-    <ol className="space-y-1.5">
+    <ol className="space-y-1.5 overflow-x-auto">
       {sessions.map((session, index) => {
         const date = new Date(`${String(session.sessionDate).slice(0, 10)}T00:00:00`);
         const weekday = Number.isNaN(date.getTime())
@@ -26,7 +27,7 @@ function TransferSessionList({ sessions }: { sessions: any[] }) {
         return (
           <li
             key={`${session.sessionIndex ?? "session"}-${session.sessionDate}-${index}`}
-            className="rounded-md bg-white px-2 py-1.5 text-xs"
+            className="flex min-w-max items-center gap-1 whitespace-nowrap rounded-md bg-white px-2 py-1.5 text-xs"
           >
             <span className="font-medium">
               {session.sessionIndex != null ? `Buổi ${session.sessionIndex} · ` : ""}
@@ -62,13 +63,16 @@ export function ClassTransferNote({
   const sourceClassName =
     transferInfo?.sourceClassName ?? note.split(/\r?\n/)[0]?.replace("Chuyển từ lớp ", "").trim() ?? "";
   const destinationClassName = transferInfo?.targetClassName ?? targetClassName ?? "Lớp đích";
+  const [open, setOpen] = useState(false);
 
   return (
-    <Tooltip delayDuration={150}>
+    <Tooltip delayDuration={150} open={open} onOpenChange={setOpen}>
       <TooltipTrigger asChild>
         <button
           type="button"
-          className="mt-0.5 block max-w-full truncate text-left font-['Roboto'] !text-[12px] font-normal text-orange-600 underline decoration-dotted underline-offset-2 hover:text-orange-700"
+          onClick={() => setOpen(true)}
+          aria-expanded={open}
+          className="mt-0.5 block max-w-full cursor-help truncate text-left font-['Roboto'] !text-[12px] font-normal text-orange-600 underline decoration-dotted underline-offset-2 hover:text-orange-700"
           aria-label={`Xem thông tin chuyển lớp từ ${sourceClassName}`}
         >
           Chuyển từ lớp {sourceClassName} sang
@@ -78,7 +82,7 @@ export function ClassTransferNote({
         portal
         side="top"
         sideOffset={8}
-        className="z-[100] w-[min(620px,calc(100vw-2rem))] max-h-[min(70vh,520px)] overflow-y-auto border-orange-200 p-3 text-left"
+        className="z-[100] w-[min(900px,calc(100vw-2rem))] max-h-[min(70vh,520px)] overflow-y-auto border-orange-200 p-3 text-left"
       >
         <div className="mb-3 text-xs font-semibold text-orange-700">Thông tin chuyển lớp</div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
