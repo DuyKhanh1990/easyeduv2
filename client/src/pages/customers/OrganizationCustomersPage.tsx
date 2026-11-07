@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 
 type OrganizationForm = {
   locationIds: string[];
+  classification: "center" | "business" | "";
   code: string;
   name: string;
   domain: string;
@@ -34,12 +35,12 @@ type OrganizationForm = {
   startDate: string;
   durationMonths: number | null;
   servicePackage: string;
-  connectionCode: string;
   internalNote: string;
 };
 
 const emptyForm: OrganizationForm = {
   locationIds: [],
+  classification: "",
   code: "",
   name: "",
   domain: "",
@@ -50,7 +51,6 @@ const emptyForm: OrganizationForm = {
   startDate: "",
   durationMonths: null,
   servicePackage: "",
-  connectionCode: "",
   internalNote: "",
 };
 
@@ -234,9 +234,19 @@ export function OrganizationCustomersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<OrganizationForm>(emptyForm);
   const [formMessage, setFormMessage] = useState("");
+  const [codeManuallyEdited, setCodeManuallyEdited] = useState(false);
 
   const rawLocations = Array.isArray(data) ? data : Array.isArray((data as any)?.data) ? (data as any).data : [];
-  const locations = rawLocations.map((item: any) => ({ id: String(item.id), name: String(item.name ?? item.title ?? "Cơ sở") }));
+  const locations = rawLocations.map((item: any) => ({
+    id: String(item.id),
+    name: String(item.name ?? item.title ?? "Cơ sở"),
+    code: String(item.code ?? "").trim(),
+  }));
+  const makeOrganizationCode = (locationIds: string[], classification: OrganizationForm["classification"]) => {
+    const selectedLocation = locations.find((location: { id: string; code: string }) => location.id === locationIds[0]);
+    if (!selectedLocation?.code || !classification) return "";
+    return `${selectedLocation.code} - ${classification === "center" ? "TT" : "DN"} - 01`;
+  };
   const computed = useMemo(() => {
     const start = parseDate(form.startDate);
     if (!start || !form.durationMonths) return { endDate: "", status: "—", remaining: "—", statusTone: "neutral" };
@@ -259,17 +269,34 @@ export function OrganizationCustomersPage() {
     setFormMessage("");
   };
 
+  const updateLocations = (locationIds: string[]) => {
+    setForm((current) => ({
+      ...current,
+      locationIds,
+      code: codeManuallyEdited ? current.code : makeOrganizationCode(locationIds, current.classification),
+    }));
+    setFormMessage("");
+  };
+
+  const updateClassification = (classification: OrganizationForm["classification"]) => {
+    setForm((current) => ({
+      ...current,
+      classification,
+      code: codeManuallyEdited ? current.code : makeOrganizationCode(current.locationIds, classification),
+    }));
+    setFormMessage("");
+  };
+
   const openNewDialog = () => {
     setForm(emptyForm);
     setFormMessage("");
+    setCodeManuallyEdited(false);
     setDialogOpen(true);
   };
 
-  const unavailable = (action: "save" | "code") => {
-    setFormMessage(action === "save"
-      ? "Chức năng lưu Trung tâm/Doanh nghiệp chưa được triển khai. Thông tin hiện chỉ được giữ tạm trong biểu mẫu."
-      : "Chức năng tạo mã kết nối chưa được triển khai.");
-  };
+  const unavailable = () => setFormMessage(
+    "Chức năng lưu Trung tâm/Doanh nghiệp chưa được triển khai. Thông tin hiện chỉ được giữ tạm trong biểu mẫu.",
+  );
 
   const statusStyle = computed.statusTone === "future"
     ? "border-emerald-200 bg-emerald-50 text-emerald-800"
@@ -330,7 +357,7 @@ export function OrganizationCustomersPage() {
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-9 sm:py-6">
             <div className="grid grid-cols-1 gap-x-5 gap-y-5 sm:grid-cols-2 sm:gap-x-6 sm:gap-y-5">
-              <Field label="Cơ sở" required className="sm:col-span-2" hint="Có thể chọn nhiều cơ sở cho cùng một Trung tâm/Doanh nghiệp.">
+              <Field label="Cơ sở" required hint="Có thể chọn nhiều cơ sở; mã tự động dùng cơ sở đầu tiên.">
                 {isLoading ? (
                   <div className="h-11 animate-pulse rounded-xl bg-slate-100" />
                 ) : isError ? (
@@ -338,13 +365,33 @@ export function OrganizationCustomersPage() {
                     <span>Không tải được danh sách cơ sở.</span><Button variant="outline" size="sm" onClick={() => refetch()}>Thử lại</Button>
                   </div>
                 ) : (
-                  <LocationPicker locations={locations} selected={form.locationIds} onChange={(ids) => update("locationIds", ids)} />
+                  <LocationPicker locations={locations} selected={form.locationIds} onChange={updateLocations} />
                 )}
                 {formMessage.includes("Chọn ít nhất") && <p className="text-xs text-rose-600">Vui lòng chọn ít nhất một cơ sở.</p>}
               </Field>
 
-              <Field label="Mã trung tâm/doanh nghiệp">
-                <Input className={inputClass} placeholder="VD: ABC-001" value={form.code} onChange={(event) => update("code", event.target.value)} />
+              <Field label="Phân loại" required>
+                <Select value={form.classification} onValueChange={(value) => updateClassification(value as OrganizationForm["classification"])}>
+                  <SelectTrigger className="h-11 rounded-xl border-slate-200 bg-slate-50/80 px-3.5 text-sm shadow-none">
+                    <SelectValue placeholder="Chọn loại hình" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="center">Trung tâm</SelectItem>
+                    <SelectItem value="business">Doanh nghiệp</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field label="Mã trung tâm/doanh nghiệp" hint="Tự tạo theo cơ sở và phân loại; có thể sửa thủ công.">
+                <Input
+                  className={inputClass}
+                  placeholder="Chọn cơ sở và phân loại để tạo mã"
+                  value={form.code}
+                  onChange={(event) => {
+                    setCodeManuallyEdited(true);
+                    update("code", event.target.value);
+                  }}
+                />
               </Field>
               <Field label="Tên trung tâm/doanh nghiệp">
                 <Input className={inputClass} placeholder="Nhập tên Trung tâm/Doanh nghiệp" value={form.name} onChange={(event) => update("name", event.target.value)} />
@@ -391,14 +438,6 @@ export function OrganizationCustomersPage() {
               <Field label="Gói dịch vụ" className="sm:col-span-2">
                 <Input className={inputClass} placeholder="VD: Standard" value={form.servicePackage} onChange={(event) => update("servicePackage", event.target.value)} />
               </Field>
-              <Field label="Mã kết nối" className="sm:col-span-2">
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Input className={cn(computedClass, "min-w-0 flex-1")} readOnly placeholder='Nhấn "Tạo mã kết nối" để sinh mã' value={form.connectionCode} />
-                  <Button type="button" variant="outline" onClick={() => unavailable("code")} className="h-11 shrink-0 rounded-xl border-slate-300 px-4 text-slate-700">
-                    Tạo mã kết nối
-                  </Button>
-                </div>
-              </Field>
               <Field label="Ghi chú nội bộ" className="sm:col-span-2">
                 <Textarea className="min-h-[112px] resize-y rounded-xl border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm shadow-none placeholder:text-slate-400 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-sky-100" placeholder="Ghi chú chỉ dành cho đội ngũ quản trị" value={form.internalNote} onChange={(event) => update("internalNote", event.target.value)} />
               </Field>
@@ -420,7 +459,11 @@ export function OrganizationCustomersPage() {
                 setFormMessage("Chọn ít nhất một cơ sở trước khi tiếp tục.");
                 return;
               }
-              unavailable("save");
+                if (!form.classification) {
+                  setFormMessage("Chọn loại hình Trung tâm hoặc Doanh nghiệp trước khi tiếp tục.");
+                  return;
+                }
+                unavailable();
             }} className="h-10 rounded-lg bg-slate-900 px-5 font-semibold text-white hover:bg-slate-800">
               Thêm Trung tâm/Doanh nghiệp
             </Button>
