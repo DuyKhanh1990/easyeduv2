@@ -21,6 +21,7 @@ import { registerStudentsRoutes } from "./routes/students.routes";
 import { registerClassesRoutes } from "./routes/classes.routes";
 import { registerAttendanceRoutes } from "./routes/attendance.routes";
 import { registerLiveKitTestRoutes } from "./routes/livekit-test.routes";
+import { registerLiveKitClassSessionRoutes } from "./routes/livekit-class-sessions.routes";
 import { registerFinanceRoutes } from "./routes/finance.routes";
 import { registerMySpaceRoutes } from "./routes/my-space.routes";
 import { registerUploadRoutes } from "./routes/upload.routes";
@@ -459,6 +460,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerClassesRoutes(app);
   registerAttendanceRoutes(app);
   registerLiveKitTestRoutes(app);
+  registerLiveKitClassSessionRoutes(app);
   registerFinanceRoutes(app);
   registerMySpaceRoutes(app);
   await registerTeacherSalaryRoutes(app);
