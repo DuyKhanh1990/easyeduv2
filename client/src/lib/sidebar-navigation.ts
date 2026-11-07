@@ -21,6 +21,7 @@ import {
   Bell,
   ArrowLeftRight,
   HardDrive,
+  Building2,
 } from "lucide-react";
 import { SiMessenger, SiZalo, SiFacebook } from "react-icons/si";
 import {
@@ -115,6 +116,12 @@ export const navigation: NavEntry[] = [
     icon: Users,
     items: [
       { name: "Khách hàng", href: "/customers", icon: Users },
+      {
+        name: "Trung tâm/Doanh nghiệp",
+        href: "/customers/organizations",
+        icon: Building2,
+        permissionHref: "/customers",
+      },
       {
         name: "Cấu hình CRM",
         href: "/customers/crm-config",

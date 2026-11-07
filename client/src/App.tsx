@@ -18,6 +18,7 @@ const Dashboard = lazy(() => import("@/pages/dashboard/Dashboard").then(m => ({ 
 
 const CustomersList = lazy(() => import("@/pages/customers/CustomersList").then(m => ({ default: m.CustomersList })));
 const CustomerDetailPage = lazy(() => import("@/pages/customers/CustomerDetailPage").then(m => ({ default: m.CustomerDetailPage })));
+const OrganizationCustomersPage = lazy(() => import("@/pages/customers/OrganizationCustomersPage").then(m => ({ default: m.OrganizationCustomersPage })));
 const CRMConfig = lazy(() => import("@/pages/customers/CRMConfig").then(m => ({ default: m.CRMConfig })));
 const NotificationLogs = lazy(() => import("@/pages/notifications/NotificationLogs").then(m => ({ default: m.NotificationLogs })));
 
@@ -86,6 +87,7 @@ function Router() {
         <Route path="/dang-ky" component={RegistrationFormPage} />
         <Route path="/" component={Dashboard} />
         <Route path="/customers/crm-config" component={CRMConfig} />
+        <Route path="/customers/organizations" component={OrganizationCustomersPage} />
         <Route path="/customers/:id" component={CustomerDetailPage} />
         <Route path="/customers" component={CustomersList} />
         <Route path="/notification-logs" component={NotificationLogs} />
