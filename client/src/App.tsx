@@ -48,6 +48,7 @@ const Reconciliation = lazy(() => import("@/pages/finance/BidvReconciliation"));
 const StorePage = lazy(() => import("@/pages/store/StorePage").then(m => ({ default: m.StorePage })));
 
 const MyCalendar = lazy(() => import("@/pages/my-space/MyCalendar"));
+const LiveKitTest = lazy(() => import("@/pages/LiveKitTest"));
 const MyAssignments = lazy(() => import("@/pages/my-space/MyAssignments"));
 const MyInvoices = lazy(() => import("@/pages/my-space/MyInvoices"));
 const MyPayroll = lazy(() => import("@/pages/my-space/MyPayroll"));
@@ -122,6 +123,7 @@ function Router() {
         <Route path="/bidv-reconciliation" component={() => <Redirect to="/reconciliation" />} />
         <Route path="/store" component={StorePage} />
         <Route path="/my-space/calendar" component={MyCalendar} />
+        {import.meta.env.DEV && <Route path="/livekit-test" component={LiveKitTest} />}
         <Route path="/my-space/assignments" component={MyAssignments} />
         <Route path="/my-space/exam/:id" component={ExamTakingPage} />
         <Route path="/my-space/score-sheet" component={MyScoreSheet} />
