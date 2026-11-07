@@ -18,6 +18,7 @@ import { registerPaymentSchedulePreviewRoutes } from "./routes/payment-schedule-
 
 import { registerConfigRoutes } from "./routes/config.routes";
 import { registerStudentsRoutes } from "./routes/students.routes";
+import { registerOrganizationClientRoutes } from "./routes/organization-clients.routes";
 import { registerClassesRoutes } from "./routes/classes.routes";
 import { registerAttendanceRoutes } from "./routes/attendance.routes";
 import { registerLiveKitTestRoutes } from "./routes/livekit-test.routes";
@@ -457,6 +458,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Domain routes
   registerConfigRoutes(app);
   registerStudentsRoutes(app);
+  registerOrganizationClientRoutes(app);
   registerClassesRoutes(app);
   registerAttendanceRoutes(app);
   registerLiveKitTestRoutes(app);

@@ -204,8 +204,8 @@ export const invoices = pgTable("invoices", {
   einvoiceMessage: text("einvoice_message"),                         // Thông báo / lỗi gần nhất
   einvoiceUpdatedAt: timestamp("einvoice_updated_at"),               // Lần đổi trạng thái HĐĐT gần nhất
   // Audit
-  createdBy: uuid("created_by").references(() => users.id),
-  updatedBy: uuid("updated_by").references(() => users.id),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   // Thanh toán
@@ -3894,3 +3894,42 @@ export const databaseRestores = pgTable("database_restores", {
 }));
 
 export type DatabaseRestore = typeof databaseRestores.$inferSelect;
+
+// Independent CRM records for organization accounts; these do not share
+// storage with student/customer records.
+export const organizationClients = pgTable("organization_clients", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  classification: varchar("classification", { length: 20 }).notNull(),
+  code: varchar("code", { length: 100 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  domain: varchar("domain", { length: 255 }),
+  accountStatus: varchar("account_status", { length: 20 }).notNull().default("active"),
+  contactName: varchar("contact_name", { length: 255 }),
+  phone: varchar("phone", { length: 50 }),
+  email: varchar("email", { length: 255 }),
+  startDate: date("start_date").notNull(),
+  durationMonths: integer("duration_months").notNull(),
+  endDate: date("end_date").notNull(),
+  servicePackage: text("service_package"),
+  internalNote: text("internal_note"),
+  renewalHistory: jsonb("renewal_history").notNull().default(sql`'[]'::jsonb`),
+  createdBy: uuid("created_by").references(() => users.id),
+  updatedBy: uuid("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at"),
+}, (table) => ({
+  codeUnique: unique("organization_clients_code_unique").on(table.code),
+  statusIdx: index("organization_clients_status_idx").on(table.accountStatus),
+  endDateIdx: index("organization_clients_end_date_idx").on(table.endDate),
+  createdByIdx: index("organization_clients_created_by_idx").on(table.createdBy),
+}));
+
+export const organizationClientLocations = pgTable("organization_client_locations", {
+  organizationClientId: uuid("organization_client_id").notNull().references(() => organizationClients.id, { onDelete: "cascade" }),
+  locationId: uuid("location_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  clientLocationPk: primaryKey({ columns: [table.organizationClientId, table.locationId] }),
+  locationIdx: index("organization_client_locations_location_idx").on(table.locationId),
+}));
