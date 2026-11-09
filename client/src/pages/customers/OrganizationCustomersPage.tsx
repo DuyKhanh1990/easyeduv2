@@ -250,11 +250,22 @@ export function OrganizationCustomersPage() {
   const refreshList = () => queryClient.invalidateQueries({ queryKey: ["/api/organization-clients"] });
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const { status: displayStatus, ...formFields } = form;
       const payload = {
-        ...formFields,
-        accountStatus: displayStatus === "Tạm ngưng" ? "suspended" : "active",
+        locationIds: form.locationIds,
+        classification: form.classification,
+        code: form.code.trim() || (codeManuallyEdited ? "" : undefined),
+        name: form.name,
+        domain: form.domain,
+        accountStatus: form.status === "Tạm ngưng" ? "suspended" : "active",
+        contactName: form.contactName,
+        phone: form.phone,
+        email: form.email,
+        startDate: form.startDate,
         durationMonths: form.durationMonths ? Number(form.durationMonths) : null,
+        servicePackage: form.servicePackage,
+        internalNote: form.internalNote,
+        salesStaffIds: form.salesStaffIds ?? [],
+        managerStaffIds: form.managerStaffIds ?? [],
         codeManuallyEdited,
       };
       const editing = formMode === "edit" && activeId !== null;
@@ -264,7 +275,19 @@ export function OrganizationCustomersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!response.ok) throw new Error((await response.json().catch(() => ({})))?.message || "Không lưu được thông tin tổ chức.");
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({}));
+        const fieldErrors = errorPayload?.errors?.fieldErrors;
+        const details = fieldErrors && typeof fieldErrors === "object"
+          ? Object.entries(fieldErrors)
+              .flatMap(([field, messages]) => Array.isArray(messages) ? messages.map((message) => `${field}: ${message}`) : [])
+              .join("; ")
+          : "";
+        throw new Error([
+          errorPayload?.message || "Không lưu được thông tin tổ chức.",
+          details,
+        ].filter(Boolean).join(" "));
+      }
       return response.json();
     },
     onSuccess: () => { setFormOpen(false); setActionMessage(""); refreshList(); },
