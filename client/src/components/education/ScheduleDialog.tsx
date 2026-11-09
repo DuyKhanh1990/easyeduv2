@@ -168,6 +168,11 @@ export function ScheduleDialog({
   const { data: pastSchedulePolicy } = usePastSchedulePolicy(isOpen);
   const autoInvoicePolicyQuery = useAutoInvoicePolicy(isOpen);
   const autoInvoicePolicyAppliedRef = useRef(false);
+  const canOverrideAutoInvoice = autoInvoicePolicyQuery.data?.canOverride === true;
+  const autoInvoiceControlDisabled = !autoInvoicePolicyQuery.data
+    || autoInvoicePolicyQuery.isFetching
+    || autoInvoicePolicyQuery.isError
+    || !canOverrideAutoInvoice;
   const canRunPast = pastSchedulePolicy?.canRunPast === true;
   const today = getCenterDateString();
 
@@ -869,6 +874,17 @@ export function ScheduleDialog({
   };
 
   const handleConfirm = () => {
+    if (!autoInvoicePolicyQuery.data || autoInvoicePolicyQuery.isFetching || autoInvoicePolicyQuery.isError) {
+      toast({
+        title: "Chưa xác định được cấu hình hóa đơn tự động",
+        description: autoInvoicePolicyQuery.isError
+          ? "Không thể tải cấu hình. Vui lòng tải lại dialog trước khi xếp lịch."
+          : "Vui lòng chờ hệ thống tải xong cấu hình rồi xác nhận lại.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const selectedScheduleDates = [
       ...studentConfigs.map((config) => config.startDate),
       buildClassScheduleConfig()?.startDate,
@@ -1202,12 +1218,30 @@ export function ScheduleDialog({
                       className="h-4 w-7"
                       thumbClassName="h-3 w-3 data-[state=checked]:translate-x-3"
                       checked={globalAutoInvoice}
+                      disabled={autoInvoiceControlDisabled}
+                      title={autoInvoiceControlDisabled
+                        ? (autoInvoicePolicyQuery.isError
+                          ? "Không tải được cấu hình hóa đơn tự động"
+                          : !autoInvoicePolicyQuery.data || autoInvoicePolicyQuery.isFetching
+                            ? "Đang tải cấu hình hóa đơn tự động"
+                            : "Bạn không có quyền thay đổi cấu hình hóa đơn tự động")
+                        : undefined}
                       onCheckedChange={(v) => {
                         setGlobalAutoInvoice(v);
                         setStudentConfigs(prev => prev.map(config => ({ ...config, autoInvoice: v })));
                       }}
                     />
                   </div>
+                  {autoInvoicePolicyQuery.data && !autoInvoicePolicyQuery.isFetching && !canOverrideAutoInvoice && (
+                    <span className="mt-1 block text-center text-[10px] font-normal normal-case text-slate-500">
+                      Theo cấu hình mặc định
+                    </span>
+                  )}
+                  {autoInvoicePolicyQuery.isError && (
+                    <span className="mt-1 block text-center text-[10px] font-normal normal-case text-rose-600">
+                      Không tải được cấu hình
+                    </span>
+                  )}
                 </TableHead>
                 <TableHead className="w-[110px]">Lịch</TableHead>
               </TableRow>
@@ -1456,6 +1490,7 @@ export function ScheduleDialog({
                           className="h-4 w-7"
                           thumbClassName="h-3 w-3 data-[state=checked]:translate-x-3"
                           checked={config.autoInvoice}
+                          disabled={autoInvoiceControlDisabled}
                           onCheckedChange={(v) => updateStudentConfig(idx, { autoInvoice: v })}
                         />
                       </div>
