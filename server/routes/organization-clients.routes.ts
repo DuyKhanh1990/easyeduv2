@@ -7,6 +7,7 @@ import {
   locations,
   organizationClientLocations,
   organizationClients,
+  staff,
 } from "@shared/schema";
 
 const CRM_RESOURCE = "/customers";
@@ -25,6 +26,8 @@ const clientSchema = z.object({
   durationMonths: z.number().int().positive().max(1200),
   servicePackage: z.string().nullable().optional(),
   internalNote: z.string().nullable().optional(),
+  salesStaffIds: z.array(z.string().uuid()).optional(),
+  managerStaffIds: z.array(z.string().uuid()).optional(),
   locationIds: z.array(z.string().uuid()).min(1),
   codeManuallyEdited: z.boolean().optional(),
 }).strict();
@@ -94,6 +97,15 @@ async function validateLocations(tx: any, req: any, locationIds: string[]): Prom
     active.map((location: { id: string; code: string }) => [location.id, location]),
   );
   return uniqueIds.map((id) => byId.get(id)!);
+}
+
+async function validateStaffIds(tx: any, staffIds: string[] | undefined) {
+  if (!staffIds?.length) return [];
+  const uniqueIds = [...new Set(staffIds)];
+  if (uniqueIds.length !== staffIds.length) throw new ClientRequestError("Danh sách nhân sự bị trùng.");
+  const rows = await tx.select({ id: staff.id }).from(staff).where(inArray(staff.id, uniqueIds));
+  if (rows.length !== uniqueIds.length) throw new ClientRequestError("Một hoặc nhiều nhân sự không tồn tại.");
+  return uniqueIds;
 }
 
 function visibleConditions(req: any, permissions: any) {
@@ -276,6 +288,8 @@ export function registerOrganizationClientRoutes(app: Express) {
           endDate: addCalendarMonths(data.startDate, data.durationMonths),
           servicePackage: data.servicePackage ?? null,
           internalNote: data.internalNote ?? null,
+          salesStaffIds: await validateStaffIds(tx, data.salesStaffIds),
+          managerStaffIds: await validateStaffIds(tx, data.managerStaffIds),
           createdBy: req.user.id,
           updatedBy: req.user.id,
         }).returning();
@@ -318,6 +332,8 @@ export function registerOrganizationClientRoutes(app: Express) {
         for (const key of ["classification", "name", "domain", "accountStatus", "contactName", "phone", "email", "startDate", "durationMonths", "servicePackage", "internalNote"] as const) {
           if (data[key] !== undefined) patch[key] = data[key];
         }
+        if (data.salesStaffIds !== undefined) patch.salesStaffIds = await validateStaffIds(tx, data.salesStaffIds);
+        if (data.managerStaffIds !== undefined) patch.managerStaffIds = await validateStaffIds(tx, data.managerStaffIds);
         if (data.startDate !== undefined || data.durationMonths !== undefined) {
           patch.endDate = addCalendarMonths(data.startDate ?? old.startDate, data.durationMonths ?? old.durationMonths);
         }

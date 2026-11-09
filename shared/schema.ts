@@ -3912,6 +3912,8 @@ export const organizationClients = pgTable("organization_clients", {
   endDate: date("end_date").notNull(),
   servicePackage: text("service_package"),
   internalNote: text("internal_note"),
+  salesStaffIds: jsonb("sales_staff_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  managerStaffIds: jsonb("manager_staff_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   renewalHistory: jsonb("renewal_history").notNull().default(sql`'[]'::jsonb`),
   createdBy: uuid("created_by").references(() => users.id),
   updatedBy: uuid("updated_by").references(() => users.id),

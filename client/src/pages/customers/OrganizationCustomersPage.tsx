@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { useLocations } from "@/hooks/use-locations";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +34,8 @@ type FormData = {
   durationMonths: number | null;
   servicePackage: string;
   internalNote: string;
+  salesStaffIds: string[];
+  managerStaffIds: string[];
 };
 type ClientRecord = FormData & {
   id: string | number;
@@ -47,6 +50,7 @@ type ClientRecord = FormData & {
 const emptyForm: FormData = {
   locationIds: [], classification: "", code: "", name: "", domain: "", status: "Đang hoạt động",
   contactName: "", phone: "", email: "", startDate: "", durationMonths: null, servicePackage: "", internalNote: "",
+  salesStaffIds: [], managerStaffIds: [],
 };
 const tabs = [
   ["all", "Tất cả"], ["not_due", "Chưa đến hạn"], ["upcoming_2", "Sắp đến hạn trước 2 tháng"],
@@ -73,7 +77,36 @@ function dayDiff(from: Date, to: Date) {
 }
 function displayDate(value?: string | null) {
   const date = parseDate(value);
-  return date ? date.toLocaleDateString("vi-VN") : "—";
+  return date ? `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}` : "—";
+}
+function isoFromDmy(value: string) {
+  const match = value.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!match) return null;
+  const day = Number(match[1]), month = Number(match[2]), year = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+function DateTextInput({ value, onChange, className }: { value: string; onChange: (value: string) => void; className?: string }) {
+  const [text, setText] = useState(value ? displayDate(value) : "");
+  useEffect(() => setText(value ? displayDate(value) : ""), [value]);
+  return <Input
+    className={className}
+    inputMode="numeric"
+    placeholder="dd/mm/yyyy"
+    value={text}
+    onChange={(event) => {
+      const next = event.target.value;
+      setText(next);
+      const iso = isoFromDmy(next);
+      if (iso) onChange(iso);
+      else if (!next) onChange("");
+    }}
+    onBlur={() => {
+      if (text && !isoFromDmy(text)) setText(value ? displayDate(value) : "");
+      else if (text) setText(displayDate(isoFromDmy(text)!));
+    }}
+  />;
 }
 function monthLabel(months: number) { return months === 12 ? "12 tháng (1 năm)" : `${months} tháng`; }
 function unwrapList(payload: any): ClientRecord[] {
@@ -113,6 +146,24 @@ export function OrganizationCustomersPage() {
   const locationsQuery = useLocations();
   const rawLocations = Array.isArray(locationsQuery.data) ? locationsQuery.data : Array.isArray((locationsQuery.data as any)?.data) ? (locationsQuery.data as any).data : [];
   const locations: { id: string; name: string }[] = rawLocations.map((item: any) => ({ id: String(item.id), name: String(item.name ?? item.title ?? "Cơ sở") }));
+  const staffQuery = useQuery<any[]>({
+    queryKey: ["/api/staff?minimal=true"],
+    queryFn: async () => {
+      const response = await fetch("/api/staff?minimal=true", { credentials: "include" });
+      if (!response.ok) throw new Error("Không tải được danh sách nhân sự.");
+      const payload = await response.json();
+      return Array.isArray(payload) ? payload : payload?.staff ?? payload?.data ?? [];
+    },
+  });
+  const staffOptions = (staffQuery.data ?? []).map((person: any) => ({
+    value: String(person.id),
+    label: person.fullName ?? person.name ?? person.username ?? "Nhân sự",
+    sublabel: person.code,
+  }));
+  const staffName = (ids?: string[]) => (ids ?? [])
+    .map((id) => staffOptions.find((person) => person.value === id)?.label)
+    .filter(Boolean)
+    .join(", ") || "—";
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [locationId, setLocationId] = useState("all");
@@ -186,6 +237,8 @@ export function OrganizationCustomersPage() {
         ...emptyForm, ...client,
         locationIds: (client.locationIds ?? client.locations?.map((location) => String(location.id)) ?? []).map(String),
         startDate: (client.startDate ?? "").slice(0, 10),
+        salesStaffIds: client.salesStaffIds ?? [],
+        managerStaffIds: client.managerStaffIds ?? [],
         classification: client.classification ?? "",
         durationMonths: client.durationMonths ? Number(client.durationMonths) : null,
         status: client.accountStatus === "suspended" ? "Tạm ngưng" : "Đang hoạt động",
@@ -308,7 +361,7 @@ export function OrganizationCustomersPage() {
         {listQuery.isError ? <div className="flex min-h-[280px] flex-col items-center justify-center px-5 text-center"><AlertCircle className="mb-3 h-8 w-8 text-rose-500" /><h3 className="font-semibold text-slate-800">Không tải được danh sách</h3><p className="mt-1 text-sm text-slate-500">{getErrorMessage(listQuery.error)}</p><Button variant="outline" className="mt-4" onClick={() => listQuery.refetch()}><RefreshCw className="mr-2 h-4 w-4" />Thử lại</Button></div>
           : listQuery.isLoading ? <div className="space-y-3 p-5">{[0, 1, 2, 3].map((item) => <div key={item} className="h-[62px] animate-pulse rounded-lg bg-slate-100" />)}</div>
           : !records.length ? <div className="flex min-h-[280px] flex-col items-center justify-center px-5 py-10 text-center"><div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500"><Building2 className="h-5 w-5" /></div><h3 className="text-sm font-semibold text-slate-800">{search || locationId !== "all" || status !== "all" || tab !== "all" ? "Không tìm thấy hồ sơ phù hợp" : "Chưa có Trung tâm/Doanh nghiệp"}</h3><p className="mt-1 max-w-sm text-sm text-slate-500">{search || locationId !== "all" || status !== "all" || tab !== "all" ? "Thử thay đổi từ khóa hoặc bộ lọc." : "Thêm hồ sơ mới để quản lý tổ chức và gói dịch vụ."}</p>{canCreate && !search && locationId === "all" && tab === "all" && <Button variant="outline" onClick={openCreate} className="mt-4 h-9 rounded-lg"><Plus className="mr-2 h-4 w-4" />Thêm mới</Button>}</div>
-          : <Table containerClassName="w-full"><TableHeader><TableRow className="bg-slate-50/80 hover:bg-slate-50/80">{["Tổ chức", "Cơ sở", "Domain", "Bắt đầu / Kết thúc", "Thời hạn", "Còn lại", "Gói dịch vụ", "Ghi chú", "Liên hệ", ""].map((head) => <TableHead key={head} className="whitespace-nowrap px-3 py-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">{head}</TableHead>)}</TableRow></TableHeader><TableBody>{records.map((record) => {
+          : <Table containerClassName="w-full"><TableHeader><TableRow className="bg-slate-50/80 hover:bg-slate-50/80">{["Tổ chức", "Cơ sở", "Domain", "Bắt đầu / Kết thúc", "Thời hạn", "Còn lại", "Gói dịch vụ", "Sales bởi", "Quản lý bởi", "Ghi chú", "Liên hệ", ""].map((head) => <TableHead key={head} className="whitespace-nowrap px-3 py-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">{head}</TableHead>)}</TableRow></TableHeader><TableBody>{records.map((record) => {
             const usage = recordUsage(record);
             const endDate = record.endDate || (parseDate(record.startDate) && record.durationMonths ? dateString(addMonths(parseDate(record.startDate)!, Number(record.durationMonths))) : "");
             const remaining = record.remainingDays ?? (parseDate(endDate) ? Math.max(0, dayDiff(new Date(), parseDate(endDate)!)) : null);
@@ -320,6 +373,8 @@ export function OrganizationCustomersPage() {
               <TableCell className="whitespace-nowrap px-3 py-3.5 text-xs text-slate-600">{record.durationMonths ? monthLabel(Number(record.durationMonths)) : "—"}</TableCell>
               <TableCell className="whitespace-nowrap px-3 py-3.5 text-xs text-slate-600">{remaining === null ? "—" : `${remaining} ngày`}</TableCell>
               <TableCell className="min-w-[120px] px-3 py-3.5 text-xs text-slate-600">{record.servicePackage || "—"}</TableCell>
+              <TableCell className="min-w-[130px] max-w-[190px] whitespace-normal px-3 py-3.5 text-xs text-slate-600">{staffName(record.salesStaffIds)}</TableCell>
+              <TableCell className="min-w-[130px] max-w-[190px] whitespace-normal px-3 py-3.5 text-xs text-slate-600">{staffName(record.managerStaffIds)}</TableCell>
               <TableCell className="min-w-[140px] max-w-[200px] whitespace-normal px-3 py-3.5 text-xs text-slate-500"><span className="line-clamp-2">{record.internalNote || "—"}</span></TableCell>
               <TableCell className="min-w-[150px] px-3 py-3.5"><div className="text-xs font-medium text-slate-700">{record.contactName || "—"}</div>{record.phone && <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-500"><Phone className="h-3 w-3" />{record.phone}</div>}{record.email && <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-500"><Mail className="h-3 w-3" />{record.email}</div>}</TableCell>
               <TableCell className="px-3 py-3"><div className="flex items-center gap-1">
@@ -345,12 +400,14 @@ export function OrganizationCustomersPage() {
         <Field label="Người liên hệ"><Input className={inputClass} placeholder="Họ và tên" value={form.contactName} onChange={(event) => update("contactName", event.target.value)} /></Field>
         <Field label="Số điện thoại"><Input className={inputClass} placeholder="090..." inputMode="tel" value={form.phone} onChange={(event) => update("phone", event.target.value)} /></Field>
         <Field label="Email"><Input className={inputClass} type="email" placeholder="contact@example.com" value={form.email} onChange={(event) => update("email", event.target.value)} /></Field>
-         <Field label="Ngày bắt đầu sử dụng" required><div className="relative"><Input className={cn(inputClass, "pr-10")} type="date" value={form.startDate} onChange={(event) => update("startDate", event.target.value)} /><CalendarDays className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" /></div></Field>
+          <Field label="Ngày bắt đầu sử dụng" required hint="Nhập theo định dạng dd/mm/yyyy."><div className="relative"><DateTextInput className={cn(inputClass, "pr-10")} value={form.startDate} onChange={(value) => update("startDate", value)} /><CalendarDays className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" /></div></Field>
          <Field label="Tháng sử dụng" required><DurationPicker value={form.durationMonths} onChange={(value) => update("durationMonths", value)} /></Field>
-        <Field label="Ngày kết thúc"><Input className={computedClass} readOnly value={computed.endDate} placeholder="Tự động tính" /></Field>
+         <Field label="Ngày kết thúc"><Input className={computedClass} readOnly value={computed.endDate ? displayDate(computed.endDate) : ""} placeholder="Tự động tính" /></Field>
         <Field label="Trạng thái sử dụng"><div className={cn("flex h-11 items-center rounded-xl border px-3.5 text-sm font-semibold", statusStyle)}>{computed.status}</div></Field>
         <Field label="Ngày sử dụng còn"><Input className={computedClass} readOnly value={computed.remaining} placeholder="Tự động tính" /></Field>
         <Field label="Gói dịch vụ" className="sm:col-span-2"><Input className={inputClass} placeholder="VD: Standard" value={form.servicePackage} onChange={(event) => update("servicePackage", event.target.value)} /></Field>
+         <Field label="Sales bởi" hint="Có thể chọn nhiều nhân sự."><SearchableMultiSelect options={staffOptions} value={form.salesStaffIds} onChange={(ids) => update("salesStaffIds", ids)} placeholder="Chọn sales" searchPlaceholder="Tìm nhân sự..." className="min-h-11 rounded-xl border-slate-200 bg-slate-50/80" compactSelectionLabel="nhân sự" /></Field>
+         <Field label="Quản lý bởi" hint="Có thể chọn nhiều nhân sự."><SearchableMultiSelect options={staffOptions} value={form.managerStaffIds} onChange={(ids) => update("managerStaffIds", ids)} placeholder="Chọn quản lý" searchPlaceholder="Tìm nhân sự..." className="min-h-11 rounded-xl border-slate-200 bg-slate-50/80" compactSelectionLabel="nhân sự" /></Field>
         <Field label="Ghi chú nội bộ" className="sm:col-span-2"><Textarea className="min-h-[112px] resize-y rounded-xl border-slate-200 bg-slate-50/80 px-3.5 py-3 text-sm shadow-none placeholder:text-slate-400 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-sky-100" placeholder="Ghi chú chỉ dành cho đội ngũ quản trị" value={form.internalNote} onChange={(event) => update("internalNote", event.target.value)} /></Field>
       </div>
       {formMessage && <div role="alert" className="mt-5 flex items-start gap-2.5 rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-3 text-sm leading-5 text-rose-900"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{formMessage}</div>}
@@ -361,13 +418,13 @@ export function OrganizationCustomersPage() {
 
     <Dialog open={viewOpen} onOpenChange={setViewOpen}><DialogContent className="max-h-[calc(100dvh-32px)] w-[calc(100%-24px)] max-w-2xl overflow-y-auto rounded-2xl border-slate-200"><DialogHeader><p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-700">Hồ sơ tổ chức</p><DialogTitle className="text-2xl font-bold text-slate-900">{detail?.name || "Chi tiết tổ chức"}</DialogTitle><DialogDescription>{detail?.code || "Thông tin hồ sơ và thời hạn dịch vụ"}</DialogDescription></DialogHeader>
       {detailQuery.isLoading ? <div className="space-y-3 py-4">{[1, 2, 3].map((i) => <div key={i} className="h-12 animate-pulse rounded-lg bg-slate-100" />)}</div> : detailQuery.isError ? <div className="rounded-lg bg-rose-50 p-4 text-sm text-rose-800">{getErrorMessage(detailQuery.error)} <Button variant="outline" size="sm" className="ml-2" onClick={() => detailQuery.refetch()}>Thử lại</Button></div> : detail && <div className="grid grid-cols-1 gap-4 py-2 sm:grid-cols-2">{[
-         ["Phân loại", detail.classification === "center" ? "Trung tâm" : "Doanh nghiệp"], ["Cơ sở", recordLocations(detail)], ["Domain", detail.domain], ["Trạng thái", detail.accountStatus === "suspended" ? "Tạm ngưng" : "Đang hoạt động"], ["Người liên hệ", detail.contactName], ["Số điện thoại", detail.phone], ["Email", detail.email], ["Ngày bắt đầu", displayDate(detail.startDate)], ["Ngày kết thúc", displayDate(detail.endDate || (parseDate(detail.startDate) && detail.durationMonths ? dateString(addMonths(parseDate(detail.startDate)!, Number(detail.durationMonths))) : ""))], ["Thời hạn", detail.durationMonths ? monthLabel(Number(detail.durationMonths)) : "—"], ["Gói dịch vụ", detail.servicePackage], ["Ghi chú", detail.internalNote],
+          ["Phân loại", detail.classification === "center" ? "Trung tâm" : "Doanh nghiệp"], ["Cơ sở", recordLocations(detail)], ["Domain", detail.domain], ["Trạng thái", detail.accountStatus === "suspended" ? "Tạm ngưng" : "Đang hoạt động"], ["Người liên hệ", detail.contactName], ["Số điện thoại", detail.phone], ["Email", detail.email], ["Ngày bắt đầu", displayDate(detail.startDate)], ["Ngày kết thúc", displayDate(detail.endDate || (parseDate(detail.startDate) && detail.durationMonths ? dateString(addMonths(parseDate(detail.startDate)!, Number(detail.durationMonths))) : ""))], ["Thời hạn", detail.durationMonths ? monthLabel(Number(detail.durationMonths)) : "—"], ["Sales bởi", staffName(detail.salesStaffIds)], ["Quản lý bởi", staffName(detail.managerStaffIds)], ["Gói dịch vụ", detail.servicePackage], ["Ghi chú", detail.internalNote],
       ].map(([label, value]) => <div key={label} className="rounded-lg border border-slate-100 bg-slate-50/70 p-3"><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div><div className="mt-1 whitespace-pre-wrap text-sm text-slate-800">{value || "—"}</div></div>)}</div>}
       <DialogFooter><Button variant="outline" onClick={() => setViewOpen(false)}>Đóng</Button></DialogFooter>
     </DialogContent></Dialog>
 
     <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}><DialogContent className="max-w-md rounded-2xl"><DialogHeader><DialogTitle>Xóa hồ sơ tổ chức?</DialogTitle><DialogDescription>Hồ sơ “{deleteTarget?.name}” sẽ được chuyển vào trạng thái đã xóa. Thao tác này không xóa vĩnh viễn dữ liệu.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setDeleteTarget(null)}>Hủy</Button><Button disabled={deleteMutation.isPending} onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)} className="bg-rose-700 text-white hover:bg-rose-800">{deleteMutation.isPending ? "Đang xóa..." : "Xóa hồ sơ"}</Button></DialogFooter></DialogContent></Dialog>
 
-    <Dialog open={Boolean(renewTarget)} onOpenChange={(open) => { if (!open) setRenewTarget(null); }}><DialogContent className="max-w-md rounded-2xl"><DialogHeader><DialogTitle>Gia hạn dịch vụ</DialogTitle><DialogDescription>Thiết lập thời gian mới cho {renewTarget?.name || "tổ chức"}.</DialogDescription></DialogHeader><div className="space-y-4 py-2"><Field label="Ngày bắt đầu gia hạn" required><Input className={inputClass} type="date" value={renewStart} onChange={(event) => setRenewStart(event.target.value)} /></Field><Field label="Thời hạn gia hạn" required><DurationPicker value={renewDuration} onChange={setRenewDuration} /></Field>{renewStart && renewDuration && <div className="flex items-center gap-2 rounded-lg bg-sky-50 p-3 text-sm text-sky-900"><Clock3 className="h-4 w-4" />Kết thúc dự kiến: {displayDate(dateString(addMonths(parseDate(renewStart)!, renewDuration)))}</div>}</div><DialogFooter><Button variant="outline" onClick={() => setRenewTarget(null)}>Hủy</Button><Button disabled={!renewStart || !renewDuration || renewMutation.isPending} onClick={() => renewMutation.mutate()} className="bg-slate-900 text-white hover:bg-slate-800">{renewMutation.isPending ? "Đang gia hạn..." : "Xác nhận gia hạn"}</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={Boolean(renewTarget)} onOpenChange={(open) => { if (!open) setRenewTarget(null); }}><DialogContent className="max-w-md rounded-2xl"><DialogHeader><DialogTitle>Gia hạn dịch vụ</DialogTitle><DialogDescription>Thiết lập thời gian mới cho {renewTarget?.name || "tổ chức"}.</DialogDescription></DialogHeader><div className="space-y-4 py-2"><Field label="Ngày bắt đầu gia hạn" required hint="Nhập theo định dạng dd/mm/yyyy."><DateTextInput className={inputClass} value={renewStart} onChange={setRenewStart} /></Field><Field label="Thời hạn gia hạn" required><DurationPicker value={renewDuration} onChange={setRenewDuration} /></Field>{renewStart && renewDuration && <div className="flex items-center gap-2 rounded-lg bg-sky-50 p-3 text-sm text-sky-900"><Clock3 className="h-4 w-4" />Kết thúc dự kiến: {displayDate(dateString(addMonths(parseDate(renewStart)!, renewDuration)))}</div>}</div><DialogFooter><Button variant="outline" onClick={() => setRenewTarget(null)}>Hủy</Button><Button disabled={!renewStart || !renewDuration || renewMutation.isPending} onClick={() => renewMutation.mutate()} className="bg-slate-900 text-white hover:bg-slate-800">{renewMutation.isPending ? "Đang gia hạn..." : "Xác nhận gia hạn"}</Button></DialogFooter></DialogContent></Dialog>
   </DashboardLayout>;
 }
