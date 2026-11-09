@@ -134,12 +134,21 @@ export function useExcelImportExport({
     }
   };
 
-  const buildDropdownValidations = (worksheet: any, startRow: number, endRow: number) => {
-    const locationNames = locations?.map((l) => l.name) || ["Cơ sở chính"];
-    const relNames = sortedRelationships?.filter((r: any) => !r.isParentGroup).map((r) => r.name) || ["Lead", "Học thử"];
-    const sourceNames = crmSources?.map((s: any) => s.name) || ["Facebook", "Google"];
-    const reasonNames = crmReasons?.map((r: any) => r.reason) || ["Không có nhu cầu"];
+  const buildDropdownValidations = (
+    workbook: any,
+    worksheet: any,
+    startRow: number,
+    endRow: number,
+  ) => {
+    const listSheet = workbook.addWorksheet("DanhMuc");
+    listSheet.state = "hidden";
 
+    const cleanList = (values: unknown[], replaceCommas = true) => Array.from(new Set(
+      values
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean)
+        .map((value) => replaceCommas ? value.replace(/,/g, " ") : value),
+    ));
     const cleanName = (name: string) => (name ? name.replace(/,/g, " ").trim() : "");
 
     const saleNames = staff?.filter((s: any) => s.assignments?.some((a: any) =>
@@ -152,21 +161,102 @@ export function useExcelImportExport({
       a.role?.name?.toLowerCase().includes("giáo viên") || a.role?.name?.toLowerCase().includes("teacher")
     )).map((s: any) => cleanName(s.fullName)).filter(Boolean) || [];
 
-    const allStaffNames = Array.from(new Set(staff?.map((s: any) => cleanName(s.fullName)).filter(Boolean) || []));
-    const finalSaleNames = saleNames.length > 0 ? Array.from(new Set(saleNames)) : allStaffNames;
-    const finalManagerNames = managerNames.length > 0 ? Array.from(new Set(managerNames)) : allStaffNames;
-    const finalTeacherNames = teacherNames.length > 0 ? Array.from(new Set(teacherNames)) : allStaffNames;
+    const allStaffNames = cleanList(staff?.map((s: any) => cleanName(s.fullName)) || []);
+    const finalSaleNames = saleNames.length > 0 ? cleanList(saleNames) : allStaffNames;
+    const finalManagerNames = managerNames.length > 0 ? cleanList(managerNames) : allStaffNames;
+    const finalTeacherNames = teacherNames.length > 0 ? cleanList(teacherNames) : allStaffNames;
 
-    for (let i = startRow; i <= endRow; i++) {
-      worksheet.getCell(`C${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${locationNames.map((n) => n.replace(/,/g, " ")).join(",")}"`] };
-      worksheet.getCell(`D${i}`).dataValidation = { type: "list", allowBlank: true, formulae: ['"Học viên,Phụ huynh"'] };
-      worksheet.getCell(`P${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${relNames.map((n) => n.replace(/,/g, " ")).join(",")}"`] };
-      worksheet.getCell(`Q${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${sourceNames.map((n) => n.replace(/,/g, " ")).join(",")}"`] };
-      worksheet.getCell(`R${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${reasonNames.map((n) => n.replace(/,/g, " ")).join(",")}"`] };
-      if (finalSaleNames.length > 0) worksheet.getCell(`S${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${finalSaleNames.join(",")}"`] };
-      if (finalManagerNames.length > 0) worksheet.getCell(`T${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${finalManagerNames.join(",")}"`] };
-      if (finalTeacherNames.length > 0) worksheet.getCell(`U${i}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${finalTeacherNames.join(",")}"`] };
-    }
+    const lists: Array<{
+      column: string;
+      name: string;
+      label: string;
+      values: string[];
+      inputColumn: string;
+      optional?: boolean;
+    }> = [
+      {
+        column: "A",
+        name: "StudentImportLocations",
+        label: "Cơ sở",
+        values: cleanList(locations?.map((l: any) => l.name) || ["Cơ sở chính"]),
+        inputColumn: "C",
+      },
+      {
+        column: "B",
+        name: "StudentImportTypes",
+        label: "Phân loại",
+        values: ["Học viên", "Phụ huynh"],
+        inputColumn: "D",
+      },
+      {
+        column: "C",
+        name: "StudentImportRelationships",
+        label: "Mối quan hệ",
+        values: cleanList(sortedRelationships?.filter((r: any) => !r.isParentGroup).map((r: any) => r.name) || ["Lead", "Học thử"]),
+        inputColumn: "P",
+      },
+      {
+        column: "D",
+        name: "StudentImportSources",
+        label: "Nguồn",
+        values: cleanList(crmSources?.map((s: any) => s.name) || ["Facebook", "Google"]),
+        inputColumn: "Q",
+      },
+      {
+        column: "E",
+        name: "StudentImportRejectReasons",
+        label: "Lý do từ chối",
+        values: cleanList(crmReasons?.map((r: any) => r.reason) || ["Không có nhu cầu"]),
+        inputColumn: "R",
+      },
+      {
+        column: "F",
+        name: "StudentImportSales",
+        label: "Sale",
+        values: finalSaleNames,
+        inputColumn: "S",
+        optional: true,
+      },
+      {
+        column: "G",
+        name: "StudentImportManagers",
+        label: "Quản lý",
+        values: finalManagerNames,
+        inputColumn: "T",
+        optional: true,
+      },
+      {
+        column: "H",
+        name: "StudentImportTeachers",
+        label: "Giáo viên",
+        values: finalTeacherNames,
+        inputColumn: "U",
+        optional: true,
+      },
+    ];
+
+    lists.forEach((list) => {
+      listSheet.getCell(`${list.column}1`).value = list.label;
+      const values = list.values.length ? list.values : [""];
+      values.forEach((value, index) => {
+        listSheet.getCell(`${list.column}${index + 2}`).value = value;
+      });
+
+      const lastRow = values.length + 1;
+      workbook.definedNames.add(
+        `${listSheet.name}!$${list.column}$2:$${list.column}$${lastRow}`,
+        list.name,
+      );
+
+      if (list.optional && list.values.length === 0) return;
+      for (let row = startRow; row <= endRow; row++) {
+        worksheet.getCell(`${list.inputColumn}${row}`).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [list.name],
+        };
+      }
+    });
   };
 
   const downloadSample = async () => {
@@ -200,7 +290,7 @@ export function useExcelImportExport({
         header: h, key: h, width: i === 1 ? 30 : 20,
       }));
 
-      buildDropdownValidations(worksheet, 2, 101);
+      buildDropdownValidations(workbook, worksheet, 2, 101);
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -388,7 +478,7 @@ export function useExcelImportExport({
         });
       });
 
-      buildDropdownValidations(worksheet, 2, errorRows.length + 1);
+      buildDropdownValidations(workbook, worksheet, 2, errorRows.length + 1);
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
