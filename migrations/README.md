@@ -1,35 +1,46 @@
-# EasyEdu schema migration generation
+# EasyEdu Drizzle migrations
 
-This workflow creates SQL files from `shared/schema.ts`. It does not connect to
-a database and does not apply migrations.
+`drizzle.easyedu.config.ts` is the migration-generation config for the EasyEdu
+application database. It reads only `shared/schema.ts` and writes to
+`migrations/easyedu/`. It intentionally has no database connection setting.
+The older SQL files directly in `migrations/` are retained as legacy history;
+they are not part of this new Drizzle migration journal.
 
-## One-time setup
+## Generate a migration after a schema change
 
-`migrations/meta/schema-baseline.json` records the current EasyEdu app schema as
-the starting point for incremental generation. It is generator state, not SQL
-to apply to a database.
-
-## After changing `shared/schema.ts`
-
-1. Generate a migration with a descriptive name:
+1. Update `shared/schema.ts`.
+2. Generate SQL using the installed Drizzle Kit version:
 
    ```sh
-   npm run db:migration:generate -- --name add_organization_contact
+   npm run db:migration:generate -- --name add_example
    ```
 
-2. Review the new numbered SQL file in this directory before it is used.
-   Commit that SQL file, `migrations/meta/schema-baseline.json`, and the
-   corresponding schema/code changes together.
+3. Review the generated SQL and snapshot changes in `migrations/easyedu/`.
+4. Commit the SQL, journal, snapshots, schema, and related code together.
 
-The generator rejects SQL containing destructive operations such as dropping
-tables/columns or changing column types. For a rename or other non-additive
-change, design a data-preserving migration manually and review it carefully.
-New `NOT NULL` columns without a default are generated with a warning because
-they may not apply to tables that already contain rows.
+For DDL that Drizzle cannot represent, create a versioned custom migration:
 
-The initial baseline reflects the current schema only; it does not create the
-existing tables on a blank database. Applying migrations and bootstrapping a
-new database are separate workflow steps.
+```sh
+npm run db:migration:custom -- --name add_manual_database_objects
+```
 
-Do not use `drizzle-kit push` against production. This generation command only
-writes migration files and the schema baseline.
+Then write and review the required SQL in the generated file. Do not put
+data-cleanup steps into a new-database bootstrap migration unless they are
+proven safe for existing rows.
+
+## Bootstrap and safety
+
+`migrations/easyedu/0000_baseline.sql` is the full Drizzle-generated baseline
+for the current 180-table `shared/schema.ts`. `0001_manual_database_objects.sql`
+adds the current hand-written sequences, partial indexes, trigger, and indexes
+that Drizzle does not declare. Together, these files describe the current
+EasyEdu app schema for a blank database.
+
+Later `generate` runs compare the schema to the latest committed Drizzle
+snapshot and should emit only new differences. Generation does not connect to
+or update a database. Do not use `drizzle-kit push` against production.
+
+This bootstrap covers database structure, not center-specific seed data or
+data backfills. Existing SQL directly under `migrations/` is retained as legacy
+history and must not be combined with this new baseline when bootstrapping a
+blank database.

@@ -10,10 +10,25 @@ Never add `CREATE TABLE` or `ALTER TABLE ... ADD COLUMN` in:
 - server/routes/**
 - server/storage/**
 
-**Why:** `scripts/push-db-direct.ts` reads only `shared/schema.ts` to create a new DB.
-Inline DDL causes new environments to be missing tables/columns.
+**Why:** The versioned EasyEdu migration baseline is generated from `shared/schema.ts`.
+Inline DDL can drift from the committed migration history.
 
-**How to apply:** Any new table or column → add to `shared/schema.ts`, then run `npx tsx scripts/push-db-direct.ts` against every target Production database before deploying an image that imports or uses the new tables. Verify the push completed before rollout.
+**How to apply:** Add schema changes to `shared/schema.ts`, then run
+`npm run db:migration:generate -- --name <descriptive_name>`. Commit the generated SQL,
+journal, snapshots, and schema/code changes together. Use Drizzle custom migrations for
+DDL that the schema cannot express. Never use `drizzle-kit push` on production.
+
+## EasyEdu migration lineage
+The current standard Drizzle lineage is `migrations/easyedu/`, generated with
+`drizzle.easyedu.config.ts` and scoped to the application database schema. The older SQL
+files at the root of `migrations/` are legacy history and are not part of this lineage.
+
+**Why:** The legacy journal/snapshots cover only part of the current schema and cannot
+safely serve as the starting snapshot for incremental generation.
+
+**How to apply:** Generate future schema migrations with the EasyEdu config. Put manual
+database objects in a Drizzle `--custom` migration. Gateway has a separate Drizzle config
+and database scope; do not merge its schema into the EasyEdu app lineage.
 
 ## Deployment gate
 **Rule:** A successful image build does not imply that every tenant database has the current schema. Apply and verify schema changes for each target database before rolling out the corresponding application image.
