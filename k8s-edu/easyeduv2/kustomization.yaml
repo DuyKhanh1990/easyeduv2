@@ -8,6 +8,9 @@ resources:
   - hpa.yaml
   - configmap.yaml
   - db-bootstrap-job.yaml
+images:
+  - name: harbor.emso.vn/emso-common/new-easyedu
+    newTag: "0.0.2"
 labels:
   - includeSelectors: true
     pairs:

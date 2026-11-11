@@ -13,20 +13,27 @@ spec:
   template:
     metadata:
       labels:
-        app: easyeduv2-db-bootstrap
+        app: easyeduv2
+        component: db-bootstrap
     spec:
       restartPolicy: Never
       imagePullSecrets:
         - name: emso-harbo-production
       containers:
         - name: db-bootstrap
-          # Keep this image reference identical to deployment.yaml.
+          # Kustomize applies the same pinned newTag as the app Deployment.
           image: harbor.emso.vn/emso-common/new-easyedu:0.0.2
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh
             - -ec
-            - node dist/db/migrate.cjs && node dist/db/seed-default.cjs
+            - |
+              if [ "${DB_BOOTSTRAP_ENABLED:-false}" != "true" ]; then
+                echo "DB bootstrap is disabled for this center; skipping."
+                exit 0
+              fi
+              node dist/db/migrate.cjs
+              TARGET_DB_URL="$DATABASE_URL" node dist/db/seed-default.cjs
           envFrom:
             - configMapRef:
                 name: easyeduv2-config
@@ -36,3 +43,4 @@ spec:
                 secretKeyRef:
                   name: easyeduv2-bootstrap
                   key: BOOTSTRAP_ADMIN_PASSWORD
+                  optional: true

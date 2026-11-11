@@ -11,18 +11,18 @@ const BASELINE_PATH = path.join(__dirname, "app-baseline.sql");
 function parseDatabaseUrl(connectionString: string) {
   const url = new URL(connectionString);
   const databaseName = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
-  if (!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(databaseName)) {
-    throw new Error("DATABASE_URL must contain a database name using only letters, digits, and underscores (max 63 characters).");
+  if (!/^[A-Za-z0-9_][A-Za-z0-9_$-]{0,62}$/.test(databaseName)) {
+    throw new Error("DATABASE_URL must contain a valid PostgreSQL database name (max 63 characters).");
   }
   const username = decodeURIComponent(url.username);
-  if (!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(username)) {
+  if (!/^[A-Za-z0-9_][A-Za-z0-9_$-]{0,62}$/.test(username)) {
     throw new Error("DATABASE_URL username is not a valid PostgreSQL role identifier.");
   }
   return { url, databaseName, username };
 }
 
 function quoteIdentifier(identifier: string): string {
-  if (!/^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(identifier)) {
+  if (!/^[A-Za-z0-9_][A-Za-z0-9_$-]{0,62}$/.test(identifier)) {
     throw new Error("Invalid PostgreSQL identifier.");
   }
   return `"${identifier.replace(/"/g, '""')}"`;
@@ -124,7 +124,10 @@ async function adoptExistingSchema(
     if (!indexes.has(index)) missing.push(`index ${index}`);
   }
   for (const foreignKey of manifest.foreignKeysByName) {
-    if (!foreignKeys.has(foreignKey)) missing.push(`foreign key ${foreignKey}`);
+    // PostgreSQL truncates identifiers to NAMEDATALEN - 1 bytes (63).
+    if (!foreignKeys.has(foreignKey.slice(0, 63))) {
+      missing.push(`foreign key ${foreignKey.slice(0, 63)}`);
+    }
   }
   const sequences = new Set((await client.query(`
     SELECT sequencename FROM pg_sequences WHERE schemaname = 'public'
@@ -184,7 +187,9 @@ async function main() {
 
   const client = new Client({ connectionString: DATABASE_URL });
   await client.connect();
+  const migrationLockKey = `easyedu-schema-migrations:${databaseName}`;
   try {
+    await client.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [migrationLockKey]);
     await ensureLedger(client);
     const baseline = await readFile(BASELINE_PATH, "utf8");
     const manifest = JSON.parse(await readFile(path.join(__dirname, "schema-manifest.json"), "utf8"));
@@ -218,6 +223,7 @@ async function main() {
     }
     console.log(`[db:migrate] Schema ready for image ${APP_VERSION}.`);
   } finally {
+    await client.query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [migrationLockKey]).catch(() => {});
     await client.end();
   }
 }

@@ -10,6 +10,7 @@ if (!databaseUrl) throw new Error("DATABASE_URL must point at a disposable Postg
 const env = {
   ...process.env,
   DATABASE_URL: databaseUrl,
+  TARGET_DB_URL: databaseUrl,
   DB_OWNER_ROLE: process.env.DB_OWNER_ROLE || new URL(databaseUrl).username,
   STAFF_LIMIT: process.env.STAFF_LIMIT || "10",
   BOOTSTRAP_ADMIN_PASSWORD: process.env.BOOTSTRAP_ADMIN_PASSWORD || "ci-test-password-not-for-production",
@@ -50,7 +51,7 @@ try {
   `);
   const actualForeignKeys = new Set(fkRows.map((row) => row.conname));
   for (const name of manifest.foreignKeysByName) {
-    assert(actualForeignKeys.has(name), `missing expected foreign key ${name}`);
+    assert(actualForeignKeys.has(name.slice(0, 63)), `missing expected foreign key ${name.slice(0, 63)}`);
   }
 
   const { rows: sequenceRows } = await client.query(`
