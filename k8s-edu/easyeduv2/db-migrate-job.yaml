@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: easyeduv2-db-migrate
+  namespace: production
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app: easyeduv2-db-migrate
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: emso-harbo-production
+      containers:
+        - name: migrate
+          image: harbor.emso.vn/emso-common/new-easyedu:0.0.2
+          command:
+            - node
+            - dist/db-migrate.cjs
+          env:
+            - name: APP_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: easyeduv2-secrets
+                  key: DATABASE_URL
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

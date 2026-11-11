@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: production
 resources:
   - deployment.yaml
+  - db-migrate-job.yaml
   - ingress.yaml
   - service.yaml
   - hpa.yaml
@@ -12,3 +13,6 @@ labels:
     pairs:
       app: easyeduv2
       release: production
+images:
+  - name: harbor.emso.vn/emso-common/new-easyedu
+    newTag: "0.0.2"
