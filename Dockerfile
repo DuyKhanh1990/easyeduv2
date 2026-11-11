@@ -50,6 +50,9 @@ RUN sed -i -E 's#http://package-firewall\.replit\.(local|internal)/npm/#https://
 # Copy built output from builder
 COPY --from=builder /app/dist ./dist
 
+# Copy migrations (used by startup migration logic)
+COPY --from=builder /app/migrations ./migrations
+
 # Run as non-root for security (k8s best practice)
 RUN addgroup -S nodejs && adduser -S nodejs -G nodejs
 USER nodejs

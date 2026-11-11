@@ -4,7 +4,7 @@
  * Dữ liệu được seed:
  *  - 1 cơ sở chính (location MAIN)
  *  - Phòng ban + vai trò hệ thống (Khách hàng, Đào tạo)
- *  - Tài khoản super admin (mật khẩu lấy từ BOOTSTRAP_ADMIN_PASSWORD)
+ *  - Tài khoản super admin (username: admin / admin123)
  *  - Danh mục tài chính mặc định
  *  - 15 mẫu thông báo Zalo mặc định
  *  - Cấu hình trung tâm (center_config)
@@ -82,30 +82,6 @@ async function main() {
   const { rows } = await client.query("SELECT current_database()");
   client.release();
   console.log(`[seed] ✅ DB = ${rows[0].current_database}\n`);
-
-  const [existingStaffLimit] = await db
-    .select({ value: schema.systemSettings.value })
-    .from(schema.systemSettings)
-    .where(eq(schema.systemSettings.key, "staffLimit"))
-    .limit(1);
-  const staffLimitEnv = process.env.STAFF_LIMIT?.trim();
-  if (!existingStaffLimit && (!staffLimitEnv || !/^[1-9]\d*$/.test(staffLimitEnv))) {
-    throw new Error("STAFF_LIMIT must be a positive integer when no staffLimit setting exists.");
-  }
-
-  // Seed system settings only when absent, preserving center-specific changes.
-  const defaultSettings = [
-    { key: "s3UsedBytes", value: "0" },
-    // The API returns {} when unset; the client merges it with navigation defaults.
-    { key: "sidebarVisibility", value: "{}" },
-    ...(existingStaffLimit ? [] : [{ key: "staffLimit", value: staffLimitEnv! }]),
-  ];
-  for (const setting of defaultSettings) {
-    await db.insert(schema.systemSettings)
-      .values(setting)
-      .onConflictDoNothing();
-    console.log(`  [OK]   system setting ${setting.key} ensured`);
-  }
 
   // ── 1. Cơ sở chính ──────────────────────────────────────────────────────────
   console.log("── 1. Location (cơ sở chính) ──");
@@ -192,16 +168,12 @@ async function main() {
     .where(eq(schema.users.username, "admin"));
 
   if (!existingAdmin) {
-    const bootstrapPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD;
-    if (!bootstrapPassword || bootstrapPassword.length < 12) {
-      throw new Error("BOOTSTRAP_ADMIN_PASSWORD is required (minimum 12 characters) to create the initial admin.");
-    }
-    const passwordHash = hashPassword(bootstrapPassword);
+    const passwordHash = hashPassword("admin123");
     const [adminUser] = await db
       .insert(schema.users)
       .values({ username: "admin", passwordHash, isActive: true })
       .returning();
-    console.log("  [OK]   User 'admin' đã tạo; mật khẩu lấy từ secret khởi tạo.");
+    console.log("  [OK]   User 'admin' đã tạo (pass: admin123)");
 
     const [adminStaff] = await db
       .insert(schema.staff)
@@ -396,7 +368,7 @@ async function main() {
 
   // ── Done ─────────────────────────────────────────────────────────────────────
   console.log("\n[seed] ✅ Seed dữ liệu mặc định hoàn tất!");
-  console.log("       Tài khoản đăng nhập: admin; mật khẩu được cấp qua BOOTSTRAP_ADMIN_PASSWORD.\n");
+  console.log("       Tài khoản đăng nhập: admin / admin123\n");
 
   await pool.end();
 }

@@ -557,8 +557,7 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
-  uniqueIndex("users_tinode_user_id_uidx").on(t.tinodeUserId)
-    .where(sql`${t.tinodeUserId} IS NOT NULL`),
+  uniqueIndex("users_tinode_user_id_uidx").on(t.tinodeUserId),
 ]);
 
 // ==========================================
@@ -997,8 +996,7 @@ export const classes = pgTable("classes", {
   locationStatusIdx: index("classes_location_status_idx").on(table.locationId, table.status),
   createdAtIdx: index("classes_created_at_idx").on(table.createdAt),
   createdByIdx: index("classes_created_by_idx").on(table.createdBy),
-  tinodeTopicIdUniq: uniqueIndex("classes_tinode_topic_id_uidx").on(table.tinodeTopicId)
-    .where(sql`${table.tinodeTopicId} IS NOT NULL`),
+  tinodeTopicIdUniq: uniqueIndex("classes_tinode_topic_id_uidx").on(table.tinodeTopicId),
 }));
 
 export const classSessions = pgTable("class_sessions", {
@@ -2446,8 +2444,7 @@ export const chatGroups = pgTable("chat_groups", {
   /** true = chat riêng 1-1 (DM), false/null = nhóm thông thường */
   isDirectMessage: boolean("is_direct_message").default(false).notNull(),
 }, (t) => [
-  uniqueIndex("chat_groups_tinode_topic_id_uidx").on(t.tinodeTopicId)
-    .where(sql`${t.tinodeTopicId} IS NOT NULL`),
+  uniqueIndex("chat_groups_tinode_topic_id_uidx").on(t.tinodeTopicId),
 ]);
 
 export const insertChatGroupSchema = createInsertSchema(chatGroups).omit({ id: true, createdAt: true });
