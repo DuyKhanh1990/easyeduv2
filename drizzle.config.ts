@@ -8,7 +8,8 @@ if (!url) {
 
 export default defineConfig({
   out: "./migrations",
-  schema: ["./shared/schema.ts", "./gateway/src/schema.ts", "./shared/models/chat.ts"],
+  // App DB schema only. Gateway has its own drizzle.config.ts and DB URL.
+  schema: ["./shared/schema.ts"],
   dialect: "postgresql",
   dbCredentials: { url },
 });

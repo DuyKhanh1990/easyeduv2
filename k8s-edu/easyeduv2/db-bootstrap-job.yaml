@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: easyeduv2-db-bootstrap
+  namespace: production
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: easyeduv2-db-bootstrap
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: emso-harbo-production
+      containers:
+        - name: db-bootstrap
+          # Keep this image reference identical to deployment.yaml.
+          image: harbor.emso.vn/emso-common/new-easyedu:0.0.2
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+            - node dist/db/migrate.cjs && node dist/db/seed-default.cjs
+          envFrom:
+            - configMapRef:
+                name: easyeduv2-config
+          env:
+            - name: BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: easyeduv2-bootstrap
+                  key: BOOTSTRAP_ADMIN_PASSWORD
