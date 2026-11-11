@@ -52,6 +52,9 @@ COPY --from=builder /app/dist ./dist
 
 # Copy migrations (used by startup migration logic)
 COPY --from=builder /app/migrations ./migrations
+# Keep the exact schema source and EasyEdu migration config with the image tag.
+COPY --from=builder /app/shared/schema.ts ./shared/schema.ts
+COPY --from=builder /app/drizzle.easyedu.config.ts ./drizzle.easyedu.config.ts
 
 # Run as non-root for security (k8s best practice)
 RUN addgroup -S nodejs && adduser -S nodejs -G nodejs

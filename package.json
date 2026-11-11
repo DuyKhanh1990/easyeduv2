@@ -11,6 +11,7 @@
     "db:push": "drizzle-kit push",
     "db:migration:generate": "drizzle-kit generate --config=drizzle.easyedu.config.ts",
     "db:migration:custom": "drizzle-kit generate --config=drizzle.easyedu.config.ts --custom",
+    "db:migrate": "node dist/db-migrate.cjs",
     "db:ensure-indexes": "npx tsx scripts/ensure-indexes.ts",
     "test": "vitest run",
     "test:watch": "vitest",
