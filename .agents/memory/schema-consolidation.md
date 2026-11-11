@@ -31,11 +31,11 @@ database objects in a Drizzle `--custom` migration. Gateway has a separate Drizz
 and database scope; do not merge its schema into the EasyEdu app lineage.
 
 ## Deployment gate
-**Rule:** A successful image build does not imply that every tenant database has the current schema. Apply and verify schema changes for each target database before rolling out the corresponding application image.
+**Rule:** Production schema changes are applied by the versioned EasyEdu migration runner packaged in the same image tag as the app. Never use `drizzle-kit push` as the production runner.
 
-**Why:** A missing table can make startup fail before Express begins listening, producing a misleading minified bundle stack trace that looks like an image, Node, or integration problem.
+**Why:** A tag must carry the exact SQL it can apply, and a failed migration must stop the app rollout instead of leaving an untracked partial schema.
 
-**How to apply:** When a release adds tables or columns, run the schema push per center, check the command result and table existence, then deploy the image. If only some centers fail, compare schema state before changing runtime configuration.
+**How to apply:** Generate and review SQL from the EasyEdu-only Drizzle config, keep unsupported DDL in versioned custom SQL, and package the journal/snapshots with the runner. Empty databases run the baseline. A legacy database without a ledger may adopt only after catalog checks; safe missing columns can be added transactionally, while missing tables or incompatible types/indexes/constraints stop for a reviewed migration. Use a per-database ledger and advisory lock; a newer ledger than the selected image is a downgrade error.
 
 ## What IS allowed outside schema.ts
 - Seed data (INSERT / ON CONFLICT DO NOTHING)

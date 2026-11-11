@@ -44,3 +44,23 @@ This bootstrap covers database structure, not center-specific seed data or
 data backfills. Existing SQL directly under `migrations/` is retained as legacy
 history and must not be combined with this new baseline when bootstrapping a
 blank database.
+
+## Running migrations from a tagged image
+
+Build the runner with the application using `npm run build`; the image contains
+`dist/db-migrate.cjs`, `migrations/easyedu/`, the latest snapshot, and
+`shared/schema.ts`. Run `npm run db:migrate` with the target database URL supplied
+through the deployment secret. The runner uses a per-database ledger, a
+transaction per migration, checksums, and an advisory lock. A migration failure
+stops the process so the deployment Job can block the application rollout.
+
+For a blank database, the runner applies the baseline and later migrations in
+journal order. For an existing database with a ledger, it applies only pending
+migrations. For a legacy database without a ledger, it validates the current
+snapshot before adoption; it may add missing nullable columns or columns with a
+constant default, but stops on missing tables, incompatible types, indexes, or
+constraints. It never drops tables, columns, or rows. Legacy drift that cannot
+be safely reconciled requires a reviewed migration.
+
+Do not run `drizzle-kit push` against production. The runner only executes the
+SQL files packaged in the image selected for that deployment.
