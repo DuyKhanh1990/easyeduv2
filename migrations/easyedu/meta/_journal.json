@@ -15,6 +15,13 @@
       "when": 1794379941838,
       "tag": "0001_manual_database_objects",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794383876987,
+      "tag": "0002_include_connected_db_columns",
+      "breakpoints": true
     }
   ]
 }

@@ -1863,6 +1863,7 @@ export const rolePermissions = pgTable("role_permissions", {
   canCreate: boolean("can_create").default(false).notNull(),
   canEdit: boolean("can_edit").default(false).notNull(),
   canDelete: boolean("can_delete").default(false).notNull(),
+  invoiceScopes: text("invoice_scopes").array(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => ({
   roleIdIdx: index("role_permissions_role_id_idx").on(table.roleId),
@@ -2839,6 +2840,7 @@ export const centerConfig = pgTable("center_config", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   centerUrl: text("center_url").notNull().default(""),
   singletonKey: text("singleton_key").notNull().default("default"),
+  timezone: varchar("timezone").notNull().default("Asia/Ho_Chi_Minh"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({
   singletonKeyUnique: uniqueIndex("center_config_singleton_key_unique").on(t.singletonKey),
