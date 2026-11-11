@@ -1,8 +1,8 @@
 # EasyEdu deployment inputs
 
-`kustomization.yaml` is the single image-tag setting for both the app Deployment
-and the migration PreSync Job. `deploy-easyedu` should update `images[0].newTag`
-to the Harbor tag selected for a release. The GitLab build pipeline is unchanged.
+`deployment.yaml` remains the only place where `deploy-easyedu` needs to set the
+Harbor image tag. Kustomize copies that full image reference into the migration
+PreSync Job when it renders the manifests. The GitLab build pipeline is unchanged.
 
 The cluster must provide Secret `easyeduv2-secrets` before sync. It must contain
 `DATABASE_URL` for the migration Job and the application's existing secret

@@ -13,6 +13,14 @@ labels:
     pairs:
       app: easyeduv2
       release: production
-images:
-  - name: harbor.emso.vn/emso-common/new-easyedu
-    newTag: "0.0.2"
+replacements:
+  - source:
+      kind: Deployment
+      name: easyeduv2
+      fieldPath: spec.template.spec.containers.[name=easyeduv2].image
+    targets:
+      - select:
+          kind: Job
+          name: easyeduv2-db-migrate
+        fieldPaths:
+          - spec.template.spec.containers.[name=migrate].image
