@@ -1,6 +1,6 @@
 {
-  "id": "255ec8c2-ff4b-4c6c-a133-9b1843d6794a",
-  "prevId": "7fd54e6e-3446-4c22-ac6b-ac6312704d4f",
+  "id": "8c75c61f-0467-4641-b036-26f93bb1d185",
+  "prevId": "e2d92c33-822b-48dc-9366-b600cfb39792",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1723,6 +1723,7 @@
           "isUnique": true,
           "with": {},
           "method": "btree",
+          "where": "\"chat_groups\".\"tinode_topic_id\" IS NOT NULL",
           "concurrently": false
         }
       },
@@ -3118,6 +3119,7 @@
           "isUnique": true,
           "with": {},
           "method": "btree",
+          "where": "\"classes\".\"tinode_topic_id\" IS NOT NULL",
           "concurrently": false
         }
       },
@@ -19110,6 +19112,7 @@
           "isUnique": true,
           "with": {},
           "method": "btree",
+          "where": "\"users\".\"tinode_user_id\" IS NOT NULL",
           "concurrently": false
         }
       },

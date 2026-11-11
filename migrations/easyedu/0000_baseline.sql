@@ -2655,7 +2655,7 @@ CREATE INDEX "bidv_recon_sessions_status_idx" ON "bidv_reconciliation_sessions" 
 CREATE UNIQUE INDEX "bidv_recon_sessions_unique_request_idx" ON "bidv_reconciliation_sessions" USING btree ("provider_id","reconcile_date","file_type");--> statement-breakpoint
 CREATE UNIQUE INDEX "center_config_singleton_key_unique" ON "center_config" USING btree ("singleton_key");--> statement-breakpoint
 CREATE UNIQUE INDEX "center_notification_templates_center_code_uniq" ON "center_notification_templates" USING btree ("center_id","template_code");--> statement-breakpoint
-CREATE UNIQUE INDEX "chat_groups_tinode_topic_id_uidx" ON "chat_groups" USING btree ("tinode_topic_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "chat_groups_tinode_topic_id_uidx" ON "chat_groups" USING btree ("tinode_topic_id") WHERE "chat_groups"."tinode_topic_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "chat_message_edit_history_message_idx" ON "chat_message_edit_history" USING btree ("topic_id","message_seq","edited_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "class_session_teacher_assignments_session_teacher_uidx" ON "class_session_teacher_assignments" USING btree ("class_session_id","teacher_id");--> statement-breakpoint
 CREATE INDEX "class_session_teacher_assignments_session_idx" ON "class_session_teacher_assignments" USING btree ("class_session_id");--> statement-breakpoint
@@ -2670,7 +2670,7 @@ CREATE INDEX "classes_location_idx" ON "classes" USING btree ("location_id");-->
 CREATE INDEX "classes_location_status_idx" ON "classes" USING btree ("location_id","status");--> statement-breakpoint
 CREATE INDEX "classes_created_at_idx" ON "classes" USING btree ("created_at");--> statement-breakpoint
 CREATE INDEX "classes_created_by_idx" ON "classes" USING btree ("created_by");--> statement-breakpoint
-CREATE UNIQUE INDEX "classes_tinode_topic_id_uidx" ON "classes" USING btree ("tinode_topic_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "classes_tinode_topic_id_uidx" ON "classes" USING btree ("tinode_topic_id") WHERE "classes"."tinode_topic_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "commission_configs_effective_from_idx" ON "commission_configs" USING btree ("effective_from");--> statement-breakpoint
 CREATE INDEX "course_locations_location_id_idx" ON "course_locations" USING btree ("location_id");--> statement-breakpoint
 CREATE INDEX "database_backups_snapshot_at_idx" ON "database_backups" USING btree ("snapshot_at");--> statement-breakpoint
@@ -2762,7 +2762,7 @@ CREATE UNIQUE INDEX "teacher_attendance_session_staff_unique" ON "teacher_attend
 CREATE UNIQUE INDEX "tuition_package_change_operation_student_unique" ON "tuition_package_change_operations" USING btree ("request_id","student_class_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "tuition_package_session_adjustment_unique" ON "tuition_package_session_adjustments" USING btree ("operation_id","student_session_id");--> statement-breakpoint
 CREATE INDEX "tuition_package_session_adjustment_session_idx" ON "tuition_package_session_adjustments" USING btree ("student_session_id","applied_sequence");--> statement-breakpoint
-CREATE UNIQUE INDEX "users_tinode_user_id_uidx" ON "users" USING btree ("tinode_user_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "users_tinode_user_id_uidx" ON "users" USING btree ("tinode_user_id") WHERE "users"."tinode_user_id" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "web_push_subscriptions_center_endpoint_uidx" ON "web_push_subscriptions" USING btree ("center_id","endpoint");--> statement-breakpoint
 CREATE INDEX "web_push_subscriptions_user_center_idx" ON "web_push_subscriptions" USING btree ("user_id","center_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "zalo_oa_messages_msg_id_unique" ON "zalo_oa_messages" USING btree ("msg_id");--> statement-breakpoint
