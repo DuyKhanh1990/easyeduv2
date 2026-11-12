@@ -18,6 +18,10 @@ const CRITERIA_COLORS = [
 
 const CRITERIA_INITIALS = (name: string) => name.trim().slice(0, 2).toUpperCase();
 
+function hasVisibleStudentFeedback(group: ReviewCriteriaGroup) {
+  return group.items.some((item) => item.inputType !== "checkbox" || item.checked === true);
+}
+
 function StarDisplay({ rating }: { rating: number }) {
   return (
     <div className="flex gap-0.5">
@@ -32,10 +36,11 @@ function CriteriaCard({ group, colorIdx }: { group: ReviewCriteriaGroup; colorId
   const { t } = useLanguage();
   const [expanded, setExpanded] = useState(true);
   const color = CRITERIA_COLORS[colorIdx % CRITERIA_COLORS.length];
-  const hasContent = group.items.some((i) => i.comment || i.inputType === "checkbox");
+  const visibleItems = group.items.filter((item) => item.inputType !== "checkbox" || item.checked === true);
+  const hasContent = visibleItems.some((item) => item.comment || item.inputType === "checkbox");
   const groupedItems = new Map<string, ReviewCriteriaGroup["items"]>();
   const ungroupedItems: ReviewCriteriaGroup["items"] = [];
-  for (const item of group.items) {
+  for (const item of visibleItems) {
     if (item.groupName) {
       const items = groupedItems.get(item.groupName) ?? [];
       items.push(item);
@@ -106,9 +111,6 @@ function ReviewItemRow({
       <div className="flex items-center gap-2 rounded-lg bg-white/70 dark:bg-black/20 px-3 py-2.5 text-sm shadow-sm">
         <Checkbox checked={item.checked === true} disabled />
         <span className="text-foreground">{item.subCriteriaName || t("mySpace.calendar.criteria")}</span>
-        <span className="ml-auto text-xs font-medium text-muted-foreground">
-          {item.checked === true ? t("mySpace.calendar.criteriaPassed") : t("mySpace.calendar.criteriaNotPassed")}
-        </span>
       </div>
     );
   }
@@ -156,7 +158,9 @@ interface FeedbackModalProps {
 export function FeedbackModal({ open, onClose, reviewData, className, sessionDate, loading }: FeedbackModalProps) {
   const { t } = useLanguage();
   const [activeTeacher, setActiveTeacher] = useState(0);
-  const validReviews = Array.isArray(reviewData) ? reviewData.filter((t) => t.criteria.length > 0) : [];
+  const validReviews = Array.isArray(reviewData)
+    ? reviewData.filter((review) => review.criteria.some(hasVisibleStudentFeedback))
+    : [];
   const currentReview = validReviews[activeTeacher];
 
   return (
