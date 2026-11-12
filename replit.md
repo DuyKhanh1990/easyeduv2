@@ -93,19 +93,18 @@ script/build.ts      — Production build script
 1. Sửa shared/schema.ts  →  định nghĩa bảng/cột mới bằng Drizzle
 2. Chạy `npm run db:push` để đồng bộ database development
 3. Push code lên nhánh mặc định GitLab
-4. Nếu schema hoặc migrations thay đổi, chạy job thủ công apply-db-schema trước
-   khi GitLab build/push image; job áp dụng TARGET_DB_URL rồi mới cho phép rollout
-5. Đặt TARGET_DB_URL trong GitLab CI/CD Variables dưới dạng protected + masked
+4. Sau khi image lên Harbor nhưng trước khi Argo rollout, chạy thủ công schema push
+   trên từng database khách hàng
 ```
 
 > Xem guardrail chi tiết trong comment đầu block `(async () => {` ở `server/index.ts`
 
 ### Migration production
-- Job `apply-db-schema` chỉ xuất hiện khi có thay đổi schema/migration trên nhánh mặc định.
-- Job cần `TARGET_DB_URL` trỏ tới đúng database khách hàng; chạy riêng từng database nếu mỗi khách hàng có DB riêng.
-- Job chạy `scripts/push-db-direct.ts`, sau đó áp dụng một lần các SQL trong `migrations/deploy/`.
+- Pipeline GitLab không kết nối hoặc tự cập nhật database khách hàng.
+- Với từng database khách hàng, đặt `TARGET_DB_URL`, chạy `npx tsx scripts/push-db-direct.ts`, rồi chạy `npx tsx scripts/apply-deploy-migrations.ts`.
+- Chỉ chạy `scripts/seed-default.ts` nếu database cần dữ liệu mặc định ban đầu.
 - Mọi constraint/type change mà schema push không xử lý phải có SQL migration mới; không sửa migration đã được áp dụng.
-- Job là bước chặn trước build/push image. Không chạy migration tự động trong app startup.
+- Không chạy migration tự động trong app startup.
 
 ---
 
