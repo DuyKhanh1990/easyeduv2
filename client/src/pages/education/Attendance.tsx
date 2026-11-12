@@ -39,6 +39,8 @@ import {
 import {
   ChevronDown,
   ChevronUp,
+  Download,
+  MapPin,
   Search,
   X,
   SlidersHorizontal,
@@ -61,6 +63,7 @@ import { ReviewDialog } from "@/components/education/ReviewDialog";
 type AttendanceFilters = {
   classes: string[];
   students: string[];
+  locations: string[];
   shift: string;
   dateRange: DateRange;
   studentSearch: string;
@@ -72,12 +75,16 @@ type ClassData = {
   classCode: string;
   name: string;
   studentCount: number;
+  locationId?: string | null;
+  locationName?: string | null;
+  location?: { id: string; name: string } | null;
 };
 
 type StudentAttendance = {
   id: string;
   recordType?: "regular" | "free";
   freeRegistrationId?: string;
+  locationId?: string | null;
   classSessionId?: string;
   studentClassId?: string;
   studentId: string;
@@ -164,6 +171,31 @@ function getReviewCriteriaIds(record: StudentAttendance): string[] {
     ]))];
 }
 
+function getOnlineAttendanceExportValue(record: StudentAttendance): string {
+  if ((record.learningFormat !== "online" && !record.onlineLink) || !record.onlineClickedAt) return "";
+  const formatTime = (date: Date) =>
+    date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const parts = [`↗ ${formatTime(new Date(record.onlineClickedAt))}`];
+  let endedAt: Date | null = null;
+  let isDefaultEnd = false;
+  if (record.onlineEndedAt) {
+    endedAt = new Date(record.onlineEndedAt);
+  } else if (record.endTime && record.sessionDate) {
+    const [hour, minute, second = 0] = record.endTime.split(":").map(Number);
+    const dateKey = typeof record.sessionDate === "string"
+      ? record.sessionDate.split("T")[0]
+      : new Date(record.sessionDate).toISOString().split("T")[0];
+    const [year, month, day] = dateKey.split("-").map(Number);
+    const sessionEnd = new Date(year, month - 1, day, hour, minute, second, 0);
+    if (new Date() >= sessionEnd) {
+      endedAt = sessionEnd;
+      isDefaultEnd = true;
+    }
+  }
+  if (endedAt) parts.push(`↙ ${formatTime(endedAt)}${isDefaultEnd ? " *" : ""}`);
+  return parts.join("\n");
+}
+
 export function Attendance() {
   const { data: myPerms, isLoading: permissionsLoading } = useMyPermissions();
   const canViewAttendance = Boolean(
@@ -210,6 +242,7 @@ function AttendanceContent() {
   const [filters, setFilters] = useState<AttendanceFilters>({
     classes: [],
     students: [],
+    locations: [],
     shift: "all",
     dateRange: getDefaultAttendanceDateRange(),
     studentSearch: "",
@@ -217,6 +250,8 @@ function AttendanceContent() {
   });
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [classSearch, setClassSearch] = useState("");
+  const [locationSearch, setLocationSearch] = useState("");
+  const [locationPopoverOpen, setLocationPopoverOpen] = useState(false);
   const [shiftSearch, setShiftSearch] = useState("");
   const [shiftPopoverOpen, setShiftPopoverOpen] = useState(false);
 
@@ -227,6 +262,7 @@ function AttendanceContent() {
   const [reviewTarget, setReviewTarget] = useState<StudentAttendance | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
+  const [isExporting, setIsExporting] = useState(false);
 
   const { toast } = useToast();
 
@@ -302,6 +338,15 @@ function AttendanceContent() {
       return response.json();
     },
   });
+  const { data: locationsData = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/locations"],
+    queryFn: async () => {
+      const response = await fetch("/api/locations");
+      if (!response.ok) throw new Error("Không thể tải danh sách cơ sở");
+      return response.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 
   const shiftOptions = useMemo(() => {
     const options = shiftTemplates
@@ -373,28 +418,54 @@ function AttendanceContent() {
     );
   }, [attendanceVisibleClasses, classSearch]);
 
+  const locationOptions = useMemo(() => {
+    return locationsData
+      .filter((location) => location.id && location.name)
+      .sort((a, b) => a.name.localeCompare(b.name, "vi"));
+  }, [locationsData]);
+
+  const filteredLocationOptions = useMemo(() => {
+    const query = locationSearch.trim().toLocaleLowerCase("vi");
+    if (!query) return locationOptions;
+    return locationOptions.filter((location) => location.name.toLocaleLowerCase("vi").includes(query));
+  }, [locationOptions, locationSearch]);
+
   const filteredShiftOptions = useMemo(() => {
     const query = shiftSearch.trim().toLowerCase();
     if (!query) return shiftOptions;
     return shiftOptions.filter((shift) => shift.label.toLowerCase().includes(query));
   }, [shiftOptions, shiftSearch]);
 
+  const filteredAttendanceRows = useMemo(() => {
+    const locationsByClass = new Map(
+      (classesData as ClassData[]).map((cls) => [
+        cls.id,
+        cls.locationId ?? cls.location?.id ?? null,
+      ]),
+    );
+    return (attendanceData as StudentAttendance[]).filter((record) => {
+      if (filters.attendanceStatus.length > 0) {
+        const status = record.attendanceStatus || "pending";
+        if (!filters.attendanceStatus.includes(status)) return false;
+      }
+      if (
+        filters.locations.length > 0
+        && !filters.locations.includes(
+          record.locationId ?? locationsByClass.get(record.classId) ?? "",
+        )
+      ) return false;
+      return true;
+    });
+  }, [attendanceData, classesData, filters.attendanceStatus, filters.locations]);
+
   const attendanceByClass = useMemo(() => {
     const grouped: Record<string, any> = {};
-    (attendanceData as StudentAttendance[])
-      .filter(record => {
-        if (filters.attendanceStatus.length === 0) return true;
-        const status = record.attendanceStatus || "pending";
-        return filters.attendanceStatus.includes(status);
-      })
-      .forEach((record: StudentAttendance) => {
-        if (!grouped[record.className]) {
-          grouped[record.className] = [];
-        }
-        grouped[record.className].push(record);
-      });
+    filteredAttendanceRows.forEach((record) => {
+      if (!grouped[record.className]) grouped[record.className] = [];
+      grouped[record.className].push(record);
+    });
     return grouped;
-  }, [attendanceData, filters.attendanceStatus]);
+  }, [filteredAttendanceRows]);
 
   const toggleClass = (classId: string) => {
     setExpandedClasses((prev) =>
@@ -473,10 +544,11 @@ function AttendanceContent() {
             {/* Right side controls */}
             <div className="flex items-center gap-2 flex-shrink-0">
               {/* Clear filters */}
-              {(filters.classes.length > 0 || filters.students.length > 0 || filters.shift !== "all" || filters.attendanceStatus.length > 0) && (
+              {(filters.locations.length > 0 || filters.classes.length > 0 || filters.students.length > 0 || filters.shift !== "all" || filters.attendanceStatus.length > 0) && (
                 <button
                   onClick={() => {
-                    setFilters({ classes: [], students: [], shift: "all", dateRange: getDefaultAttendanceDateRange(), studentSearch: "", attendanceStatus: [] });
+                    setFilters({ classes: [], students: [], locations: [], shift: "all", dateRange: getDefaultAttendanceDateRange(), studentSearch: "", attendanceStatus: [] });
+                    setCurrentPage(1);
                   }}
                   className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
                   data-testid="button-clear-filters"
@@ -492,6 +564,88 @@ function AttendanceContent() {
                 className="h-8 text-xs"
               />
 
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5 border-border/70"
+                onClick={async () => {
+                  if (filteredAttendanceRows.length === 0 || isExporting) return;
+                  setIsExporting(true);
+                  try {
+                    const ExcelJS = (await import("exceljs")).default;
+                    const workbook = new ExcelJS.Workbook();
+                    const worksheet = workbook.addWorksheet("Điểm danh");
+                    worksheet.columns = [
+                      { header: "Lớp học", key: "className", width: 18 },
+                      { header: "Tên học viên", key: "student", width: 30 },
+                      { header: "Thứ / Ngày", key: "date", width: 20 },
+                      { header: "Ca học", key: "shift", width: 19 },
+                      { header: "Số buổi", key: "sessions", width: 12 },
+                      { header: "Điểm danh", key: "attendance", width: 20 },
+                      { header: "Giáo viên", key: "teacher", width: 25 },
+                      { header: "Nhận xét", key: "review", width: 12 },
+                      { header: "Ghi chú", key: "note", width: 30 },
+                      { header: "Học online", key: "online", width: 22 },
+                    ];
+                    const headerRow = worksheet.getRow(1);
+                    headerRow.font = { bold: true };
+                    headerRow.alignment = { vertical: "middle", horizontal: "center" };
+                    headerRow.height = 22;
+                    worksheet.views = [{ state: "frozen", ySplit: 1 }];
+                    worksheet.autoFilter = {
+                      from: "A1",
+                      to: "J1",
+                    };
+                    Object.entries(attendanceByClass)
+                      .sort(([a], [b]) => a.localeCompare(b, "vi"))
+                      .flatMap(([, records]) => records as StudentAttendance[])
+                      .forEach((record) => {
+                        worksheet.addRow({
+                          className: record.className,
+                          student: `${record.studentCode} - ${record.studentName}`,
+                          date: `${record.dayOfWeek}, ${format(new Date(record.sessionDate), "d/M/yyyy")}`,
+                          shift: record.shift,
+                          sessions: `${record.sessionOrder}/${record.totalSessions}`,
+                          attendance: STATUS_CONFIG[record.attendanceStatus || "pending"]?.label ?? "Chưa điểm danh",
+                          teacher: record.teacherName,
+                          review: hasReviewContent(record.reviewData) ? "✓" : "",
+                          note: record.attendanceNote || "",
+                          online: getOnlineAttendanceExportValue(record),
+                        });
+                      });
+                    const dateFrom = format(filters.dateRange.from ?? new Date(), "yyyyMMdd");
+                    const dateTo = format(filters.dateRange.to ?? filters.dateRange.from ?? new Date(), "yyyyMMdd");
+                    const buffer = await workbook.xlsx.writeBuffer();
+                    const blob = new Blob([buffer], {
+                      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    });
+                    const downloadUrl = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.href = downloadUrl;
+                    link.download = `diem-danh-${dateFrom}-${dateTo}.xlsx`;
+                    link.click();
+                    URL.revokeObjectURL(downloadUrl);
+                    toast({
+                      title: "Đã tải file Excel",
+                      description: `${filteredAttendanceRows.length} dòng theo bộ lọc hiện tại.`,
+                    });
+                  } catch (error) {
+                    toast({
+                      title: "Không thể xuất Excel",
+                      description: error instanceof Error ? error.message : "Vui lòng thử lại.",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setIsExporting(false);
+                  }
+                }}
+                disabled={isExporting || filteredAttendanceRows.length === 0}
+                data-testid="button-export-attendance"
+              >
+                <Download className="h-3.5 w-3.5" />
+                {isExporting ? "Đang xuất..." : "Tải Excel"}
+              </Button>
+
               {/* Bộ lọc button */}
               <Button
                 variant="outline"
@@ -502,9 +656,9 @@ function AttendanceContent() {
               >
                 <Filter className="h-3.5 w-3.5" />
                 Bộ lọc
-                {(filters.classes.length + filters.students.length + (filters.shift !== "all" ? 1 : 0)) > 0 && (
+                {(filters.locations.length + filters.classes.length + filters.students.length + (filters.shift !== "all" ? 1 : 0)) > 0 && (
                   <span className="ml-0.5 h-4 w-4 rounded-full bg-primary text-white text-[10px] flex items-center justify-center font-bold">
-                    {filters.classes.length + filters.students.length + (filters.shift !== "all" ? 1 : 0)}
+                    {filters.locations.length + filters.classes.length + filters.students.length + (filters.shift !== "all" ? 1 : 0)}
                   </span>
                 )}
               </Button>
@@ -519,9 +673,104 @@ function AttendanceContent() {
               <DialogTitle className="flex items-center gap-2">
                 <SlidersHorizontal className="h-4 w-4" /> Bộ lọc
               </DialogTitle>
-              <DialogDescription>Lọc theo lớp học, học viên và ca học</DialogDescription>
+              <DialogDescription>Lọc theo cơ sở, lớp học, học viên và ca học</DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-2">
+            <div className="max-h-[70vh] space-y-4 overflow-y-auto py-2">
+
+              {/* Locations */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <MapPin className="h-3 w-3" /> Cơ sở
+                </Label>
+                <Popover open={locationPopoverOpen} onOpenChange={(open) => {
+                  setLocationPopoverOpen(open);
+                  if (!open) setLocationSearch("");
+                }}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full h-9 justify-start text-sm border-border/70"
+                      data-testid="button-location-filter"
+                    >
+                      {filters.locations.length > 0 ? (
+                        <span className="flex items-center gap-1.5">
+                          <Badge className="h-5 w-5 rounded-full p-0 flex items-center justify-center text-[10px] bg-primary text-white">
+                            {filters.locations.length}
+                          </Badge>
+                          cơ sở đã chọn
+                        </span>
+                      ) : <span className="text-muted-foreground">Chọn cơ sở...</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] min-w-60 bg-white shadow-lg border border-border/70 z-[200]" align="start">
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Tìm cơ sở..."
+                          className="pl-8 h-9"
+                          value={locationSearch}
+                          onChange={(event) => setLocationSearch(event.target.value)}
+                          data-testid="input-location-search"
+                        />
+                      </div>
+                      <ScrollArea className="h-48">
+                        <div className="space-y-0.5 pr-2">
+                          {filteredLocationOptions.length > 0 ? filteredLocationOptions.map((location) => (
+                            <div key={location.id} className="flex items-center space-x-2 px-1 py-1.5 rounded-lg hover:bg-muted/50">
+                              <Checkbox
+                                id={`location-${location.id}`}
+                                checked={filters.locations.includes(location.id)}
+                                onCheckedChange={(checked) => {
+                                  setFilters((prev) => ({
+                                    ...prev,
+                                    locations: checked
+                                      ? [...new Set([...prev.locations, location.id])]
+                                      : prev.locations.filter((id) => id !== location.id),
+                                  }));
+                                  setCurrentPage(1);
+                                }}
+                                data-testid={`checkbox-location-${location.id}`}
+                              />
+                              <Label htmlFor={`location-${location.id}`} className="text-sm cursor-pointer flex-1">
+                                {location.name}
+                              </Label>
+                            </div>
+                          )) : (
+                            <p className="py-6 text-center text-sm text-muted-foreground">Không tìm thấy cơ sở</p>
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {filters.locations.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {filters.locations.map((locationId) => {
+                      const location = locationOptions.find((option) => option.id === locationId);
+                      return (
+                        <Badge key={locationId} variant="secondary" className="text-xs gap-1 pl-2 pr-1">
+                          {location?.name ?? "Cơ sở"}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFilters((prev) => ({
+                                ...prev,
+                                locations: prev.locations.filter((id) => id !== locationId),
+                              }));
+                              setCurrentPage(1);
+                            }}
+                            className="ml-0.5 rounded-full hover:bg-muted p-0.5"
+                            aria-label={`Bỏ lọc cơ sở ${location?.name ?? ""}`}
+                          >
+                            <X className="h-2.5 w-2.5" />
+                          </button>
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
               {/* Classes */}
               <div className="space-y-1.5">
@@ -698,7 +947,8 @@ function AttendanceContent() {
               {/* Actions */}
               <div className="flex justify-end gap-2 pt-2 border-t border-border/60">
                 <Button variant="outline" size="sm" onClick={() => {
-                  setFilters(prev => ({ ...prev, classes: [], students: [], shift: "all", dateRange: getDefaultAttendanceDateRange(), studentSearch: "" }));
+                  setFilters(prev => ({ ...prev, classes: [], students: [], locations: [], shift: "all", dateRange: getDefaultAttendanceDateRange(), studentSearch: "" }));
+                  setCurrentPage(1);
                 }}>Xoá bộ lọc</Button>
                 <Button size="sm" onClick={() => setFilterPanelOpen(false)}>Áp dụng</Button>
               </div>
@@ -740,7 +990,7 @@ function AttendanceContent() {
                   </Button>
                 )}
                 <div className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span>{(attendanceData as any[]).length} bản ghi</span>
+                  <span>{filteredAttendanceRows.length} bản ghi</span>
                 </div>
               </div>
             );
