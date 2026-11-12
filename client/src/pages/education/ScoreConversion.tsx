@@ -127,6 +127,7 @@ type ScoreConversionStudentResult = {
   classId: string;
   classCode: string;
   className: string;
+  locationId?: string | null;
   locationName?: string | null;
   teacherNames?: string | null;
   sessionIndex: number | null;
@@ -391,6 +392,7 @@ export default function ScoreConversion() {
   const [assessmentSearchInput, setAssessmentSearchInput] = useState("");
   const [assessmentSearchTerm, setAssessmentSearchTerm] = useState("");
   const [filterDialogOpen, setFilterDialogOpen] = useState(false);
+  const [locationFilters, setLocationFilters] = useState<string[]>([]);
   const [classFilters, setClassFilters] = useState<string[]>([]);
   const [teacherFilters, setTeacherFilters] = useState<string[]>([]);
   const [assessmentFilters, setAssessmentFilters] = useState<string[]>([]);
@@ -439,6 +441,14 @@ export default function ScoreConversion() {
       return response.json();
     },
     refetchInterval: 60_000,
+  });
+  const locationsQuery = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/locations"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/locations");
+      return response.json();
+    },
+    staleTime: 60_000,
   });
   const assignedScoreSheetStudentsQuery = useQuery<ScoreConversionStudentResult[]>({
     queryKey: [ASSIGNED_SCORE_SHEET_STUDENTS_ENDPOINT],
@@ -492,6 +502,12 @@ export default function ScoreConversion() {
     }
     return Array.from(options.values()).sort((a, b) => a.label.localeCompare(b.label, "vi"));
   }, [conversionAssessments]);
+  const locationFilterOptions = useMemo(
+    () => (locationsQuery.data ?? [])
+      .map((location) => ({ value: location.id, label: location.name }))
+      .sort((a, b) => a.label.localeCompare(b.label, "vi")),
+    [locationsQuery.data],
+  );
   const teacherFilterOptions = useMemo(() => {
     const names = new Set<string>();
     conversionAssessments.forEach((assessment) => getTeacherNameList(assessment).forEach((name) => names.add(name)));
@@ -532,6 +548,10 @@ export default function ScoreConversion() {
     );
     const deadlineDateKey = assessment.scoreDeadlineAt?.substring(0, 10) ?? "";
     if (assessmentStatusFilter !== "all" && lifecycleStatus?.key !== assessmentStatusFilter) return false;
+    if (
+      locationFilters.length > 0
+      && (!assessment.locationId || !locationFilters.includes(assessment.locationId))
+    ) return false;
     if (classFilters.length > 0 && !classFilters.includes(assessment.classId)) return false;
     if (
       teacherFilters.length > 0
@@ -627,6 +647,7 @@ export default function ScoreConversion() {
   );
   const sortedAssessmentDates = Object.keys(assessmentsByDate).sort((a, b) => b.localeCompare(a));
   const activeFilterCount = [
+    locationFilters.length > 0,
     classFilters.length > 0,
     teacherFilters.length > 0,
     assessmentFilters.length > 0,
@@ -638,6 +659,7 @@ export default function ScoreConversion() {
     Boolean(deadlineDateFrom || deadlineDateTo),
   ].filter(Boolean).length;
   const clearAssessmentFilters = () => {
+    setLocationFilters([]);
     setClassFilters([]);
     setTeacherFilters([]);
     setAssessmentFilters([]);
@@ -1422,6 +1444,17 @@ export default function ScoreConversion() {
                           </DialogDescription>
                         </DialogHeader>
                         <div className="grid gap-4 py-2 sm:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <label className="text-sm font-medium">Cơ sở</label>
+                            <SearchableMultiSelect
+                              options={locationFilterOptions}
+                              value={locationFilters}
+                              onChange={setLocationFilters}
+                              placeholder="Chọn cơ sở"
+                              searchPlaceholder="Tìm cơ sở..."
+                              data-testid="filter-score-conversion-location"
+                            />
+                          </div>
                           <div className="space-y-1.5">
                             <label className="text-sm font-medium">Lớp</label>
                             <SearchableMultiSelect

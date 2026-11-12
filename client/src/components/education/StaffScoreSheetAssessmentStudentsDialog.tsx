@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { AlertCircle, CheckCircle2, Loader2, Settings2, Trash2, UserPlus } from "lucide-react";
+import { AlertCircle, CheckCircle2, Eye, Loader2, Settings2, Trash2, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -44,6 +44,7 @@ export type StaffAssignedScoreSheetAssessment = {
   classCode: string;
   className: string;
   isManual?: boolean;
+  locationId?: string | null;
   locationName?: string | null;
   teacherNames?: string | null;
   sessionIndex: number | null;
@@ -144,9 +145,13 @@ export function StaffScoreSheetAssessmentStudentsDialog({
   const scoreSheetTemplateName = assessment?.templateName ?? "Bảng điểm chưa đặt tên";
   const showIndividualPublication = Boolean(canManagePublication && assessment?.hasConversion);
   const canManageRoster = canManageScores && !assessment?.isManual;
-  const [editingStudent, setEditingStudent] = useState<AssessmentRosterStudent | null>(null);
+  const [scoreDialogTarget, setScoreDialogTarget] = useState<{
+    student: AssessmentRosterStudent;
+    mode: "view" | "edit";
+  } | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<AssessmentRosterStudent | null>(null);
   const [restoreMenuOpen, setRestoreMenuOpen] = useState(false);
+  const showScoreActions = canManageScores || students.some((student) => student.attemptsTaken > 0);
 
   async function updateRosterStudent(studentId: string, action: "remove" | "restore") {
     if (!assessment) throw new Error("Chưa chọn buổi thi");
@@ -374,7 +379,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                     {showIndividualPublication && (
                       <TableHead className="min-w-[135px] text-center">Công bố riêng</TableHead>
                     )}
-                    {canManageScores && (
+                    {showScoreActions && (
                       <TableHead className="min-w-[110px] text-center">Quản lý</TableHead>
                     )}
                   </TableRow>
@@ -383,7 +388,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                   {students.length === 0 ? (
                     <TableRow>
                         <TableCell
-                          colSpan={(canManageScores ? 10 : 9) + (showIndividualPublication ? 1 : 0)}
+                          colSpan={(showScoreActions ? 10 : 9) + (showIndividualPublication ? 1 : 0)}
                           className="h-24 text-center text-muted-foreground"
                         >
                           Chưa có học viên trong bảng điểm.
@@ -472,23 +477,38 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                             )}
                           </TableCell>
                         )}
-                        {canManageScores && (
+                        {showScoreActions && (
                           <TableCell className="text-center">
                             <div className="inline-flex items-center gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => setEditingStudent(student)}
-                                disabled={!canEnterScores}
-                                title={canEnterScores
-                                  ? `Nhập điểm cho ${student.fullName}`
-                                  : "Chưa thi — chưa thể nhập điểm"}
-                                aria-label={`Quản lý kết quả của ${student.fullName}`}
-                                data-testid={`btn-manage-assessment-score-${student.studentId}`}
-                              >
-                                <Settings2 className="h-4 w-4" />
-                              </Button>
+                              {student.attemptsTaken > 0 && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-primary"
+                                  onClick={() => setScoreDialogTarget({ student, mode: "view" })}
+                                  title={`Xem kết quả của ${student.fullName}`}
+                                  aria-label={`Xem kết quả của ${student.fullName}`}
+                                  data-testid={`btn-view-assessment-score-${student.studentId}`}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {canManageScores && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => setScoreDialogTarget({ student, mode: "edit" })}
+                                  disabled={!canEnterScores}
+                                  title={canEnterScores
+                                    ? `Nhập điểm cho ${student.fullName}`
+                                    : "Chưa thi — chưa thể nhập điểm"}
+                                  aria-label={`Quản lý kết quả của ${student.fullName}`}
+                                  data-testid={`btn-manage-assessment-score-${student.studentId}`}
+                                >
+                                  <Settings2 className="h-4 w-4" />
+                                </Button>
+                              )}
                               {canManageRoster && (
                                 <Button
                                   variant="ghost"
@@ -556,11 +576,14 @@ export function StaffScoreSheetAssessmentStudentsDialog({
       </AlertDialog>
       <StaffScoreSheetAssessmentScoreDialog
         assessment={assessment}
-        student={editingStudent}
-        open={!!editingStudent}
-        canManagePublication={Boolean(canManagePublication && canManageScores)}
+        student={scoreDialogTarget?.student ?? null}
+        mode={scoreDialogTarget?.mode ?? "edit"}
+        open={!!scoreDialogTarget}
+        canManagePublication={Boolean(
+          canManagePublication && canManageScores && scoreDialogTarget?.mode === "edit",
+        )}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen) setEditingStudent(null);
+          if (!nextOpen) setScoreDialogTarget(null);
         }}
         onSaved={() => {
           void rosterQuery.refetch();

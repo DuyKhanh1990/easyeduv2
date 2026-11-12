@@ -3448,6 +3448,7 @@ export function registerConfigRoutes(app: Express): void {
           st.start_time AS session_start_time,
           c.class_code,
           c.name AS class_name,
+          c.location_id,
           loc.name AS location_name,
           assigned_teachers.teacher_names,
           (
@@ -3567,6 +3568,7 @@ export function registerConfigRoutes(app: Express): void {
           classId: row.class_id,
           classCode: row.class_code,
           className: row.class_name,
+          locationId: row.location_id ?? null,
           locationName: row.location_name ?? null,
           teacherNames: row.teacher_names ?? null,
           sessionIndex: row.session_index,
@@ -3650,6 +3652,7 @@ export function registerConfigRoutes(app: Express): void {
           classId: "manual",
           classCode: "Thủ công",
           className: "Thủ công",
+          locationId: null,
           locationName: null,
           teacherNames: assessment.createdByName,
           sessionIndex: null,
@@ -3766,6 +3769,7 @@ export function registerConfigRoutes(app: Express): void {
           st.start_time AS session_start_time,
           c.class_code,
           c.name AS class_name,
+          c.location_id,
           loc.name AS location_name,
           assigned_teachers.teacher_names
         FROM class_sessions cs
@@ -3906,6 +3910,7 @@ export function registerConfigRoutes(app: Express): void {
               classId: row.class_id,
               classCode: row.class_code,
               className: row.class_name,
+              locationId: row.location_id ?? null,
               locationName: row.location_name ?? null,
               teacherNames: row.teacher_names ?? null,
               sessionIndex: row.session_index,
@@ -4014,6 +4019,7 @@ export function registerConfigRoutes(app: Express): void {
             classId: "manual",
             classCode: "Thủ công",
             className: "Thủ công",
+            locationId: null,
             locationName: null,
             teacherNames: assessment.createdByName,
             sessionIndex: null,
