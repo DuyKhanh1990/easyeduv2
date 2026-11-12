@@ -11,6 +11,7 @@ workflow:
     - if: '$CI_COMMIT_TAG'
 
 stages:
+  - db_schema_sync
   - build_images
 
 variables:
@@ -22,6 +23,30 @@ variables:
   REGISTRY_IMAGE: new-easyedu
   DOCKER_IMAGE: "$DOCKER_REGISTRY/$REGISTRY_PROJECT/$REGISTRY_IMAGE"
   REGISTRY_TAG: "0.4.0"
+
+apply-db-schema:
+  stage: db_schema_sync
+  image: node:20-alpine
+  tags:
+    - emso-runner
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - shared/schema.ts
+        - drizzle.config.ts
+        - scripts/push-db-direct.ts
+        - scripts/apply-deploy-migrations.ts
+        - migrations/deploy/*.sql
+      when: manual
+      allow_failure: false
+    - when: never
+  script:
+    - test -n "$TARGET_DB_URL" || (echo "Set TARGET_DB_URL as a protected, masked GitLab CI variable before running this job." && exit 1)
+    - apk add --no-cache python3 make g++
+    - sed -i -E 's#http://package-firewall\.replit\.(local|internal)/npm/#https://registry.npmjs.org/#g' package-lock.json
+    - npm ci --registry=https://registry.npmjs.org
+    - npx tsx scripts/push-db-direct.ts
+    - npx tsx scripts/apply-deploy-migrations.ts
 
 emso-build-image:
   stage: build_images

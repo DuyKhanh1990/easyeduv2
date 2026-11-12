@@ -3935,3 +3935,10 @@ export const organizationClientLocations = pgTable("organization_client_location
   clientLocationPk: primaryKey({ columns: [table.organizationClientId, table.locationId] }),
   locationIdx: index("organization_client_locations_location_idx").on(table.locationId),
 }));
+
+// Deployment-only migration ledger; application features do not read or write this table.
+export const deploymentSchemaMigrations = pgTable("deployment_schema_migrations", {
+  name: varchar("name", { length: 255 }).primaryKey(),
+  checksum: varchar("checksum", { length: 64 }).notNull(),
+  appliedAt: timestamp("applied_at").defaultNow().notNull(),
+});
