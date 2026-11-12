@@ -2814,7 +2814,14 @@ export function registerConfigRoutes(app: Express): void {
   app.get("/api/my-permissions", async (req, res) => {
     try {
       if (req.isSuperAdmin) {
-        return res.json({ isSuperAdmin: true, isStudent: false, departmentNames: [], systemDepartmentNames: [], permissions: {} });
+        return res.json({
+          isSuperAdmin: true,
+          isStudent: false,
+          departmentNames: [],
+          systemDepartmentNames: [],
+          permissions: {},
+          userId: (req.user as any)?.id ?? null,
+        });
       }
 
       if (req.isStudent) {
