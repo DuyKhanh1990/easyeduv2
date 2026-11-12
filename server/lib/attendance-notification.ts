@@ -160,7 +160,7 @@ export async function sendAttendanceNotification(
     // In-app notification — chỉ gửi nếu học viên có user account
     if (ctx.userId) {
       const parts = [
-        `Giáo viên ${actorLabel} vừa Điểm danh: ${statusLabel}`,
+        `${actorLabel} vừa Điểm danh: ${statusLabel}`,
         `Lớp ${ctx.className}`,
         ctx.sessionLabel,
         [ctx.weekdayLabel, ctx.dateLabel, ctx.timeLabel].filter(Boolean).join(" "),
@@ -349,7 +349,7 @@ export async function sendContentNotification(
           // assignments list directly.
           const onlyHomework = contents.every((content) => isHomeworkContentType(content.contentType));
           const header = [
-            `Giáo viên ${actorLabel} vừa Giao nội dung`,
+            `${actorLabel} vừa Giao nội dung`,
             `Lớp ${className}`,
             sessionLabel,
             [weekdayLabel, dateLabel, timeLabel].filter(Boolean).join(" "),
@@ -554,7 +554,7 @@ export async function sendReviewNotification(
         // In-app notification — chỉ gửi nếu học viên có user account
         if (ctx.userId) {
           const parts = [
-            `Giáo viên ${actorLabel} vừa Nhận xét học viên`,
+            `${actorLabel} vừa Nhận xét học viên`,
             `Lớp ${ctx.className}`,
             ctx.sessionLabel,
             sessionDate,

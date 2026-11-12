@@ -336,6 +336,12 @@ function renderNotificationContent(content: string) {
   return <span>{content}</span>;
 }
 
+function getDisplayNotificationContent(notification: Notification) {
+  const actorActionCategories = new Set(["attendance", "review", "content"]);
+  if (!actorActionCategories.has(notification.category ?? "")) return notification.content;
+  return notification.content.replace(/^Giáo viên\s+/, "");
+}
+
 const COLLAPSE_THRESHOLD = 120;
 
 function NotificationItem({ notification, isStudent, onRead, onNavigate }: {
@@ -347,7 +353,8 @@ function NotificationItem({ notification, isStudent, onRead, onNavigate }: {
   const { t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
   const dotColor = CATEGORY_COLORS[notification.category ?? "general"] ?? "bg-primary";
-  const isLong = notification.content.length > COLLAPSE_THRESHOLD;
+  const displayContent = getDisplayNotificationContent(notification);
+  const isLong = displayContent.length > COLLAPSE_THRESHOLD;
   const route = getNotificationRoute(notification, isStudent);
   const isClickable = !!route;
 
@@ -397,7 +404,7 @@ function NotificationItem({ notification, isStudent, onRead, onNavigate }: {
             !expanded && isLong && "line-clamp-3"
           )}
         >
-          {renderNotificationContent(notification.content)}
+          {renderNotificationContent(displayContent)}
         </p>
         {isLong && (
           <button
