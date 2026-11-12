@@ -26,12 +26,15 @@ async function main() {
     await client.query("SELECT pg_advisory_lock(hashtext($1))", ["easyedu-deploy-schema-migrations"]);
     lockAcquired = true;
 
-    const { rows: ledgerTable } = await client.query(
-      "SELECT to_regclass('public.deployment_schema_migrations') AS table_name",
-    );
-    if (!ledgerTable[0]?.table_name) {
-      throw new Error("Migration ledger is missing; run scripts/push-db-direct.ts first.");
-    }
+    // Bootstrap the migration ledger for existing customer databases that already
+    // have the application tables but have never used this deployment runner.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS public.deployment_schema_migrations (
+        name varchar(255) PRIMARY KEY,
+        checksum varchar(64) NOT NULL,
+        applied_at timestamp NOT NULL DEFAULT now()
+      )
+    `);
 
     const files = (await readdir(migrationsDir))
       .filter((file) => file.endsWith(".sql"))

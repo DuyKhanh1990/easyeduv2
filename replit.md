@@ -101,7 +101,9 @@ script/build.ts      — Production build script
 
 ### Migration production
 - Pipeline GitLab không kết nối hoặc tự cập nhật database khách hàng.
-- Với từng database khách hàng, đặt `TARGET_DB_URL`, chạy `npx tsx scripts/push-db-direct.ts`, rồi chạy `npx tsx scripts/apply-deploy-migrations.ts`.
+- Nếu database đã có đủ bảng/cột, chỉ chạy `npx tsx scripts/apply-deploy-migrations.ts` cho migration đang chờ.
+- Nếu release có bảng/cột mới còn thiếu, chạy `scripts/push-db-direct.ts` trước migration.
+- Chạy migration trên từng database sau khi image lên Harbor nhưng trước khi Argo rollout.
 - Chỉ chạy `scripts/seed-default.ts` nếu database cần dữ liệu mặc định ban đầu.
 - Mọi constraint/type change mà schema push không xử lý phải có SQL migration mới; không sửa migration đã được áp dụng.
 - Không chạy migration tự động trong app startup.

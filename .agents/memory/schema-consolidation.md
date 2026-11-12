@@ -20,7 +20,7 @@ Inline DDL causes new environments to be missing tables/columns.
 
 **Why:** A missing table can make startup fail before Express begins listening, producing a misleading minified bundle stack trace that looks like an image, Node, or integration problem.
 
-**How to apply:** When a release changes schema, manually run the schema push per target database before Argo rollout, then apply any new SQL files under `migrations/deploy/`. The migration ledger rejects edited applied files. If only some centers fail, compare schema state before changing runtime configuration.
+**How to apply:** When a release adds tables or columns, manually run the schema push per target database before Argo rollout. For constraints or other SQL migrations, run `scripts/apply-deploy-migrations.ts` per target DB; it bootstraps its own ledger and skips migrations already applied. If only some centers fail, compare schema state before changing runtime configuration.
 
 ## What IS allowed outside schema.ts
 - Seed data (INSERT / ON CONFLICT DO NOTHING)
