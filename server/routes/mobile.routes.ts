@@ -48,6 +48,7 @@ import {
   evaluationCriteria,
   evaluationSubCriteria,
   studentLocations,
+  bidvLocationConfigs,
 } from "@shared/schema";
 import {
   formatEvaluationExclusionViolation,
@@ -1367,8 +1368,10 @@ export function registerMobileRoutes(app: Express) {
         .select({
           id: invoices.id,
           studentId: invoices.studentId,
+          locationId: invoices.locationId,
           code: invoices.code,
           type: invoices.type,
+          paymentMethod: invoices.paymentMethod,
           category: invoices.category,
           description: invoices.description,
           grandTotal: invoices.grandTotal,
@@ -1387,6 +1390,31 @@ export function registerMobileRoutes(app: Express) {
         .leftJoin(classes, eq(invoices.classId, classes.id))
         .where(inArray(invoices.studentId, ctx.studentIds))
         .orderBy(invoices.createdAt);
+
+      const locationIds = [...new Set(
+        invoiceRows
+          .map((invoice) => invoice.locationId)
+          .filter((locationId): locationId is string => Boolean(locationId)),
+      )];
+      const bidvQrConfigs = locationIds.length > 0
+        ? await db
+            .select({
+              locationId: bidvLocationConfigs.locationId,
+              isQrEnabled: bidvLocationConfigs.isQrEnabled,
+            })
+            .from(bidvLocationConfigs)
+            .where(inArray(bidvLocationConfigs.locationId, locationIds))
+        : [];
+      const bidvQrEnabledByLocation = new Map(
+        bidvQrConfigs.map((config) => [config.locationId, config.isQrEnabled]),
+      );
+
+      function canShowPaymentQr(type: string, status: string, paymentMethod: string | null): boolean {
+        const method = paymentMethod?.trim().toLowerCase();
+        return type !== "Chi"
+          && ["unpaid", "partial", "debt"].includes(status)
+          && method !== "cash";
+      }
 
       function toISO(val: any): string | null {
         if (!val) return null;
@@ -1418,11 +1446,17 @@ export function registerMobileRoutes(app: Express) {
             result.push({
               id: sch.id,
               invoiceId: inv.id,
+              locationId: inv.locationId ?? null,
               title: inv.description || inv.className || inv.classCode || "Hoá đơn",
               description: inv.description ?? null,
               code: sch.code || inv.code,
               label: sch.label ?? null,
               type: inv.type,
+              paymentMethod: sch.paymentMethod ?? null,
+              canShowPaymentQr: canShowPaymentQr(inv.type, sch.status, sch.paymentMethod ?? null),
+              isBidvQrEnabled: inv.locationId
+                ? bidvQrEnabledByLocation.get(inv.locationId) ?? true
+                : true,
               category: inv.category ?? null,
               amount: sch.amount,
               paidAmount: null,
@@ -1440,11 +1474,17 @@ export function registerMobileRoutes(app: Express) {
           result.push({
             id: inv.id,
             invoiceId: inv.id,
+            locationId: inv.locationId ?? null,
             title: inv.description || inv.className || inv.classCode || "Hoá đơn",
             description: inv.description ?? null,
             code: inv.code,
             label: null,
             type: inv.type,
+            paymentMethod: inv.paymentMethod ?? null,
+            canShowPaymentQr: canShowPaymentQr(inv.type, inv.status, inv.paymentMethod ?? null),
+            isBidvQrEnabled: inv.locationId
+              ? bidvQrEnabledByLocation.get(inv.locationId) ?? true
+              : true,
             category: inv.category ?? null,
             amount: inv.grandTotal,
             paidAmount: inv.paidAmount,
