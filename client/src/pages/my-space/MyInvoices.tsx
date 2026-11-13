@@ -23,7 +23,7 @@ interface InvoiceCard {
   category: string | null;
   amount: string;
   status: string;
-  paymentMethod?: string | null;
+  paymentMethod: string | null;
   dueDate: string | null;
   paidAt: string | null;
   createdAt: string;
@@ -61,6 +61,14 @@ function formatDate(dateStr: string | null, lang: "vi" | "en") {
     : `${month}/${day}/${d.getFullYear()}`;
 }
 
+function canShowPaymentQr(inv: InvoiceCard): boolean {
+  const method = inv.paymentMethod?.trim().toLowerCase();
+  const canStillPay = ["unpaid", "partial", "debt"].includes(inv.status);
+
+  // Installment cards carry their own method; never infer it from the parent.
+  return inv.type !== "Chi" && method !== "cash" && canStillPay;
+}
+
 // Map InvoiceCard → shape đủ dùng cho InvoiceQRDialog
 function toQrInvoice(inv: InvoiceCard): any {
   // Với hóa đơn đợt con: ghép label ("ĐỢT 1") + mô tả hóa đơn gốc
@@ -80,6 +88,7 @@ function toQrInvoice(inv: InvoiceCard): any {
     grandTotal: inv.amount,
     remainingAmount: "0",
     status: inv.status,
+    paymentMethod: inv.paymentMethod,
     description,
     branch: null, // dialog sẽ fallback về cơ sở chính
     dueDate: inv.dueDate,
@@ -158,9 +167,7 @@ function InvoiceCardItem({ inv, highlighted, refCallback, onQrClick, t, lang }: 
         <p className="text-sm text-muted-foreground">
           {t("mySpace.invoices.status")} <span className={status.color}>{status.label}</span>
         </p>
-        {inv.type !== "Chi"
-          && inv.paymentMethod !== "cash"
-          && (inv.status === "unpaid" || inv.status === "partial" || inv.status === "debt") && (
+        {canShowPaymentQr(inv) && (
           <button
             onClick={() => onQrClick?.(inv)}
             className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-medium transition-colors"
