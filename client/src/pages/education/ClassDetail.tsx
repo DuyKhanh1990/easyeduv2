@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { ArrowLeft, XCircle, X, Plus, RefreshCw, UserCog, Calendar, Trash2, Copy, RotateCcw } from "lucide-react";
+import { ArrowLeft, XCircle, X, Plus, RefreshCw, UserCog, Calendar, Trash2, Copy, RotateCcw, Split } from "lucide-react";
 import { ScheduleHeaderActions } from "@/hooks/use-schedule-tab";
 import { WaitingTabContent } from "@/components/education/WaitingTabContent";
 import { ActiveTabContent } from "@/components/education/ActiveTabContent";
@@ -20,6 +20,7 @@ import { FreeClassCalendar } from "@/components/education/FreeClassCalendar";
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { CopyClassDialog } from "@/components/education/CopyClassDialog";
 import { CloseClassDialog } from "@/components/education/CloseClassDialog";
+import { SplitClassDialog } from "@/components/education/SplitClassDialog";
 
 const ScheduleTabContent = lazy(async () => {
   const module = await import("@/components/education/ScheduleTabContent");
@@ -47,6 +48,7 @@ export function ClassDetail() {
   const [scheduleContentReady, setScheduleContentReady] = useState(false);
   const [showCopyDialog, setShowCopyDialog] = useState(false);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
+  const [showSplitDialog, setShowSplitDialog] = useState(false);
 
   const handleTabChange = (val: string) => {
     if (val !== "schedule") {
@@ -495,6 +497,15 @@ export function ClassDetail() {
                           <Trash2 className="h-3 w-3" /> Xoá lịch
                         </button>
                       )}
+                      {classPerm.canEdit && classPerm.canAdd && !scheduleActions.isPastReadOnly && !scheduleActions.isCancelled && (
+                        <button
+                          className={actionBtn("from-indigo-500 to-violet-600")}
+                          onClick={() => setShowSplitDialog(true)}
+                          data-testid="button-split-class"
+                        >
+                          <Split className="h-3 w-3" /> Tách lớp
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -554,6 +565,15 @@ export function ClassDetail() {
         onClose={() => setShowCloseDialog(false)}
         classId={id!}
         className={classData?.name ?? classData?.classCode}
+      />
+
+      <SplitClassDialog
+        open={showSplitDialog}
+        onOpenChange={setShowSplitDialog}
+        classId={id!}
+        classSessionId={scheduleActions?.selectedSessionId ?? null}
+        classData={classData}
+        onCreated={(newClassId) => navigate(`/classes/${newClassId}`)}
       />
     </DashboardLayout>
   );
