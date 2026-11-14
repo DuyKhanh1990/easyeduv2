@@ -426,10 +426,16 @@ export function ExtensionDialog({
     return r?.count ?? 0;
   };
 
-  // Get per-session price from the selected package or student record
-  const getSessionPrice = (s: any): number => {
+  const allPkgs: any[] = feePackages || classData?.course?.feePackages || [];
+
+  const getSelectedPackage = (s: any) => {
     const pkgId = studentPkgIds[s.id] || s.packageId;
-    const pkg = feePackages?.find((p: any) => p.id === pkgId);
+    return allPkgs.find((pkg: any) => pkg.id === pkgId);
+  };
+
+  // Session records keep a per-session price, even for fixed-price course packages.
+  const getSessionPrice = (s: any): number => {
+    const pkg = getSelectedPackage(s);
     if (pkg) {
       if (pkg.type === "buổi") return parseFloat(pkg.fee) || 0;
       if (pkg.type === "khoá" && pkg.sessions)
@@ -438,11 +444,25 @@ export function ExtensionDialog({
     return parseFloat(s.sessionPrice || "0") || 0;
   };
 
+  // Match invoice creation: course package price is fixed; quantity is informational.
+  const getInvoiceUnitPrice = (s: any): number => {
+    const pkg = getSelectedPackage(s);
+    if (pkg?.type === "khoá") {
+      return parseFloat(pkg.totalAmount || pkg.fee || "0") || 0;
+    }
+    return getSessionPrice(s);
+  };
+
   // Compute fee amounts for a student
   const getAmounts = (s: any) => {
     const extCount = getExtCount(s);
     const sprice = getSessionPrice(s);
-    const base = extCount > 0 && sprice > 0 ? sprice * extCount : 0;
+    const pkg = getSelectedPackage(s);
+    const base = extCount > 0
+      ? pkg?.type === "khoá"
+        ? getInvoiceUnitPrice(s)
+        : sprice > 0 ? sprice * extCount : 0
+      : 0;
     const discIds = studentDiscountIds[s.id] ?? [];
     const surchIds = studentSurchargeIds[s.id] ?? [];
     const discAmt = discIds.reduce((sum: number, id: string) => {
@@ -464,8 +484,6 @@ export function ExtensionDialog({
     const vatAmount = calculateInvoiceVatAmount(beforeVat, vatRate);
     return { base, discAmt, surchAmt, beforeVat, vatRate, vatAmount, total: beforeVat + vatAmount };
   };
-
-  const allPkgs: any[] = feePackages || classData?.course?.feePackages || [];
 
   const getScheduleText = (weekdays: number[]): string => {
     const selectedWeekdays = new Set(
@@ -855,7 +873,7 @@ export function ExtensionDialog({
 
                         {/* Đơn giá */}
                         <td className="px-3 py-2 text-right whitespace-nowrap">
-                          <span className="font-medium">{getSessionPrice(s) > 0 ? `${fmtMoney(getSessionPrice(s))}đ` : "—"}</span>
+                          <span className="font-medium">{getInvoiceUnitPrice(s) > 0 ? `${fmtMoney(getInvoiceUnitPrice(s))}đ` : "—"}</span>
                         </td>
 
                         {/* SL */}
@@ -1050,7 +1068,7 @@ export function ExtensionDialog({
                     totalAmount: amounts.base,
                     promotionAmount: amounts.discAmt,
                     surchargeAmount: amounts.surchAmt,
-                    unitPrice: getSessionPrice(s),
+                    unitPrice: getInvoiceUnitPrice(s),
                     quantity: getExtCount(s),
                     description: autoInv ? buildNote(s) : "",
                   };

@@ -153,3 +153,4 @@
 - [Student-session review publication](student-session-review-publication.md) — Default publication applies only to new per-session reviews; blocked roles can save comments but cannot change publish state.
 - [Radix hover-card runtime issue](radix-hover-card-runtime.md) — HoverCard caused a runtime hook failure in the preview; prefer the app’s existing Tooltip for simple hover details unless the dependency issue is resolved.
 - [Attendance per-session visibility](attendance-per-session-visibility.md) — ordinary teacher View is restricted to assigned sessions; class managers retain class-wide access, while View All and Super Admin remain unrestricted.
+- [Renewal course-package pricing](renewal-course-package-pricing.md) — fixed-price course packages charge the full package amount in renewals; session count is reference quantity, while session records retain per-session accounting price.
