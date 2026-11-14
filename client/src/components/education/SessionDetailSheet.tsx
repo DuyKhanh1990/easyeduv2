@@ -73,9 +73,22 @@ export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = fal
 
   if (!isOpen || !classData) return null;
   const selectedSession = classSessions.find((session) => session.id === sessionId);
+  const todayAtCenter = getCenterDateString();
+  const selectedSessionDate = String(selectedSession?.sessionDate ?? "").slice(0, 10);
+  const selectedStartTime = String(selectedSession?.shiftTemplate?.startTime ?? "").slice(0, 5);
+  const currentTimeAtCenter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date());
   const canSplitSelectedSession = Boolean(
-    selectedSession?.status === "scheduled"
-    && String(selectedSession?.sessionDate ?? "") >= getCenterDateString(),
+    selectedSession
+    && !["cancelled", "completed"].includes(String(selectedSession.status ?? ""))
+    && (
+      selectedSessionDate > todayAtCenter
+      || (selectedSessionDate === todayAtCenter && (!selectedStartTime || selectedStartTime > currentTimeAtCenter))
+    ),
   );
   const splitSessions = [...classSessions]
     .filter((session) => (session.sessionIndex ?? 0) >= (selectedSession?.sessionIndex ?? Number.MAX_SAFE_INTEGER))
@@ -139,11 +152,6 @@ export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = fal
                         <Calendar className="h-3 w-3" /> Cập nhật buổi
                       </button>
                     )}
-                    {canEdit && canAdd && canSplitSelectedSession && (
-                      <button onClick={openSplitDialog} className={actionBtn("from-indigo-500 to-violet-600")} data-testid="button-split-class">
-                        <Split className="h-3 w-3" /> Tách lớp
-                      </button>
-                    )}
                     {canEdit && (
                       <button onClick={() => scheduleActions.openChangeTeacher()} className={actionBtn("from-amber-500 to-orange-500")}>
                         <UserCog className="h-3 w-3" /> Đổi giáo viên
@@ -179,6 +187,11 @@ export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = fal
                     {canDelete && (
                       <button onClick={() => scheduleActions.openDeleteSchedule()} className={actionBtn("from-rose-500 to-red-600")}>
                         <Trash2 className="h-3 w-3" /> Xoá lịch
+                      </button>
+                    )}
+                    {canEdit && canAdd && canSplitSelectedSession && (
+                      <button onClick={openSplitDialog} className={actionBtn("from-indigo-500 to-violet-600")} data-testid="button-split-class">
+                        <Split className="h-3 w-3" /> Tách lớp
                       </button>
                     )}
                   </>
