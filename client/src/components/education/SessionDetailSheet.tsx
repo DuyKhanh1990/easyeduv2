@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { getCenterDateString } from "@/lib/center-time-format";
+import { getCenterDateString, toLocalDateString } from "@/lib/center-time-format";
 import { useLocation } from "wouter";
 
 interface SessionDetailSheetProps {
@@ -74,7 +74,9 @@ export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = fal
   if (!isOpen || !classData) return null;
   const selectedSession = classSessions.find((session) => session.id === sessionId);
   const todayAtCenter = getCenterDateString();
-  const selectedSessionDate = String(selectedSession?.sessionDate ?? "").slice(0, 10);
+  const selectedSessionDate = selectedSession?.sessionDate
+    ? toLocalDateString(selectedSession.sessionDate)
+    : "";
   const selectedStartTime = String(selectedSession?.shiftTemplate?.startTime ?? "").slice(0, 5);
   const currentTimeAtCenter = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Bangkok",
@@ -233,7 +235,7 @@ export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = fal
                 <div key={session.id} className="flex justify-between border-t py-1.5 text-muted-foreground">
                   <span>Buổi {session.sessionIndex}</span>
                   <span>
-                    {String(session.sessionDate).slice(0, 10)}
+                    {toLocalDateString(session.sessionDate)}
                     {session.shiftTemplate?.startTime && ` · ${String(session.shiftTemplate.startTime).slice(0, 5)}`}
                     {session.shiftTemplate?.endTime && `–${String(session.shiftTemplate.endTime).slice(0, 5)}`}
                   </span>
