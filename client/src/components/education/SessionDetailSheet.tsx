@@ -1,14 +1,20 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import {
-  Calendar, UserCog, XCircle, Trash2, CalendarDays, Plus, RotateCcw,
+  Calendar, UserCog, XCircle, Trash2, CalendarDays, Plus, RotateCcw, Split,
 } from "lucide-react";
 import { ScheduleTabContent } from "@/components/education/ScheduleTabContent";
 import { ScheduleHeaderActions } from "@/hooks/use-schedule-tab";
 import type { ClassPermissions } from "@/pages/education/ClassDetail";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { getCenterDateString } from "@/lib/center-time-format";
+import { useLocation } from "wouter";
 
 interface SessionDetailSheetProps {
   sessionId: string | null;
@@ -21,6 +27,13 @@ interface SessionDetailSheetProps {
 export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = false, classPerm }: SessionDetailSheetProps) {
   const isOpen = !!(sessionId && classId);
   const [scheduleActions, setScheduleActions] = useState<ScheduleHeaderActions | null>(null);
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitCode, setSplitCode] = useState("");
+  const [splitName, setSplitName] = useState("");
+  const [isSplitting, setIsSplitting] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const effectiveClassPerm = readOnly
     ? { canAdd: false, canEdit: false, canDelete: false }
     : classPerm;
@@ -59,6 +72,43 @@ export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = fal
   });
 
   if (!isOpen || !classData) return null;
+  const selectedSession = classSessions.find((session) => session.id === sessionId);
+  const canSplitSelectedSession = Boolean(
+    selectedSession?.status === "scheduled"
+    && String(selectedSession?.sessionDate ?? "") >= getCenterDateString(),
+  );
+  const splitSessions = [...classSessions]
+    .filter((session) => (session.sessionIndex ?? 0) >= (selectedSession?.sessionIndex ?? Number.MAX_SAFE_INTEGER))
+    .sort((a, b) => (a.sessionIndex ?? 0) - (b.sessionIndex ?? 0));
+  const openSplitDialog = () => {
+    setSplitCode(`COPY-${String(classData.classCode ?? "").slice(0, 35)}`);
+    setSplitName(`${classData.name ?? ""} - Tách`);
+    setSplitOpen(true);
+  };
+  const submitSplit = async () => {
+    if (!classId || !sessionId) return;
+    setIsSplitting(true);
+    try {
+      const response = await apiRequest("POST", `/api/classes/${classId}/split-from-session`, {
+        classSessionId: sessionId,
+        classCode: splitCode.trim(),
+        name: splitName.trim(),
+      });
+      const result = await response.json();
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/sessions`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/active-students`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/classes"] });
+      setSplitOpen(false);
+      onClose();
+      toast({ title: "Tách lớp thành công", description: `Đã chuyển ${result.movedSessions} buổi sang lớp ${result.class?.classCode}.` });
+      setLocation(`/classes/${result.class.id}`);
+    } catch (error: any) {
+      toast({ title: "Không thể tách lớp", description: error.message || "Vui lòng thử lại.", variant: "destructive" });
+    } finally {
+      setIsSplitting(false);
+    }
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={open => !open && onClose()}>
@@ -87,6 +137,11 @@ export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = fal
                     {canEdit && (
                       <button onClick={() => scheduleActions.openUpdateSession()} className={actionBtn("from-sky-500 to-blue-500")}>
                         <Calendar className="h-3 w-3" /> Cập nhật buổi
+                      </button>
+                    )}
+                    {canEdit && canAdd && canSplitSelectedSession && (
+                      <button onClick={openSplitDialog} className={actionBtn("from-indigo-500 to-violet-600")} data-testid="button-split-class">
+                        <Split className="h-3 w-3" /> Tách lớp
                       </button>
                     )}
                     {canEdit && (
@@ -148,6 +203,39 @@ export function SessionDetailSheet({ sessionId, classId, onClose, readOnly = fal
           </div>
         </div>
       </DialogContent>
+      <Dialog open={splitOpen} onOpenChange={setSplitOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Tách lớp từ buổi {selectedSession?.sessionIndex}</DialogTitle>
+            <DialogDescription>
+              Các buổi từ buổi được chọn đến cuối lịch sẽ được chuyển nguyên sang lớp mới. Không thể tách buổi đã diễn ra.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div><label className="mb-1 block text-sm font-medium">Mã lớp mới</label><Input value={splitCode} onChange={(event) => setSplitCode(event.target.value)} maxLength={50} /></div>
+            <div><label className="mb-1 block text-sm font-medium">Tên lớp mới</label><Input value={splitName} onChange={(event) => setSplitName(event.target.value)} maxLength={255} /></div>
+            <div className="max-h-48 overflow-y-auto rounded-md border p-3 text-sm">
+              <div className="mb-2 font-medium">Buổi sẽ chuyển ({splitSessions.length})</div>
+              {splitSessions.map((session) => (
+                <div key={session.id} className="flex justify-between border-t py-1.5 text-muted-foreground">
+                  <span>Buổi {session.sessionIndex}</span>
+                  <span>
+                    {String(session.sessionDate).slice(0, 10)}
+                    {session.shiftTemplate?.startTime && ` · ${String(session.shiftTemplate.startTime).slice(0, 5)}`}
+                    {session.shiftTemplate?.endTime && `–${String(session.shiftTemplate.endTime).slice(0, 5)}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSplitOpen(false)} disabled={isSplitting}>Hủy</Button>
+            <Button onClick={submitSplit} disabled={isSplitting || !splitCode.trim() || !splitName.trim()}>
+              {isSplitting ? "Đang tách..." : "Tách lớp"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

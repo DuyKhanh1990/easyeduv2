@@ -6,7 +6,7 @@ import {
   staff, students, studentLocations, shiftTemplates,
   courseFeePackages, financePromotions, invoices, invoiceItems,
 } from "./base";
-import { attendanceFeeRules, sessionContents, activityLogs, publicHolidays, classSessionTeacherAssignments, departments, roles, staffAssignments } from "@shared/schema";
+import { attendanceFeeRules, sessionContents, activityLogs, publicHolidays, classSessionTeacherAssignments, classGradeBooks, departments, roles, staffAssignments } from "@shared/schema";
 import { studentWalletTransactions } from "@shared/schema";
 import { getPreferredSystemTrainingTeacherRoleId } from "@shared/teacher-role-priority";
 import {
@@ -1182,6 +1182,141 @@ export async function createClass(data: any): Promise<Class> {
   }
 
   return newClass;
+}
+
+export async function splitClassFromSession(data: {
+  sourceClassId: string;
+  classSessionId: string;
+  classCode: string;
+  name: string;
+  createdBy: string;
+}) {
+  return db.transaction(async (tx) => {
+    const [source] = await tx.select().from(classes).where(eq(classes.id, data.sourceClassId)).for("update");
+    if (!source) throw new Error("Không tìm thấy lớp nguồn.");
+    const duplicateCode = await tx.select({ id: classes.id }).from(classes).where(eq(classes.classCode, data.classCode)).limit(1);
+    if (duplicateCode.length) throw new Error("Mã lớp này đã tồn tại.");
+
+    const sessions = await tx.select({
+      session: classSessions,
+      startTime: shiftTemplates.startTime,
+    }).from(classSessions)
+      .leftJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
+      .where(eq(classSessions.classId, source.id))
+      .orderBy(asc(classSessions.sessionDate), asc(shiftTemplates.startTime), asc(classSessions.sessionIndex), asc(classSessions.id));
+    const startAt = sessions.findIndex((row) => row.session.id === data.classSessionId);
+    if (startAt < 0) throw new Error("Buổi được chọn không thuộc lớp nguồn.");
+    const suffix = sessions.slice(startAt).map((row) => row.session);
+    const first = suffix[0];
+    const today = getBusinessDateString();
+    const currentTime = new Date().toLocaleTimeString("en-GB", {
+      timeZone: "Asia/Bangkok",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const selectedStartTime = String(sessions[startAt].startTime ?? "").slice(0, 5);
+    if (
+      first.status !== "scheduled"
+      || first.sessionDate < today
+      || (first.sessionDate === today && selectedStartTime && selectedStartTime <= currentTime)
+      || suffix.some((session) => session.status === "completed")
+    ) {
+      throw new Error("Chỉ có thể tách từ buổi chưa diễn ra.");
+    }
+    const suffixIds = suffix.map((session) => session.id);
+    const linkedRows = await tx.select().from(studentSessions).where(inArray(studentSessions.classSessionId, suffixIds));
+    if (linkedRows.some((row) => row.attendanceStatus !== "pending" || ["attended", "absent"].includes(row.status))) {
+      throw new Error("Không thể tách vì phần lịch được chọn đã có điểm danh.");
+    }
+    const [target] = await tx.insert(classes).values({
+      classCode: data.classCode.trim(),
+      name: data.name.trim(),
+      locationId: source.locationId,
+      createdBy: data.createdBy,
+      programId: source.programId,
+      courseId: source.courseId,
+      managerIds: source.managerIds,
+      teacherIds: source.teacherIds,
+      shiftTemplateIds: source.shiftTemplateIds,
+      feePackageId: source.feePackageId,
+      useFeePackageColor: source.useFeePackageColor,
+      weekdays: source.weekdays,
+      scheduleConfig: source.scheduleConfig,
+      teachersConfig: source.teachersConfig,
+      startDate: first.sessionDate,
+      endDate: suffix[suffix.length - 1].sessionDate,
+      maxStudents: source.maxStudents,
+      learningFormat: source.learningFormat,
+      onlineLink: source.onlineLink,
+      status: source.status,
+      color: source.color,
+      description: source.description,
+      subjectId: source.subjectId,
+      evaluationCriteriaIds: source.evaluationCriteriaIds,
+      scoreSheetId: source.scoreSheetId,
+      scheduleGenerated: true,
+      classType: source.classType,
+      freeClassMode: source.freeClassMode,
+      cycleHistory: source.cycleHistory,
+    }).returning();
+
+    const affectedStudentClassIds = [...new Set(linkedRows.map((row) => row.studentClassId).filter((id): id is string => Boolean(id)))];
+    const targetStudentClassIds: string[] = [];
+    for (const studentClassId of affectedStudentClassIds) {
+      const [enrollment] = await tx.select().from(studentClasses).where(eq(studentClasses.id, studentClassId)).for("update");
+      if (!enrollment) continue;
+      const prefixRows = await tx.select({ id: studentSessions.id }).from(studentSessions)
+        .where(and(eq(studentSessions.studentClassId, studentClassId), sql`${studentSessions.classSessionId} NOT IN (${sql.join(suffixIds.map((id) => sql`${id}`), sql`, `)})`));
+      let targetEnrollmentId = studentClassId;
+      if (prefixRows.length > 0) {
+        const [newEnrollment] = await tx.insert(studentClasses).values({
+          studentId: enrollment.studentId,
+          classId: target.id,
+          status: enrollment.status === "active" ? "active" : enrollment.status,
+          studentStatus: enrollment.studentStatus,
+          scheduledWeekdays: enrollment.scheduledWeekdays,
+          cycleHistory: enrollment.cycleHistory,
+          createdBy: data.createdBy,
+        }).returning({ id: studentClasses.id });
+        targetEnrollmentId = newEnrollment.id;
+        await tx.update(studentClasses).set({ status: "completed", endDate: first.sessionDate, updatedAt: new Date() })
+          .where(eq(studentClasses.id, studentClassId));
+      } else {
+        await tx.update(studentClasses).set({ classId: target.id, updatedAt: new Date() })
+          .where(eq(studentClasses.id, studentClassId));
+      }
+      await tx.update(studentSessions)
+        .set({ classId: target.id, studentClassId: targetEnrollmentId, updatedAt: new Date() })
+        .where(and(eq(studentSessions.studentClassId, studentClassId), inArray(studentSessions.classSessionId, suffixIds)));
+      targetStudentClassIds.push(targetEnrollmentId);
+    }
+
+    await tx.update(studentSessions)
+      .set({ classId: target.id, updatedAt: new Date() })
+      .where(inArray(studentSessions.classSessionId, suffixIds));
+    for (const [index, session] of suffix.entries()) {
+      await tx.update(classSessions).set({
+        classId: target.id,
+        sessionIndex: index + 1,
+        updatedAt: new Date(),
+      }).where(eq(classSessions.id, session.id));
+    }
+    await tx.update(classGradeBooks)
+      .set({ classId: target.id, updatedAt: new Date() })
+      .where(and(eq(classGradeBooks.classId, source.id), inArray(classGradeBooks.sessionId, suffixIds)));
+    const prefix = sessions.slice(0, startAt).map((row) => row.session);
+    await tx.update(classes).set({
+      startDate: prefix[0]?.sessionDate ?? null,
+      endDate: prefix[prefix.length - 1]?.sessionDate ?? null,
+      scheduleGenerated: prefix.length > 0,
+      updatedAt: new Date(),
+    }).where(eq(classes.id, source.id));
+    const { recalculateStudentClass } = await import("./session.storage");
+    await Promise.all([...new Set([...affectedStudentClassIds, ...targetStudentClassIds])]
+      .map((id) => recalculateStudentClass(id, tx)));
+    return { sourceClassId: source.id, sourceClassName: source.name, targetClass: target, movedSessions: suffix.length };
+  });
 }
 
 // ---------------------------------------------------------------------------

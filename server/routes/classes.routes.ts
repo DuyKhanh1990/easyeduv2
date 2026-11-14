@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { storage } from "../storage";
+import { splitClassFromSession } from "../storage/class.storage";
 import { createActivityLog, getActivityLogs } from "../storage/activity-log.storage";
 import { applyCourseProgramContentsToSessions, getClassFormatSummary, getClassStatusSummary, getNewClassesSummary, getClassesByLocationSummary, getMonthlyAttendanceRate, getClassesByTeacherSummary, getSessionsByTeacherSummary, getMakeupClassEligibility, getMakeupStartOptions } from "../storage/class.storage";
 import {
@@ -6980,6 +6981,56 @@ export function registerClassesRoutes(app: Express): void {
       }
     } catch (err: any) {
       res.status(400).json({ message: err.message || "Không thể cập nhật buổi học" });
+    }
+  });
+
+  app.post("/api/classes/:id/split-from-session", async (req, res) => {
+    try {
+      const classId = String(req.params.id);
+      const classPerms = await getClassPermissions(req);
+      if (!classPerms.canCreate) return res.status(403).json({ message: "Bạn không có quyền tạo lớp mới." });
+      if (!(await assertScheduleMutationPermission(req, res, "canEdit", [], classId))) return;
+      const classCode = String(req.body?.classCode ?? "").trim();
+      const name = String(req.body?.name ?? "").trim();
+      const classSessionId = String(req.body?.classSessionId ?? "");
+      if (!classSessionId || !classCode || !name) {
+        return res.status(400).json({ message: "Vui lòng nhập mã lớp, tên lớp và chọn buổi bắt đầu tách." });
+      }
+      const result = await splitClassFromSession({
+        sourceClassId: classId,
+        classSessionId,
+        classCode,
+        name,
+        createdBy: (req.user as any)?.id ?? "",
+      });
+      const userId = (req.user as any)?.id ?? null;
+      const userLocId = await getUserLocationId(req);
+      const details = JSON.stringify({
+        sourceClassId: result.sourceClassId,
+        sourceClassName: result.sourceClassName,
+        targetClassId: result.targetClass.id,
+        targetClassName: result.targetClass.name,
+        targetClassCode: result.targetClass.classCode,
+        movedSessions: result.movedSessions,
+        fromSessionId: classSessionId,
+      });
+      await Promise.allSettled([
+        createActivityLog({
+          userId, locationId: userLocId ?? result.targetClass.locationId, classId,
+          action: "Tách lớp", oldContent: null, newContent: details,
+        }),
+        createActivityLog({
+          userId, locationId: userLocId ?? result.targetClass.locationId, classId: result.targetClass.id,
+          action: "Tách từ lớp", oldContent: null, newContent: details,
+        }),
+      ]);
+      return res.status(201).json({ class: result.targetClass, movedSessions: result.movedSessions });
+    } catch (err: any) {
+      console.error("Split class error:", err);
+      if (String(err.message).includes("classes_class_code_key")) {
+        return res.status(409).json({ message: "Mã lớp này đã tồn tại." });
+      }
+      return res.status(400).json({ message: err.message || "Không thể tách lớp." });
     }
   });
 
