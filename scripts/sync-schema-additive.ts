@@ -35,6 +35,13 @@ function createdTableName(statement: string): string | undefined {
   return match?.[1] ? lastIdentifier(match[1]) : undefined;
 }
 
+function alteredTableName(statement: string): string | undefined {
+  const match = statement.match(
+    /^\s*ALTER\s+TABLE\s+((?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*)(?:\s*\.\s*(?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*))?)/i,
+  );
+  return match?.[1] ? lastIdentifier(match[1]) : undefined;
+}
+
 function classifyStatement(
   statement: string,
   newlyCreatedTables: Set<string>,
@@ -50,14 +57,26 @@ function classifyStatement(
   ) {
     return { sql, kind: "column" };
   }
-  if (/^CREATE\s+(?:UNIQUE\s+)?INDEX\b/i.test(sql)) return { sql, kind: "index" };
+  if (/^CREATE\s+UNIQUE\s+INDEX\b/i.test(sql)) {
+    const uniqueIndexMatch = sql.match(
+      /^\s*CREATE\s+UNIQUE\s+INDEX(?:\s+CONCURRENTLY)?(?:\s+IF\s+NOT\s+EXISTS)?\s+(?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*)\s+ON\s+((?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*)(?:\s*\.\s*(?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*))?)/i,
+    );
+    const indexedTable = uniqueIndexMatch?.[1]
+      ? lastIdentifier(uniqueIndexMatch[1])
+      : undefined;
+    if (indexedTable && newlyCreatedTables.has(indexedTable)) {
+      return { sql, kind: "index" };
+    }
+    return undefined;
+  }
+  if (/^CREATE\s+INDEX\b/i.test(sql)) return { sql, kind: "index" };
 
   const foreignKeyMatch = sql.match(
-    /^\s*ALTER\s+TABLE\s+(?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*)(?:\s*\.\s*(?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*))?\s+ADD\s+CONSTRAINT\s+(?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*)\s+FOREIGN\s+KEY\s*\([^)]*\)\s+REFERENCES\s+((?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*)(?:\s*\.\s*(?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*))?)/i,
+    /^\s*ALTER\s+TABLE\s+((?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*)(?:\s*\.\s*(?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*))?)\s+ADD\s+CONSTRAINT\s+(?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*)\s+FOREIGN\s+KEY\s*\([^)]*\)\s+REFERENCES\b/i,
   );
   if (foreignKeyMatch?.[1]) {
-    const referencedTable = lastIdentifier(foreignKeyMatch[1]);
-    if (referencedTable && newlyCreatedTables.has(referencedTable)) {
+    const foreignKeyTable = lastIdentifier(foreignKeyMatch[1]);
+    if (foreignKeyTable && newlyCreatedTables.has(foreignKeyTable)) {
       return { sql, kind: "foreign-key" };
     }
   }
@@ -108,12 +127,25 @@ async function main(): Promise<void> {
     const skippedStatements: string[] = [];
 
     for (const statement of statementsToExecute) {
+      const sql = statement.trim().replace(/;+$/, "");
+      const tableWithAddedColumn = alteredTableName(sql);
+      if (
+        /\bADD\s+COLUMN\b/i.test(sql) &&
+        /\bNOT\s+NULL\b/i.test(sql) &&
+        !/\bDEFAULT\b/i.test(sql) &&
+        tableWithAddedColumn &&
+        !newlyCreatedTables.has(tableWithAddedColumn)
+      ) {
+        console.log(
+          `[sync-schema] CẢNH BÁO: cột NOT NULL không có DEFAULT trên bảng đã có thể bị từ chối: ${sql}`,
+        );
+      }
+
       const classified = classifyStatement(statement, newlyCreatedTables);
       if (classified) {
         safeStatements.push(classified);
         console.log(`[sync-schema] SẼ CHẠY: ${classified.sql}`);
       } else {
-        const sql = statement.trim().replace(/;+$/, "");
         skippedStatements.push(sql);
         console.log(`[sync-schema] BỎ QUA (không an toàn): ${sql}`);
       }
@@ -155,6 +187,11 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  console.error(`[sync-schema] Lỗi: ${message}`);
-  process.exitCode = 1;
+  if (syncMode === "dry-run") {
+    console.warn(`[sync-schema] CẢNH BÁO (dry-run): ${message}`);
+    process.exitCode = 0;
+  } else {
+    console.error(`[sync-schema] Lỗi: ${message}`);
+    process.exitCode = 1;
+  }
 });
