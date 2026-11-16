@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { vi } from "date-fns/locale";
@@ -47,6 +47,10 @@ import {
 import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import {
+  SCORE_CONVERSION_CONFIG_PERMISSION,
+  SCORE_SHEET_TEMPLATE_PERMISSION,
+} from "@shared/score-conversion-permissions";
 import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import type {
   ScoreConversionTemplate,
@@ -81,8 +85,8 @@ import {
 const TEMPLATE_ENDPOINT = "/api/score-conversion-templates";
 const TEMPLATE_QUERY_KEY = [TEMPLATE_ENDPOINT];
 const SCORE_SHEET_TEMPLATE_ENDPOINT = "/api/score-sheet-templates";
-const SCORE_SHEET_TEMPLATE_QUERY_KEY = [SCORE_SHEET_TEMPLATE_ENDPOINT];
-const TEMPLATE_USAGE_ENDPOINT = "/api/score-template-usage";
+const SCORE_SHEET_TEMPLATE_QUERY_KEY = [`${SCORE_SHEET_TEMPLATE_ENDPOINT}?manage=1`];
+const TEMPLATE_USAGE_ENDPOINT = "/api/score-template-usage?manage=1";
 const TEMPLATE_USAGE_QUERY_KEY = [TEMPLATE_USAGE_ENDPOINT];
 const ASSIGNED_SCORE_SHEET_ASSESSMENT_ENDPOINT = "/api/score-sheet-assessments/assigned";
 const ASSIGNED_SCORE_SHEET_ASSESSMENT_QUERY_KEY = [ASSIGNED_SCORE_SHEET_ASSESSMENT_ENDPOINT];
@@ -406,13 +410,43 @@ export default function ScoreConversion() {
   const [examDateTo, setExamDateTo] = useState("");
   const [deadlineDateFrom, setDeadlineDateFrom] = useState("");
   const [deadlineDateTo, setDeadlineDateTo] = useState("");
+  const [activeConfigTab, setActiveConfigTab] = useState("international");
   const assessmentPermissions = myPermissions?.permissions["/assessments#list"];
-  const canCreate = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canCreate);
-  const canEdit = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canEdit);
-  const canDelete = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canDelete);
+  const legacyScoreConversionPermissions = myPermissions?.permissions["/score-conversion"];
+  const canCreate = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canCreate || legacyScoreConversionPermissions?.canCreate);
+  const canEdit = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canEdit || legacyScoreConversionPermissions?.canEdit);
+  const canDelete = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canDelete || legacyScoreConversionPermissions?.canDelete);
+  const conversionConfigPermissions = myPermissions?.permissions[SCORE_CONVERSION_CONFIG_PERMISSION];
+  const scoreSheetTemplatePermissions = myPermissions?.permissions[SCORE_SHEET_TEMPLATE_PERMISSION];
+  const canViewConversionConfig = Boolean(myPermissions?.isSuperAdmin || conversionConfigPermissions?.canView || conversionConfigPermissions?.canViewAll);
+  const canViewScoreSheetTemplates = Boolean(myPermissions?.isSuperAdmin || scoreSheetTemplatePermissions?.canView || scoreSheetTemplatePermissions?.canViewAll);
+  const canCreateConversionConfig = Boolean(myPermissions?.isSuperAdmin || conversionConfigPermissions?.canCreate);
+  const canEditConversionConfig = Boolean(myPermissions?.isSuperAdmin || conversionConfigPermissions?.canEdit);
+  const canDeleteConversionConfig = Boolean(myPermissions?.isSuperAdmin || conversionConfigPermissions?.canDelete);
+  const canCreateScoreSheetTemplate = Boolean(myPermissions?.isSuperAdmin || scoreSheetTemplatePermissions?.canCreate);
+  const canEditScoreSheetTemplate = Boolean(myPermissions?.isSuperAdmin || scoreSheetTemplatePermissions?.canEdit);
+  const canDeleteScoreSheetTemplate = Boolean(myPermissions?.isSuperAdmin || scoreSheetTemplatePermissions?.canDelete);
+  const canViewAssessmentList = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canView || assessmentPermissions?.canViewAll || legacyScoreConversionPermissions?.canView || legacyScoreConversionPermissions?.canViewAll);
+
+  useEffect(() => {
+    const firstAvailableTab = canViewConversionConfig
+      ? "international"
+      : canViewScoreSheetTemplates
+        ? "sample"
+        : canViewAssessmentList
+          ? "scores"
+          : "";
+    const activeTabAllowed = activeConfigTab === "international"
+      ? canViewConversionConfig
+      : activeConfigTab === "sample"
+        ? canViewScoreSheetTemplates
+        : canViewAssessmentList;
+    if (!activeTabAllowed) setActiveConfigTab(firstAvailableTab);
+  }, [activeConfigTab, canViewAssessmentList, canViewConversionConfig, canViewScoreSheetTemplates]);
 
   const templatesQuery = useQuery<ScoreConversionTemplate[]>({
     queryKey: TEMPLATE_QUERY_KEY,
+    enabled: canViewConversionConfig,
     queryFn: async () => {
       const response = await apiRequest("GET", TEMPLATE_ENDPOINT);
       return response.json();
@@ -420,22 +454,24 @@ export default function ScoreConversion() {
   });
   const templateUsageQuery = useQuery<ScoreTemplateUsage>({
     queryKey: TEMPLATE_USAGE_QUERY_KEY,
+    enabled: canDeleteConversionConfig || canDeleteScoreSheetTemplate,
     queryFn: async () => {
       const response = await apiRequest("GET", TEMPLATE_USAGE_ENDPOINT);
       return response.json();
     },
-    enabled: canDelete,
     refetchInterval: 30_000,
   });
   const scoreSheetTemplatesQuery = useQuery<ScoreSheetTemplate[]>({
     queryKey: SCORE_SHEET_TEMPLATE_QUERY_KEY,
+    enabled: canViewScoreSheetTemplates,
     queryFn: async () => {
-      const response = await apiRequest("GET", SCORE_SHEET_TEMPLATE_ENDPOINT);
+      const response = await apiRequest("GET", `${SCORE_SHEET_TEMPLATE_ENDPOINT}?manage=1`);
       return response.json();
     },
   });
   const assignedScoreSheetAssessmentsQuery = useQuery<StaffAssignedScoreSheetAssessment[]>({
     queryKey: ASSIGNED_SCORE_SHEET_ASSESSMENT_QUERY_KEY,
+    enabled: canViewAssessmentList,
     queryFn: async () => {
       const response = await apiRequest("GET", ASSIGNED_SCORE_SHEET_ASSESSMENT_ENDPOINT);
       return response.json();
@@ -452,7 +488,7 @@ export default function ScoreConversion() {
   });
   const assignedScoreSheetStudentsQuery = useQuery<ScoreConversionStudentResult[]>({
     queryKey: [ASSIGNED_SCORE_SHEET_STUDENTS_ENDPOINT],
-    enabled: viewMode === "students",
+    enabled: viewMode === "students" && canViewAssessmentList,
     queryFn: async () => {
       const response = await apiRequest("GET", ASSIGNED_SCORE_SHEET_STUDENTS_ENDPOINT);
       return response.json();
@@ -916,32 +952,32 @@ export default function ScoreConversion() {
             </div>
           </div>
         </div>
-        <Tabs defaultValue="international" className="space-y-4">
+        <Tabs value={activeConfigTab} onValueChange={setActiveConfigTab} className="space-y-4">
           <TabsList className="flex h-auto flex-wrap justify-start gap-2 rounded-none bg-transparent p-0">
-            <TabsTrigger
+            {canViewConversionConfig && <TabsTrigger
               value="international"
               className="gap-1.5 rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
             >
               <BarChart3 className="h-3.5 w-3.5" />
               Cấu hình điểm Quy đổi
-            </TabsTrigger>
-            <TabsTrigger
+            </TabsTrigger>}
+            {canViewScoreSheetTemplates && <TabsTrigger
               value="sample"
               className="gap-1.5 rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
             >
               <ClipboardList className="h-3.5 w-3.5" />
               Bảng điểm mẫu
-            </TabsTrigger>
-            <TabsTrigger
+            </TabsTrigger>}
+            {canViewAssessmentList && <TabsTrigger
               value="scores"
               className="gap-1.5 rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
             >
               <BookOpen className="h-3.5 w-3.5" />
               Danh sách Bảng điểm Quy đổi
-            </TabsTrigger>
+            </TabsTrigger>}
           </TabsList>
-          <TabsContent value="international" className="space-y-4">
-            {canCreate && (
+          {canViewConversionConfig && <TabsContent value="international" className="space-y-4">
+            {canCreateConversionConfig && (
               <div className="flex justify-end">
                 <Button onClick={openCreateDialog}>
                   <Plus className="mr-2 h-4 w-4" />
@@ -975,7 +1011,7 @@ export default function ScoreConversion() {
                           <th className="px-4 py-3 font-medium">Phần thi</th>
                           <th className="px-4 py-3 font-medium">Khoảng quy đổi</th>
                           <th className="px-4 py-3 font-medium">Cách tính điểm tổng</th>
-                          {(canCreate || canEdit || canDelete) && <th className="w-32 px-4 py-3" />}
+                          {(canCreateConversionConfig || canEditConversionConfig || canDeleteConversionConfig) && <th className="w-32 px-4 py-3" />}
                         </tr>
                       </thead>
                       <tbody>
@@ -1003,10 +1039,10 @@ export default function ScoreConversion() {
                                     : "Trung bình các phần thi"}
                               </span>
                             </td>
-                            {(canEdit || canDelete) && (
+                            {(canEditConversionConfig || canDeleteConversionConfig) && (
                               <td className="px-4 py-3">
                                 <div className="flex items-center justify-end gap-1">
-                                  {canEdit && (
+                                  {canEditConversionConfig && (
                                     <Button
                                       variant="ghost"
                                       size="icon"
@@ -1016,7 +1052,7 @@ export default function ScoreConversion() {
                                       <Pencil className="h-4 w-4" />
                                     </Button>
                                   )}
-                                  {canDelete && (
+                                  {canDeleteConversionConfig && (
                                     <Button
                                       variant="ghost"
                                       size="icon"
@@ -1068,9 +1104,9 @@ export default function ScoreConversion() {
                 )}
               </CardContent>
             </Card>
-          </TabsContent>
-          <TabsContent value="sample" className="space-y-4">
-            {canCreate && (
+          </TabsContent>}
+          {canViewScoreSheetTemplates && <TabsContent value="sample" className="space-y-4">
+            {canCreateScoreSheetTemplate && (
               <div className="flex justify-end">
                 <Button onClick={openCreateScoreSheetTemplateDialog}>
                   <Plus className="mr-2 h-4 w-4" />
@@ -1104,7 +1140,7 @@ export default function ScoreConversion() {
                           <th className="px-4 py-3 font-medium">Tên bảng điểm</th>
                           <th className="px-4 py-3 font-medium">Bảng quy đổi</th>
                           <th className="px-4 py-3 font-medium">Kỹ năng</th>
-                          {(canEdit || canDelete) && <th className="w-24 px-4 py-3" />}
+                          {(canEditScoreSheetTemplate || canDeleteScoreSheetTemplate || canCreateScoreSheetTemplate) && <th className="w-24 px-4 py-3" />}
                         </tr>
                       </thead>
                       <tbody>
@@ -1120,10 +1156,10 @@ export default function ScoreConversion() {
                                 {conversion?.typeName ?? (template.scoreConversionTemplateId ? "Không tìm thấy bảng quy đổi" : "Không áp dụng")}
                               </td>
                               <td className="px-4 py-3">{conversion?.sections.length ?? template.skills.length}</td>
-                              {(canCreate || canEdit || canDelete) && (
+                              {(canCreateScoreSheetTemplate || canEditScoreSheetTemplate || canDeleteScoreSheetTemplate) && (
                                 <td className="px-4 py-3">
                                   <div className="flex items-center justify-end gap-1">
-                                    {canCreate && (
+                                    {canCreateScoreSheetTemplate && (
                                       <Button
                                         variant="ghost"
                                         size="icon"
@@ -1134,7 +1170,7 @@ export default function ScoreConversion() {
                                         <Copy className="h-4 w-4" />
                                       </Button>
                                     )}
-                                    {canEdit && (
+                                    {canEditScoreSheetTemplate && (
                                       <Button
                                         variant="ghost"
                                         size="icon"
@@ -1144,7 +1180,7 @@ export default function ScoreConversion() {
                                         <Pencil className="h-4 w-4" />
                                       </Button>
                                     )}
-                                    {canDelete && (
+                                    {canDeleteScoreSheetTemplate && (
                                       <Button
                                         variant="ghost"
                                         size="icon"
@@ -1197,8 +1233,8 @@ export default function ScoreConversion() {
                 )}
               </CardContent>
             </Card>
-          </TabsContent>
-          <TabsContent value="scores" className="space-y-4">
+          </TabsContent>}
+          {canViewAssessmentList && <TabsContent value="scores" className="space-y-4">
             {assignedScoreSheetAssessmentsQuery.isLoading ? (
               <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">
                 Đang tải danh sách bảng điểm Quy đổi...
@@ -2105,7 +2141,7 @@ export default function ScoreConversion() {
                 )}
               </div>
             )}
-          </TabsContent>
+          </TabsContent>}
         </Tabs>
       </div>
       <ScoreConversionTemplateDialog

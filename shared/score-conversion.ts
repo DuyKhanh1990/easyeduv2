@@ -168,6 +168,7 @@ export const scoreConversionTemplateSchema = scoreConversionTemplateBaseSchema.e
   id: z.string().uuid(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  createdByUserId: z.string().uuid().nullable().optional(),
 }).superRefine(validateCustomRule);
 
 export const legacyScoreConversionTemplateSchema = z.object({

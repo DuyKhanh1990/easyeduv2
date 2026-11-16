@@ -111,6 +111,7 @@
 - [Student score-list defaults](student-score-list-filters.md) — Theo học viên defaults to latest entered result per student and active students; apply optional pass/fail afterward.
 - [Inventory detail transfer net](inventory-detail-transfer-net.md) — on a warehouse's inventory detail, show signed transfer net as the main value and signed in/out subtotals beneath.
 - [Score conversion range boundaries](score-conversion-mapping-boundaries.md) — displayed “Từ–Đến” ranges include the upper bound unless the next range starts at that same boundary.
+- [Score conversion config ownership](score-conversion-config-ownership.md) — separate permissions for conversion settings and score-sheet templates; View scopes to creator, View All includes legacy ownerless records.
 - [Invoice installment filter authority](invoice-date-filter-row-parity.md) — installment values drive scheduled-invoice filters; parent fields are only shared context or aggregation.
 - [Drizzle array filters](drizzle-array-filter-parameters.md) — use `inArray` for dynamic string arrays; raw `ANY` interpolation can break filtered list endpoints.
 - [Facility shift history](shift-facility-history.md) — shift rows are independent per facility; stopping one preserves its assignment and attendance history.

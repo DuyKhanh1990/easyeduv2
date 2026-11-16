@@ -1370,7 +1370,7 @@ function ModulesManager() {
                                 onClick={() => toggleExpandItem(item.href)}
                               >
                                 <item.icon className="w-4 h-4 text-muted-foreground shrink-0" />
-                                <span className="text-sm text-foreground">{item.name}</span>
+                                <span className="text-sm text-foreground">{item.permissionLabel ?? item.name}</span>
                                 <span className="text-xs text-muted-foreground ml-1">({item.subTabs!.length} tab)</span>
                                 {itemExpanded
                                   ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
@@ -2037,6 +2037,9 @@ const PERM_DESCRIPTIONS: Record<string, string> = {
   "/my-space/calendar": "Xem luôn bật. Nhân sự được điểm danh, ghi chú, nhận xét và giao/thêm nội dung trong buổi được phân công. Thêm chỉ cấp quyền thêm học viên; Sửa áp dụng cho cập nhật hạn nội dung đã giao; Xóa cho phép gỡ nội dung đã giao trong buổi được phân công. Xem all không áp dụng.",
   "/my-space/assignments": "Xem luôn bật mặc định. Thêm: thêm nhận xét, điểm hoặc chấm bài lần đầu. Sửa: cập nhật nhận xét, điểm hoặc kết quả chấm bài.",
   "/my-space/score-sheet": "Xem luôn bật mặc định. Thêm cho phép tạo bảng điểm; Sửa cho phép cập nhật bảng điểm. Xem all và Xóa không áp dụng.",
+  "/score-conversion": "Quyền của tab Danh sách bảng điểm quy đổi; các tab cấu hình điểm quy đổi và bảng điểm mẫu có quyền riêng.",
+  "/score-conversion#international": "Xem: chỉ xem cấu hình điểm quy đổi do mình tạo. Xem all: xem cả cấu hình cũ và cấu hình do người khác tạo. Thêm / Sửa / Xóa: quản lý cấu hình theo quyền.",
+  "/score-conversion#sample": "Xem: chỉ xem bảng điểm mẫu do mình tạo. Xem all: xem cả bảng mẫu cũ và bảng do người khác tạo. Thêm / Sửa / Xóa: quản lý bảng mẫu theo quyền.",
   "/my-space/invoices": "Xem: học viên / nhân sự có quyền xem hoá đơn của bản thân. Bỏ tích quyền Xem để ẩn tab Hoá đơn của tôi.",
   "/my-space/payroll": "Xem: nhân sự có quyền xem bảng lương cá nhân của mình. Bỏ tích quyền Xem để ẩn tab Bảng lương của tôi.",
   // CÔNG VIỆC
@@ -2461,6 +2464,22 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
       queuePermissionUpdate(resource, updated);
       return;
     }
+    if (resource === "/score-conversion#international" || resource === "/score-conversion#sample") {
+      const updated = { ...current, [permKey]: toggling };
+      const hasView = updated.canView || updated.canViewAll;
+      if (toggling && permKey !== "canView" && permKey !== "canViewAll" && !hasView) {
+        toast({ title: t("settings.permissions.requireViewTitle"), description: t("settings.permissions.requireCreateDesc"), variant: "destructive" });
+        return;
+      }
+      if (!toggling && (permKey === "canView" || permKey === "canViewAll") && !hasView) {
+        updated.canCreate = false;
+        updated.canEdit = false;
+        updated.canDelete = false;
+      }
+      setLocalPerms(prev => ({ ...prev, [resource]: updated }));
+      queuePermissionUpdate(resource, updated);
+      return;
+    }
     let updated = { ...current, [permKey]: toggling };
 
     if (toggling) {
@@ -2528,7 +2547,13 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
         ? { ...local, canView: true, canViewAll: false, canDelete: false }
         : local;
     }
-    const fromServer = fetchedPerms?.find(p => p.resource === resource);
+    const legacyScoreConversionResource =
+      resource === "/score-conversion#international" || resource === "/score-conversion#sample";
+    const fromServer = fetchedPerms?.find(p => p.resource === resource)
+      ?? (legacyScoreConversionResource
+        ? fetchedPerms?.find((p) => p.resource === "/score-conversion")
+          ?? fetchedPerms?.find((p) => p.resource === "/assessments#list")
+        : undefined);
     if (fromServer) {
       const permission = { canView: fromServer.canView, canViewAll: fromServer.canViewAll, canCreate: fromServer.canCreate, canEdit: fromServer.canEdit, canDelete: fromServer.canDelete };
       if (resource === MY_SPACE_CALENDAR_RESOURCE) return normalizeMySpaceCalendarPerm(permission);
@@ -2599,12 +2624,15 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
     return !!(p?.canView || p?.canViewAll || p?.canCreate || p?.canEdit || p?.canDelete);
   };
 
-  const navItemHasPerm = (item: { href: string; subTabs?: { value: string }[] }): boolean => {
+  const navItemHasPerm = (item: { href: string; permissionItems?: { value: string; resource?: string }[]; subTabs?: { value: string }[] }): boolean => {
     if (!myPerms || myPerms.isSuperAdmin) return true;
     if (item.subTabs && item.subTabs.length > 0) {
       return item.subTabs.some(sub => hasAnyPermForResource(`${item.href}#${sub.value}`));
     }
-    return hasAnyPermForResource(item.href);
+    return hasAnyPermForResource(item.href)
+      || (item.permissionItems ?? []).some(permissionItem =>
+        hasAnyPermForResource(permissionItem.resource ?? permissionItem.value)
+      );
   };
 
   const normalizedPermissionSearch = permissionSearch.trim().toLocaleLowerCase();

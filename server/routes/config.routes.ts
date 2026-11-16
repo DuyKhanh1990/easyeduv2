@@ -18,6 +18,10 @@ import {
   type ScoreSheetTemplateInput,
 } from "@shared/score-sheet-template";
 import {
+  SCORE_CONVERSION_CONFIG_PERMISSION,
+  SCORE_SHEET_TEMPLATE_PERMISSION,
+} from "@shared/score-conversion-permissions";
+import {
   resolveManualScoreSheetAssessmentDeadlineAt,
   resolveScoreSheetAssessmentDeadlineAt,
   scoreSheetAssessmentInputSchema,
@@ -436,7 +440,77 @@ async function getScoreConversionPermissions(req: any) {
   if (req.isSuperAdmin) {
     return { canView: true, canViewAll: true, canCreate: true, canEdit: true, canDelete: true };
   }
-  return storage.getEffectivePermissions(req.roleIds ?? [], SCORE_CONVERSION_PERMISSION_RESOURCE);
+  const roleIds = req.roleIds ?? [];
+  const [assessmentPermissions, legacyPermissions] = await Promise.all([
+    storage.getEffectivePermissions(roleIds, SCORE_CONVERSION_PERMISSION_RESOURCE),
+    storage.getEffectivePermissions(roleIds, "/score-conversion"),
+  ]);
+  return {
+    canView: assessmentPermissions.canView || legacyPermissions.canView,
+    canViewAll: assessmentPermissions.canViewAll || legacyPermissions.canViewAll,
+    canCreate: assessmentPermissions.canCreate || legacyPermissions.canCreate,
+    canEdit: assessmentPermissions.canEdit || legacyPermissions.canEdit,
+    canDelete: assessmentPermissions.canDelete || legacyPermissions.canDelete,
+  };
+}
+
+async function getManagedTemplatePermissions(req: any, resource: string) {
+  if (req.isSuperAdmin) {
+    return { canView: true, canViewAll: true, canCreate: true, canEdit: true, canDelete: true };
+  }
+  const rowsByRole = await Promise.all((req.roleIds ?? []).map((roleId: string) =>
+    storage.getRolePermissions(roleId)
+  ));
+  const selectedRows = rowsByRole.map((rows: Array<{
+    resource: string;
+    canView: boolean;
+    canViewAll: boolean;
+    canCreate: boolean;
+    canEdit: boolean;
+    canDelete: boolean;
+  }>) => {
+    const direct = rows.find((row) => row.resource === resource);
+    return direct
+      ?? rows.find((row) => row.resource === "/score-conversion")
+      ?? rows.find((row) => row.resource === SCORE_CONVERSION_PERMISSION_RESOURCE);
+  }).filter((row): row is NonNullable<typeof row> => Boolean(row));
+  return {
+    canView: selectedRows.some((row) => row.canView),
+    canViewAll: selectedRows.some((row) => row.canViewAll),
+    canCreate: selectedRows.some((row) => row.canCreate),
+    canEdit: selectedRows.some((row) => row.canEdit),
+    canDelete: selectedRows.some((row) => row.canDelete),
+  };
+}
+
+function canSeeManagedRecords(permissions: Awaited<ReturnType<typeof getScoreConversionPermissions>>) {
+  return permissions.canView || permissions.canViewAll;
+}
+
+function filterManagedRecords<T extends { createdByUserId?: string | null }>(
+  records: T[],
+  req: any,
+  permissions: Awaited<ReturnType<typeof getScoreConversionPermissions>>,
+): T[] {
+  if (permissions.canViewAll) return records;
+  const userId = (req.user as any)?.id;
+  return permissions.canView && userId
+    ? records.filter((record) => record.createdByUserId === userId)
+    : [];
+}
+
+function canManageRecord(
+  record: { createdByUserId?: string | null } | undefined,
+  req: any,
+  permissions: Awaited<ReturnType<typeof getScoreConversionPermissions>>,
+) {
+  if (!record) return false;
+  if (permissions.canViewAll) return true;
+  return Boolean(
+    permissions.canView
+    && record.createdByUserId
+    && record.createdByUserId === (req.user as any)?.id
+  );
 }
 
 function sanitizeDateField(value: any): string | null {
@@ -2888,6 +2962,12 @@ export function registerConfigRoutes(app: Express): void {
           };
         }
       }
+      const legacyScoreConversionPermissions = permMap["/score-conversion"] ?? permMap[SCORE_CONVERSION_PERMISSION_RESOURCE];
+      for (const resource of [SCORE_CONVERSION_CONFIG_PERMISSION, SCORE_SHEET_TEMPLATE_PERMISSION]) {
+        if (!permMap[resource] && legacyScoreConversionPermissions) {
+          permMap[resource] = { ...legacyScoreConversionPermissions };
+        }
+      }
       const assignmentsPerm = permMap["/my-space/assignments"];
       permMap["/my-space/assignments"] = {
         canView: true,
@@ -3190,11 +3270,11 @@ export function registerConfigRoutes(app: Express): void {
   // ─── International Score Conversion Templates ─────────────────────────────
   app.get("/api/score-conversion-templates", async (req, res) => {
     try {
-      const permissions = await getScoreConversionPermissions(req);
-      if (!permissions.canView && !permissions.canViewAll) {
+      const permissions = await getManagedTemplatePermissions(req, SCORE_CONVERSION_CONFIG_PERMISSION);
+      if (!canSeeManagedRecords(permissions)) {
         return res.status(403).json({ message: "Bạn không có quyền xem cấu hình bảng điểm quy đổi." });
       }
-      res.json(await readScoreConversionTemplates());
+      res.json(filterManagedRecords(await readScoreConversionTemplates(), req, permissions));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -3202,7 +3282,7 @@ export function registerConfigRoutes(app: Express): void {
 
   app.post("/api/score-conversion-templates", async (req, res) => {
     try {
-      const permissions = await getScoreConversionPermissions(req);
+      const permissions = await getManagedTemplatePermissions(req, SCORE_CONVERSION_CONFIG_PERMISSION);
       if (!permissions.canCreate) {
         return res.status(403).json({ message: "Bạn không có quyền tạo cấu hình bảng điểm quy đổi." });
       }
@@ -3213,6 +3293,7 @@ export function registerConfigRoutes(app: Express): void {
         id: randomUUID(),
         createdAt: now,
         updatedAt: now,
+        createdByUserId: (req.user as any)?.id ?? null,
       });
       const created = await mutateScoreConversionTemplates((templates) => {
         if (templates.some((existing) => sameScoreConversionType(existing, input))) {
@@ -3235,7 +3316,7 @@ export function registerConfigRoutes(app: Express): void {
 
   app.put("/api/score-conversion-templates/:id", async (req, res) => {
     try {
-      const permissions = await getScoreConversionPermissions(req);
+      const permissions = await getManagedTemplatePermissions(req, SCORE_CONVERSION_CONFIG_PERMISSION);
       if (!permissions.canEdit) {
         return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa cấu hình bảng điểm quy đổi." });
       }
@@ -3244,6 +3325,7 @@ export function registerConfigRoutes(app: Express): void {
         const index = templates.findIndex((template) => template.id === req.params.id);
         if (index < 0) return { templates, result: null };
         const previous = templates[index];
+        if (!canManageRecord(previous, req, permissions)) return { templates, result: null };
         if (templates.some((existing) =>
           existing.id !== previous.id && sameScoreConversionType(existing, input))) {
           const error: any = new Error("Đã có bảng quy đổi cho loại này.");
@@ -3254,6 +3336,7 @@ export function registerConfigRoutes(app: Express): void {
           ...input,
           id: previous.id,
           createdAt: previous.createdAt,
+          createdByUserId: previous.createdByUserId ?? null,
           updatedAt: new Date().toISOString(),
         });
         const nextTemplates = [...templates];
@@ -3271,9 +3354,13 @@ export function registerConfigRoutes(app: Express): void {
 
   app.delete("/api/score-conversion-templates/:id", async (req, res) => {
     try {
-      const permissions = await getScoreConversionPermissions(req);
+      const permissions = await getManagedTemplatePermissions(req, SCORE_CONVERSION_CONFIG_PERMISSION);
       if (!permissions.canDelete) {
         return res.status(403).json({ message: "Bạn không có quyền xóa cấu hình bảng điểm quy đổi." });
+      }
+      const records = await readScoreConversionTemplates();
+      if (!canManageRecord(records.find((record) => record.id === req.params.id), req, permissions)) {
+        return res.status(404).json({ message: "Không tìm thấy cấu hình điểm quy đổi." });
       }
       const result = await deleteScoreConversionTemplateIfUnassigned(req.params.id);
       if (result === "not_found") {
@@ -3294,11 +3381,11 @@ export function registerConfigRoutes(app: Express): void {
   // ─── Score Sheet Templates ──────────────────────────────────────────────────
   app.get("/api/score-sheet-templates", async (req, res) => {
     try {
-      const permissions = await getScoreConversionPermissions(req);
-      if (!permissions.canView && !permissions.canViewAll) {
+      const permissions = await getManagedTemplatePermissions(req, SCORE_SHEET_TEMPLATE_PERMISSION);
+      if (!canSeeManagedRecords(permissions)) {
         return res.status(403).json({ message: "Bạn không có quyền xem cấu hình bảng điểm mẫu." });
       }
-      res.json(await readScoreSheetTemplates());
+      res.json(filterManagedRecords(await readScoreSheetTemplates(), req, permissions));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -3306,7 +3393,7 @@ export function registerConfigRoutes(app: Express): void {
 
   app.post("/api/score-sheet-templates", async (req, res) => {
     try {
-      const permissions = await getScoreConversionPermissions(req);
+      const permissions = await getManagedTemplatePermissions(req, SCORE_SHEET_TEMPLATE_PERMISSION);
       if (!permissions.canCreate) {
         return res.status(403).json({ message: "Bạn không có quyền tạo bảng điểm mẫu." });
       }
@@ -3319,6 +3406,7 @@ export function registerConfigRoutes(app: Express): void {
         id: randomUUID(),
         createdAt: now,
         updatedAt: now,
+        createdByUserId: (req.user as any)?.id ?? null,
       });
       const created = await mutateScoreSheetTemplates((templates) => {
         if (templates.some((existing) => existing.code.toLocaleLowerCase() === template.code.toLocaleLowerCase())) {
@@ -3341,7 +3429,7 @@ export function registerConfigRoutes(app: Express): void {
 
   app.put("/api/score-sheet-templates/:id", async (req, res) => {
     try {
-      const permissions = await getScoreConversionPermissions(req);
+      const permissions = await getManagedTemplatePermissions(req, SCORE_SHEET_TEMPLATE_PERMISSION);
       if (!permissions.canEdit) {
         return res.status(403).json({ message: "Bạn không có quyền chỉnh sửa bảng điểm mẫu." });
       }
@@ -3352,6 +3440,7 @@ export function registerConfigRoutes(app: Express): void {
         const index = templates.findIndex((template) => template.id === req.params.id);
         if (index < 0) return { templates, result: null };
         const previous = templates[index];
+        if (!canManageRecord(previous, req, permissions)) return { templates, result: null };
         if (templates.some((existing) =>
           existing.id !== previous.id
           && existing.code.toLocaleLowerCase() === input.code.toLocaleLowerCase())) {
@@ -3363,6 +3452,7 @@ export function registerConfigRoutes(app: Express): void {
           ...input,
           id: previous.id,
           createdAt: previous.createdAt,
+          createdByUserId: previous.createdByUserId ?? null,
           updatedAt: new Date().toISOString(),
         });
         const nextTemplates = [...templates];
@@ -3383,9 +3473,13 @@ export function registerConfigRoutes(app: Express): void {
 
   app.delete("/api/score-sheet-templates/:id", async (req, res) => {
     try {
-      const permissions = await getScoreConversionPermissions(req);
+      const permissions = await getManagedTemplatePermissions(req, SCORE_SHEET_TEMPLATE_PERMISSION);
       if (!permissions.canDelete) {
         return res.status(403).json({ message: "Bạn không có quyền xóa bảng điểm mẫu." });
+      }
+      const records = await readScoreSheetTemplates();
+      if (!canManageRecord(records.find((record) => record.id === req.params.id), req, permissions)) {
+        return res.status(404).json({ message: "Không tìm thấy bảng điểm mẫu." });
       }
       const result = await deleteScoreSheetTemplateIfUnassigned(req.params.id);
       if (result === "not_found") {
@@ -3405,6 +3499,26 @@ export function registerConfigRoutes(app: Express): void {
 
   app.get("/api/score-template-usage", async (req, res) => {
     try {
+      if (req.query.manage === "1") {
+        const [conversionPermissions, sheetPermissions] = await Promise.all([
+          getManagedTemplatePermissions(req, SCORE_CONVERSION_CONFIG_PERMISSION),
+          getManagedTemplatePermissions(req, SCORE_SHEET_TEMPLATE_PERMISSION),
+        ]);
+        if (!conversionPermissions.canDelete && !sheetPermissions.canDelete) {
+          return res.status(403).json({ message: "Bạn không có quyền xóa cấu hình bảng điểm." });
+        }
+        const [usage, conversionTemplates, scoreSheetTemplates] = await Promise.all([
+          readScoreTemplateUsage(),
+          readScoreConversionTemplates(),
+          readScoreSheetTemplates(),
+        ]);
+        const visibleConversionIds = new Set(filterManagedRecords(conversionTemplates, req, conversionPermissions).map((item) => item.id));
+        const visibleSheetIds = new Set(filterManagedRecords(scoreSheetTemplates, req, sheetPermissions).map((item) => item.id));
+        return res.json({
+          scoreSheetTemplateIdsInUse: usage.scoreSheetTemplateIdsInUse.filter((id) => visibleSheetIds.has(id)),
+          scoreConversionTemplateIdsInUse: usage.scoreConversionTemplateIdsInUse.filter((id) => visibleConversionIds.has(id)),
+        });
+      }
       const permissions = await getScoreConversionPermissions(req);
       if (
         !permissions.canView

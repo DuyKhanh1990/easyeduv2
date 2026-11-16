@@ -50,6 +50,7 @@ export type NavItem = {
   href: string;
   icon: any;
   permissionHref?: string;
+  permissionLabel?: string;
   defaultVisible?: boolean;
   subTabs?: SubTab[];
   permissionItems?: SubTabItem[];
@@ -238,7 +239,20 @@ export const navigation: NavEntry[] = [
         name: "Bảng điểm quy đổi",
         href: "/score-conversion",
         icon: BarChart3,
-        permissionHref: "/assessments#list",
+        permissionHref: "/score-conversion",
+        permissionLabel: "Danh sách bảng điểm quy đổi",
+        permissionItems: [
+          {
+            value: "score-conversion-config",
+            resource: "/score-conversion#international",
+            name: "Cấu hình điểm Quy đổi",
+          },
+          {
+            value: "score-sheet-templates",
+            resource: "/score-conversion#sample",
+            name: "Bảng điểm mẫu",
+          },
+        ],
         defaultVisible: false,
       },
       {

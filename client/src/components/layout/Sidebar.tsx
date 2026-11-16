@@ -125,7 +125,10 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps = {}) {
         canAccessItem(myPerms ?? undefined, `${permissionHref}#${tab.value}`)
       );
     }
-    return canAccessItem(myPerms ?? undefined, permissionHref);
+    return canAccessItem(myPerms ?? undefined, permissionHref)
+      || (navItem.permissionItems ?? []).some((item) =>
+        canAccessItem(myPerms ?? undefined, item.resource ?? item.value)
+      );
   };
 
   const hasDefaultAccess = (href: string, moduleName: string): boolean => {

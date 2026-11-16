@@ -163,6 +163,7 @@ export const scoreSheetTemplateSchema = scoreSheetTemplateBaseSchema.extend({
   id: z.string().uuid(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  createdByUserId: z.string().uuid().nullable().optional(),
 }).superRefine(validateScoreSheetTemplate);
 
 export type ScoreSheetTemplateInput = z.infer<typeof scoreSheetTemplateInputSchema>;
