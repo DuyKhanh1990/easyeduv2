@@ -52,6 +52,11 @@ COPY --from=builder /app/dist ./dist
 
 # Copy migrations (used by startup migration logic)
 COPY --from=builder /app/migrations ./migrations
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
+COPY --from=builder /app/shared ./shared
+COPY --from=builder /app/gateway/src/schema.ts ./gateway/src/schema.ts
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
 # Run as non-root for security (k8s best practice)
 RUN addgroup -S nodejs && adduser -S nodejs -G nodejs
