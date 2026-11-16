@@ -27,4 +27,5 @@ else
 fi
 
 ./node_modules/.bin/tsx scripts/apply-deploy-migrations.ts
+./node_modules/.bin/tsx scripts/check-schema.ts
 echo "[db-setup] Done"
