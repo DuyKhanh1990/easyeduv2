@@ -27,5 +27,8 @@ else
 fi
 
 ./node_modules/.bin/tsx scripts/apply-deploy-migrations.ts
+if [ "$TABLE_COUNT" != "0" ] && [ "$HAS_CORE" = "t" ]; then
+  ./node_modules/.bin/tsx scripts/sync-schema-additive.ts
+fi
 ./node_modules/.bin/tsx scripts/check-schema.ts
 echo "[db-setup] Done"
