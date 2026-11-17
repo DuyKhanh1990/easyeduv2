@@ -571,37 +571,141 @@ export function registerAttendanceRoutes(app: Express): void {
         groupedQuery.having(sql`count(${studentSessions.id}) FILTER (WHERE ${or(...statusConditions)}) > 0`);
       }
 
+      // The attendance tab also includes free-class registrations. These have
+      // no class_sessions/student_sessions row, so aggregate them separately.
+      const freeConditions: any[] = [
+        eq(classes.classType, "free"),
+        gte(freeClassRegistrations.registrationDate, dateFrom),
+        lte(freeClassRegistrations.registrationDate, dateTo),
+      ];
+      if (classIds.length) freeConditions.push(inArray(classes.id, classIds));
+      if (studentIds.length) freeConditions.push(inArray(students.id, studentIds));
+      if (locationIds.length) freeConditions.push(inArray(classes.locationId, locationIds));
+      if (search) {
+        const like = `%${search}%`;
+        freeConditions.push(or(
+          sql`${students.fullName} ILIKE ${like}`,
+          sql`${students.code} ILIKE ${like}`,
+          sql`${classes.classCode} ILIKE ${like}`,
+          sql`${classes.name} ILIKE ${like}`,
+        ));
+      }
+      if (!req.isSuperAdmin && req.allowedLocationIds?.length) {
+        freeConditions.push(inArray(classes.locationId, req.allowedLocationIds));
+        freeConditions.push(sql`EXISTS (
+          SELECT 1 FROM student_locations sl
+          WHERE sl.student_id = ${students.id}
+            AND sl.location_id = ANY(ARRAY[${sql.raw(req.allowedLocationIds.map((id: string) => `'${id}'`).join(","))}]::uuid[])
+        )`);
+      }
+      if (shiftId && shiftId !== "all") {
+        freeConditions.push(or(
+          eq(freeClassRegistrations.shiftTemplateId, shiftId),
+          sql`EXISTS (
+            SELECT 1 FROM free_class_day_assignments fcda
+            WHERE fcda.class_id = ${classes.id}
+              AND fcda.assignment_date = ${freeClassRegistrations.registrationDate}
+              AND fcda.shift_template_id = ${shiftId}::uuid
+          )`,
+        ));
+      }
+      if (!canViewAll) {
+        freeConditions.push(staffId
+          ? or(
+              managerCondition,
+              eq(freeClassRegistrations.teacherId, staffId),
+              sql`EXISTS (
+                SELECT 1 FROM free_class_day_assignments fcda
+                WHERE fcda.class_id = ${classes.id}
+                  AND fcda.assignment_date = ${freeClassRegistrations.registrationDate}
+                  AND fcda.teacher_id = ${staffId}::uuid
+              )`,
+            )
+          : sql`FALSE`);
+      }
+      const freeRecords = await db.select({
+        studentId: students.id,
+        studentCode: students.code,
+        studentName: students.fullName,
+        classId: classes.id,
+        className: classes.classCode,
+        startDate: studentClasses.startDate,
+        endDate: studentClasses.endDate,
+        status: freeClassRegistrations.status,
+      })
+        .from(freeClassRegistrations)
+        .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
+        .innerJoin(students, eq(freeClassRegistrations.studentId, students.id))
+        .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
+        .where(and(...freeConditions));
+      const freeGroups = new Map<string, any>();
+      for (const record of freeRecords) {
+        const key = `${record.studentId}:${record.classId}`;
+        let group = freeGroups.get(key);
+        if (!group) {
+          group = {
+            studentClassId: key,
+            studentId: record.studentId,
+            studentCode: record.studentCode,
+            studentName: record.studentName,
+            classId: record.classId,
+            className: record.className,
+            startDate: record.startDate,
+            endDate: record.endDate,
+            totalSessions: 0,
+            pending: 0,
+            attended: 0,
+            makeupWait: 0,
+            absent: 0,
+            makeupScheduled: 0,
+            paused: 0,
+          };
+          freeGroups.set(key, group);
+        }
+        const status = record.status === "attended" ? "present" : record.status === "reserved" ? "paused" : "pending";
+        if (selectedStatuses.length && !selectedStatuses.includes(status)) continue;
+        group.totalSessions++;
+        if (status === "pending") group.pending++;
+        else if (status === "present") group.attended++;
+        else if (status === "paused") group.paused++;
+      }
+      const freeSummaryRows = Array.from(freeGroups.values()).filter((row) =>
+        row.totalSessions > 0 && (!selectedStatuses.length || (
+          row.pending + row.attended + row.paused > 0
+        )),
+      );
       const grouped = groupedQuery.as("attendance_overview");
-      const [totals] = await db.select({
-        total: sql<number>`count(*)::int`,
-        students: sql<number>`count(DISTINCT ${grouped.studentId})::int`,
-        classes: sql<number>`count(DISTINCT ${grouped.classId})::int`,
-        sessions: sql<number>`coalesce(sum(${grouped.totalSessions}), 0)::int`,
-      }).from(grouped);
-      const pagedStudents = await db.select({
-        studentId: grouped.studentId,
-        studentCode: grouped.studentCode,
-      }).from(grouped)
-        .groupBy(grouped.studentId, grouped.studentCode)
-        .orderBy(grouped.studentCode)
-        .limit(pageSize)
-        .offset((page - 1) * pageSize);
-      const pageStudentIds = Array.from(new Set(pagedStudents.map((row) => row.studentId)));
-      const rows = pageStudentIds.length
-        ? await db.select().from(grouped)
-          .where(inArray(grouped.studentId, pageStudentIds))
-          .orderBy(grouped.studentCode, grouped.className)
-        : [];
+      const regularRows = await db.select().from(grouped);
+      const combined = new Map<string, any>();
+      for (const row of [...regularRows, ...freeSummaryRows]) {
+        const key = `${row.studentId}:${row.classId}`;
+        const existing = combined.get(key);
+        if (!existing) combined.set(key, { ...row });
+        else {
+          for (const field of ["totalSessions", "pending", "attended", "makeupWait", "absent", "makeupScheduled", "paused"]) {
+            existing[field] = Number(existing[field] ?? 0) + Number(row[field] ?? 0);
+          }
+        }
+      }
+      const allRows = Array.from(combined.values()).sort((a, b) =>
+        String(a.studentCode).localeCompare(String(b.studentCode)) || String(a.className).localeCompare(String(b.className)),
+      );
+      const studentOrder = Array.from(new Map(allRows.map((row) => [row.studentId, row.studentCode])).entries())
+        .sort((a, b) => String(a[1]).localeCompare(String(b[1])))
+        .map(([studentId]) => studentId);
+      const totalStudents = studentOrder.length;
+      const pageStudentIds = new Set(studentOrder.slice((page - 1) * pageSize, page * pageSize));
+      const rows = allRows.filter((row) => pageStudentIds.has(row.studentId));
+      const summary = {
+        students: totalStudents,
+        classes: new Set(allRows.map((row) => row.classId)).size,
+        sessions: allRows.reduce((sum, row) => sum + Number(row.totalSessions ?? 0), 0),
+      };
 
       res.json({
         rows,
-        total: Number(totals?.students ?? 0),
-        totalClassRows: Number(totals?.total ?? 0),
-        summary: {
-          students: Number(totals?.students ?? 0),
-          classes: Number(totals?.classes ?? 0),
-          sessions: Number(totals?.sessions ?? 0),
-        },
+        total: totalStudents,
+        summary,
         page,
         pageSize,
       });
