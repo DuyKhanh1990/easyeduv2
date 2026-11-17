@@ -12,6 +12,30 @@ until pg_isready -d "$DB_URL" >/dev/null 2>&1; do
   sleep 2
 done
 
+# Tạo database nếu chưa có (role trong DATABASE_URL cần quyền CREATEDB).
+# Chỉ tạo khi tên DB trùng CENTER_ID.
+if ! psql "$DB_URL" -tAc "SELECT 1" >/dev/null 2>&1; then
+  DB_NAME="${DB_URL##*/}"
+  DB_NAME="${DB_NAME%%\?*}"
+  MAINT_URL="${DB_URL%/*}/postgres"
+  case "$DB_NAME" in
+    ""|*[!a-z0-9]*)
+      echo "[db-setup] ERROR: invalid database name"
+      exit 1
+      ;;
+  esac
+  if [ "$DB_NAME" != "${CENTER_ID:-}" ]; then
+    echo "[db-setup] ERROR: cannot connect to database '$DB_NAME' and it differs from CENTER_ID; refusing to create it"
+    exit 1
+  fi
+  if [ "$(psql "$MAINT_URL" -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'")" = "1" ]; then
+    echo "[db-setup] ERROR: database '$DB_NAME' exists but cannot be connected to"
+    exit 1
+  fi
+  echo "[db-setup] Creating database $DB_NAME"
+  psql "$MAINT_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$DB_NAME\""
+fi
+
 TABLE_COUNT=$(psql "$DB_URL" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")
 HAS_CORE=$(psql "$DB_URL" -tAc "SELECT to_regclass('public.students') IS NOT NULL")
 
