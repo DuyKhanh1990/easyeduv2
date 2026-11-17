@@ -20,6 +20,9 @@ interface BulkActionDialogsProps {
   students: any[];
   staff: any[];
   parents: any[];
+  parentsLoading?: boolean;
+  parentsError?: boolean;
+  onRetryParents?: () => void;
   locations: any[];
   sortedRelationships: CrmRelationship[];
   updateStudent: { isPending: boolean };
@@ -93,6 +96,9 @@ export function BulkActionDialogs({
   selectedIds,
   staff,
   parents,
+  parentsLoading = false,
+  parentsError = false,
+  onRetryParents,
   locations,
   sortedRelationships,
   updateStudent,
@@ -131,6 +137,14 @@ export function BulkActionDialogs({
     ),
     [sortedRelationships, inferredParentIds]
   );
+  const filteredParents = useMemo(() => {
+    const search = bulkParentSearch.trim().toLocaleLowerCase();
+    if (!search) return parents;
+    return parents.filter((parent) =>
+      [parent.fullName, parent.code, parent.phone]
+        .some((value) => String(value ?? "").toLocaleLowerCase().includes(search)),
+    );
+  }, [parents, bulkParentSearch]);
 
   const handleBulkToggleRel = (rel: CrmRelationship) => {
     const isSelected = selectedBulkRels.includes(rel.id);
@@ -362,10 +376,28 @@ export function BulkActionDialogs({
             <hr />
             <Input placeholder="Tìm kiếm phụ huynh..." value={bulkParentSearch} onChange={(e) => setBulkParentSearch(e.target.value)} className="rounded-lg" />
             <div className="border rounded-lg p-4 max-h-64 overflow-y-auto">
-              {parents?.filter((p) => (p.fullName || "").toLowerCase().includes(bulkParentSearch.toLowerCase())).map((person) => (
+              {parentsLoading ? (
+                <p className="py-4 text-center text-sm text-muted-foreground">Đang tải danh sách phụ huynh…</p>
+              ) : parentsError ? (
+                <div className="flex flex-col items-center gap-2 py-4 text-center">
+                  <p className="text-sm text-destructive">Không tải được danh sách phụ huynh.</p>
+                  {onRetryParents && <Button type="button" variant="outline" size="sm" onClick={onRetryParents}>Tải lại</Button>}
+                </div>
+              ) : filteredParents.length === 0 ? (
+                <p className="py-4 text-center text-sm text-muted-foreground">
+                  {bulkParentSearch.trim()
+                    ? "Không tìm thấy phụ huynh phù hợp."
+                    : "Chưa có tài khoản phụ huynh để gán."}
+                </p>
+              ) : filteredParents.map((person) => (
                 <label key={person.id} className="flex items-center gap-3 py-2 cursor-pointer">
                   <input type="checkbox" checked={selectedBulkParents.includes(person.id)} onChange={() => setSelectedBulkParents(selectedBulkParents.includes(person.id) ? selectedBulkParents.filter((id) => id !== person.id) : [...selectedBulkParents, person.id])} />
-                  <div><div>{person.fullName}</div><div className="text-xs text-gray-500">@{person.code}</div></div>
+                  <div>
+                    <div>{person.fullName}</div>
+                    <div className="text-xs text-gray-500">
+                      @{person.code}{person.phone ? ` · ${person.phone}` : ""}
+                    </div>
+                  </div>
                 </label>
               ))}
             </div>

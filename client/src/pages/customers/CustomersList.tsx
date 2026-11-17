@@ -340,7 +340,12 @@ export function CustomersList() {
   const [isBulkWalletOpen, setIsBulkWalletOpen] = useState(false);
   const [isPreparingCustomerExport, setIsPreparingCustomerExport] = useState(false);
 
-  const { data: parentsData } = useStudents({ type: "Phụ huynh", limit: 1000, enabled: isAddOpen || isEditOpen });
+  const {
+    data: parentsData,
+    isLoading: isLoadingParents,
+    isError: isParentsError,
+    refetch: refetchParents,
+  } = useStudents({ type: "Phụ huynh", limit: 1000 });
 
   const { t } = useLanguage();
   const { data: myPerms } = useMyPermissions();
@@ -2091,6 +2096,9 @@ export function CustomersList() {
         students={students}
         staff={staff || []}
         parents={parents}
+        parentsLoading={isLoadingParents}
+        parentsError={isParentsError}
+        onRetryParents={() => { void refetchParents(); }}
         locations={locations || []}
         sortedRelationships={sortedRelationships}
         updateStudent={updateStudent}
