@@ -2038,6 +2038,7 @@ const PERM_DESCRIPTIONS: Record<string, string> = {
   "/my-space/assignments": "Xem luôn bật mặc định. Thêm: thêm nhận xét, điểm hoặc chấm bài lần đầu. Sửa: cập nhật nhận xét, điểm hoặc kết quả chấm bài.",
   "/my-space/score-sheet": "Xem luôn bật mặc định. Thêm cho phép tạo bảng điểm; Sửa cho phép cập nhật bảng điểm. Xem all và Xóa không áp dụng.",
   "/score-conversion": "Quyền của tab Danh sách bảng điểm quy đổi; các tab cấu hình điểm quy đổi và bảng điểm mẫu có quyền riêng.",
+  "/score-conversion#list": "Xem: chỉ xem bảng điểm có phân công mình là giáo viên; với bảng thủ công, người tạo hoặc giáo viên liên quan được xem. Xem all: xem tất cả bảng điểm và học viên. Thêm: tạo bảng thủ công và nhập điểm lần đầu; Sửa: cập nhật điểm đã nhập; Xóa: xóa khi thỏa điều kiện nghiệp vụ.",
   "/score-conversion#international": "Xem: chỉ xem cấu hình điểm quy đổi do mình tạo. Xem all: xem cả cấu hình cũ và cấu hình do người khác tạo. Thêm / Sửa / Xóa: quản lý cấu hình theo quyền.",
   "/score-conversion#sample": "Xem: chỉ xem bảng điểm mẫu do mình tạo. Xem all: xem cả bảng mẫu cũ và bảng do người khác tạo. Thêm / Sửa / Xóa: quản lý bảng mẫu theo quyền.",
   "/my-space/invoices": "Xem: học viên / nhân sự có quyền xem hoá đơn của bản thân. Bỏ tích quyền Xem để ẩn tab Hoá đơn của tôi.",
@@ -2363,7 +2364,15 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
   const queuePermissionUpdate = (resource: string, perms: PermMap[string]) => {
     if (!selectedRoleId) return;
     if (!permissionSessionId.current) permissionSessionId.current = crypto.randomUUID();
-    pendingPermissionUpdates.current[resource] = { roleId: selectedRoleId, perms };
+    const resources = resource === "/score-conversion#list"
+      ? [resource, "/score-conversion"]
+      : [resource];
+    for (const targetResource of resources) {
+      pendingPermissionUpdates.current[targetResource] = {
+        roleId: selectedRoleId,
+        perms,
+      };
+    }
     if (permissionSaveTimer.current) clearTimeout(permissionSaveTimer.current);
     permissionSaveTimer.current = setTimeout(flushPermissionUpdates, 600);
   };
@@ -2547,6 +2556,19 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
         ? { ...local, canView: true, canViewAll: false, canDelete: false }
         : local;
     }
+    if (resource === "/score-conversion#list") {
+      const current = fetchedPerms?.find((permission) => permission.resource === resource);
+      const legacy = fetchedPerms?.find((permission) => permission.resource === "/score-conversion");
+      if (current || legacy) {
+        return {
+          canView: Boolean(current?.canView || legacy?.canView),
+          canViewAll: Boolean(current?.canViewAll || legacy?.canViewAll),
+          canCreate: Boolean(current?.canCreate || legacy?.canCreate),
+          canEdit: Boolean(current?.canEdit || legacy?.canEdit),
+          canDelete: Boolean(current?.canDelete || legacy?.canDelete),
+        };
+      }
+    }
     const fromServer = fetchedPerms?.find(p => p.resource === resource);
     if (fromServer) {
       const permission = { canView: fromServer.canView, canViewAll: fromServer.canViewAll, canCreate: fromServer.canCreate, canEdit: fromServer.canEdit, canDelete: fromServer.canDelete };
@@ -2614,8 +2636,13 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
 
   const hasAnyPermForResource = (resource: string): boolean => {
     if (!myPerms || myPerms.isSuperAdmin) return true;
-    const p = myPerms.permissions[resource];
-    return !!(p?.canView || p?.canViewAll || p?.canCreate || p?.canEdit || p?.canDelete);
+    const resources = resource === "/score-conversion#list"
+      ? [resource, "/score-conversion"]
+      : [resource];
+    return resources.some((key) => {
+      const p = myPerms.permissions[key];
+      return !!(p?.canView || p?.canViewAll || p?.canCreate || p?.canEdit || p?.canDelete);
+    });
   };
 
   const navItemHasPerm = (item: { href: string; permissionItems?: { value: string; resource?: string }[]; subTabs?: { value: string }[] }): boolean => {

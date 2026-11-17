@@ -106,6 +106,7 @@ type StaffScoreSheetAssessmentStudentsDialogProps = {
   onOpenChange: (open: boolean) => void;
   canManageScores?: boolean;
   canEnterScores?: boolean;
+  canEditScores?: boolean;
   canManagePublication?: boolean;
 };
 
@@ -115,6 +116,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
   onOpenChange,
   canManageScores = true,
   canEnterScores = canManageScores,
+  canEditScores = canManageScores,
   canManagePublication = false,
 }: StaffScoreSheetAssessmentStudentsDialogProps) {
   const queryClient = useQueryClient();
@@ -151,7 +153,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
   } | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<AssessmentRosterStudent | null>(null);
   const [restoreMenuOpen, setRestoreMenuOpen] = useState(false);
-  const showScoreActions = canManageScores || students.some((student) => student.attemptsTaken > 0);
+  const showScoreActions = canEnterScores || canEditScores || students.some((student) => student.attemptsTaken > 0);
 
   async function updateRosterStudent(studentId: string, action: "remove" | "restore") {
     if (!assessment) throw new Error("Chưa chọn buổi thi");
@@ -493,16 +495,14 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                                   <Eye className="h-4 w-4" />
                                 </Button>
                               )}
-                              {canManageScores && (
+                              {(student.attemptsTaken > 0 ? canEditScores : canEnterScores) && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
                                   className="h-8 w-8"
                                   onClick={() => setScoreDialogTarget({ student, mode: "edit" })}
-                                  disabled={!canEnterScores}
-                                  title={canEnterScores
-                                    ? `Nhập điểm cho ${student.fullName}`
-                                    : "Chưa thi — chưa thể nhập điểm"}
+                                  disabled={!canEnterScores && !canEditScores}
+                                  title={`Nhập điểm cho ${student.fullName}`}
                                   aria-label={`Quản lý kết quả của ${student.fullName}`}
                                   data-testid={`btn-manage-assessment-score-${student.studentId}`}
                                 >

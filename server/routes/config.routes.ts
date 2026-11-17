@@ -18,6 +18,7 @@ import {
   type ScoreSheetTemplateInput,
 } from "@shared/score-sheet-template";
 import {
+  SCORE_CONVERSION_ASSESSMENTS_PERMISSION,
   SCORE_CONVERSION_CONFIG_PERMISSION,
   SCORE_SHEET_TEMPLATE_PERMISSION,
 } from "@shared/score-conversion-permissions";
@@ -99,7 +100,7 @@ function getBangkokDateOnly(): string {
 const SCORE_CONVERSION_SETTINGS_KEY = "scoreConversionTemplates";
 const SCORE_SHEET_TEMPLATE_SETTINGS_KEY = "scoreSheetTemplates";
 const SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY = "scoreSheetAssessments";
-const SCORE_CONVERSION_PERMISSION_RESOURCE = "/assessments#list";
+const SCORE_CONVERSION_PERMISSION_RESOURCE = SCORE_CONVERSION_ASSESSMENTS_PERMISSION;
 
 function parseScoreConversionTemplates(value: string): ScoreConversionTemplate[] {
   return parseScoreConversionTemplatesJson(value);
@@ -331,7 +332,8 @@ async function mutateScoreSheetAssessments(
 
 async function areManualScoreSheetStudentsAccessible(
   req: any,
-  input: ParsedScoreSheetAssessmentInput,
+  input: Pick<ParsedScoreSheetAssessmentInput, "manualSelectionMode" | "manualClassId" | "manualStudentIds">,
+  includeClassManagers = true,
 ): Promise<boolean> {
   if (req.isSuperAdmin) return true;
   const [staffRecord] = await db
@@ -344,6 +346,9 @@ async function areManualScoreSheetStudentsAccessible(
   const classConstraint = input.manualSelectionMode === "class" && input.manualClassId
     ? sql`AND c.id = ${input.manualClassId}::uuid`
     : sql``;
+  const managerClause = includeClassManagers
+    ? sql`OR ${staffRecord.id} = ANY(c.manager_ids)`
+    : sql``;
   const selectedStudentConstraint = manualStudentIdInFilter(input.manualStudentIds);
   const result = await db.execute(sql`
     SELECT DISTINCT sc.student_id
@@ -354,7 +359,7 @@ async function areManualScoreSheetStudentsAccessible(
       ${classConstraint}
       AND (
         ${staffRecord.id} = ANY(c.teacher_ids)
-        OR ${staffRecord.id} = ANY(c.manager_ids)
+        ${managerClause}
         OR EXISTS (
           SELECT 1
           FROM class_sessions cs
@@ -441,16 +446,17 @@ async function getScoreConversionPermissions(req: any) {
     return { canView: true, canViewAll: true, canCreate: true, canEdit: true, canDelete: true };
   }
   const roleIds = req.roleIds ?? [];
-  const [assessmentPermissions, legacyPermissions] = await Promise.all([
+  const [assessmentPermissions, legacyAssessmentPermissions, legacyPermissions] = await Promise.all([
     storage.getEffectivePermissions(roleIds, SCORE_CONVERSION_PERMISSION_RESOURCE),
+    storage.getEffectivePermissions(roleIds, "/assessments#list"),
     storage.getEffectivePermissions(roleIds, "/score-conversion"),
   ]);
   return {
-    canView: assessmentPermissions.canView || legacyPermissions.canView,
-    canViewAll: assessmentPermissions.canViewAll || legacyPermissions.canViewAll,
-    canCreate: assessmentPermissions.canCreate || legacyPermissions.canCreate,
-    canEdit: assessmentPermissions.canEdit || legacyPermissions.canEdit,
-    canDelete: assessmentPermissions.canDelete || legacyPermissions.canDelete,
+    canView: assessmentPermissions.canView || legacyAssessmentPermissions.canView || legacyPermissions.canView,
+    canViewAll: assessmentPermissions.canViewAll || legacyAssessmentPermissions.canViewAll || legacyPermissions.canViewAll,
+    canCreate: assessmentPermissions.canCreate || legacyAssessmentPermissions.canCreate || legacyPermissions.canCreate,
+    canEdit: assessmentPermissions.canEdit || legacyAssessmentPermissions.canEdit || legacyPermissions.canEdit,
+    canDelete: assessmentPermissions.canDelete || legacyAssessmentPermissions.canDelete || legacyPermissions.canDelete,
   };
 }
 
@@ -3533,9 +3539,6 @@ export function registerConfigRoutes(app: Express): void {
       if (
         !permissions.canView
         && !permissions.canViewAll
-        && !permissions.canCreate
-        && !permissions.canEdit
-        && !permissions.canDelete
       ) {
         return res.status(403).json({ message: "Bạn không có quyền xem danh sách bảng điểm." });
       }
@@ -3548,6 +3551,16 @@ export function registerConfigRoutes(app: Express): void {
       const scoreSheetTemplatesById = new Map(
         scoreSheetTemplates.map((template) => [template.id, template]),
       );
+      const currentStaffIsTeacherSql = req.staffId
+        ? sql`(
+            ${req.staffId}::uuid = ANY(COALESCE(cs.teacher_ids, ARRAY[]::uuid[]))
+            OR ${req.staffId}::uuid = ANY(COALESCE(c.teacher_ids, ARRAY[]::uuid[]))
+            OR EXISTS (
+              SELECT 1 FROM class_session_teacher_assignments csta
+              WHERE csta.class_session_id = cs.id AND csta.teacher_id = ${req.staffId}::uuid
+            )
+          )`
+        : sql`FALSE`;
       const result = await db.execute(sql`
         SELECT
           cs.id AS session_id,
@@ -3555,6 +3568,7 @@ export function registerConfigRoutes(app: Express): void {
           cs.score_sheet_assessment_id AS assessment_id,
           cs.session_index,
           cs.session_date,
+          ${currentStaffIsTeacherSql} AS current_user_is_teacher,
           cs.score_sheet_assessment_published AS published,
           cs.score_sheet_assessment_excluded_student_ids AS excluded_student_ids,
           st.start_time AS session_start_time,
@@ -3596,7 +3610,8 @@ export function registerConfigRoutes(app: Express): void {
       `);
 
       const conversionRows = result.rows.filter((row: any) =>
-        assessmentsById.get(row.assessment_id)?.templateSnapshot.scoreConversionTemplateId,
+        assessmentsById.get(row.assessment_id)?.templateSnapshot.scoreConversionTemplateId
+        && (permissions.canViewAll || row.current_user_is_teacher === true),
       );
       const conversionSessionIds = conversionRows.map((row: any) => String(row.session_id));
       const conversionAssessmentIds = Array.from(
@@ -3709,10 +3724,20 @@ export function registerConfigRoutes(app: Express): void {
         }];
       });
 
-      const manualAssessments = assessments.filter((assessment) =>
+      let manualAssessments = assessments.filter((assessment) =>
         assessment.creationMode === "manual"
         && Boolean(assessment.templateSnapshot.scoreConversionTemplateId),
       );
+      if (!permissions.canViewAll) {
+        const visibleManualAssessments = [];
+        for (const assessment of manualAssessments) {
+          if (
+            assessment.createdByUserId === (req.user as any)?.id
+            || await areManualScoreSheetStudentsAccessible(req, assessment, false)
+          ) visibleManualAssessments.push(assessment);
+        }
+        manualAssessments = visibleManualAssessments;
+      }
       const manualAssessmentIds = manualAssessments.map((assessment) => assessment.id);
       const manualAttemptRows = manualAssessmentIds.length > 0
         ? await db.select({
@@ -3804,6 +3829,7 @@ export function registerConfigRoutes(app: Express): void {
   app.get("/api/score-sheet-assessments/assigned/students", async (req, res) => {
     try {
       const customerSummaryMode = req.query.customerSummary === "true";
+      let scoreConversionPermissions: Awaited<ReturnType<typeof getScoreConversionPermissions>> | null = null;
       let requestedStudentIds: string[] = [];
       if (customerSummaryMode) {
         const customerPermissions = req.isSuperAdmin
@@ -3850,12 +3876,10 @@ export function registerConfigRoutes(app: Express): void {
         if (requestedStudentIds.length === 0) return res.json([]);
       } else {
         const permissions = await getScoreConversionPermissions(req);
+        scoreConversionPermissions = permissions;
         if (
           !permissions.canView
           && !permissions.canViewAll
-          && !permissions.canCreate
-          && !permissions.canEdit
-          && !permissions.canDelete
         ) {
           return res.status(403).json({ message: "Bạn không có quyền xem danh sách học viên." });
         }
@@ -3869,6 +3893,16 @@ export function registerConfigRoutes(app: Express): void {
       const scoreSheetTemplatesById = new Map(
         scoreSheetTemplates.map((template) => [template.id, template]),
       );
+      const currentStaffIsTeacherSql = req.staffId
+        ? sql`(
+            ${req.staffId}::uuid = ANY(COALESCE(cs.teacher_ids, ARRAY[]::uuid[]))
+            OR ${req.staffId}::uuid = ANY(COALESCE(c.teacher_ids, ARRAY[]::uuid[]))
+            OR EXISTS (
+              SELECT 1 FROM class_session_teacher_assignments csta
+              WHERE csta.class_session_id = cs.id AND csta.teacher_id = ${req.staffId}::uuid
+            )
+          )`
+        : sql`FALSE`;
       const result = await db.execute(sql`
         SELECT
           cs.id AS session_id,
@@ -3876,6 +3910,7 @@ export function registerConfigRoutes(app: Express): void {
           cs.score_sheet_assessment_id AS assessment_id,
           cs.session_index,
           cs.session_date,
+          ${currentStaffIsTeacherSql} AS current_user_is_teacher,
           cs.score_sheet_assessment_published AS published,
           cs.score_sheet_assessment_excluded_student_ids AS excluded_student_ids,
           st.start_time AS session_start_time,
@@ -3903,16 +3938,31 @@ export function registerConfigRoutes(app: Express): void {
         ORDER BY cs.session_date DESC, cs.session_index DESC, c.class_code
       `);
       const conversionRows = result.rows.filter((row: any) =>
-        assessmentsById.get(row.assessment_id)?.templateSnapshot.scoreConversionTemplateId,
+        assessmentsById.get(row.assessment_id)?.templateSnapshot.scoreConversionTemplateId
+        && (
+          customerSummaryMode
+          || scoreConversionPermissions?.canViewAll
+          || row.current_user_is_teacher === true
+        ),
       );
       const conversionSessionIds = conversionRows.map((row: any) => String(row.session_id));
       const conversionAssessmentIds = Array.from(
         new Set(conversionRows.map((row: any) => String(row.assessment_id))),
       );
-      const manualAssessments = assessments.filter((assessment) =>
+      let manualAssessments = assessments.filter((assessment) =>
         assessment.creationMode === "manual"
         && Boolean(assessment.templateSnapshot.scoreConversionTemplateId),
       );
+      if (!customerSummaryMode && !scoreConversionPermissions?.canViewAll) {
+        const visibleManualAssessments = [];
+        for (const assessment of manualAssessments) {
+          if (
+            assessment.createdByUserId === (req.user as any)?.id
+            || await areManualScoreSheetStudentsAccessible(req, assessment, false)
+          ) visibleManualAssessments.push(assessment);
+        }
+        manualAssessments = visibleManualAssessments;
+      }
       const manualAssessmentIds = manualAssessments.map((assessment) => assessment.id);
       const allManualStudentIds = Array.from(
         new Set(manualAssessments.flatMap((assessment) => assessment.manualStudentIds)),
@@ -4333,6 +4383,7 @@ export function registerConfigRoutes(app: Express): void {
         conversionTemplateSnapshot,
         createdAt: now,
         updatedAt: now,
+        createdByUserId: (req.user as any)?.id ?? null,
         createdByName,
       });
       const created = await mutateScoreSheetAssessments(

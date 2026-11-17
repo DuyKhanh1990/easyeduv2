@@ -14,3 +14,9 @@ description: Keep manually assembled student rosters on the existing score-conve
 **Why:** The user clarified that choosing a score sheet selects reusable information to assign, as it does for different class sessions; generated manual-instance codes obscured that identity.
 
 **How to apply:** Distinguish the shared template code from each assessment's internal identity. Group filters by template ID, but keep each board's roster, attempts, and publication state scoped to its own assessment; do not merge results just because the template is shared.
+
+**Rule:** In the score-conversion list, ordinary View is limited to boards assigned to the user as a teacher; for manual boards, the creator or an assigned teacher may view. View All includes every board and its students. Identify creators by user ID, not display name.
+
+**Why:** The user confirmed this visibility rule so manually created boards linked to a teaching session remain accessible to the creator or assigned teacher without exposing unrelated boards.
+
+**How to apply:** Apply the same visibility scope to list, student, and score-entry APIs. Keep create/edit/delete rights separate from visibility; preserve the existing deletion business rules.

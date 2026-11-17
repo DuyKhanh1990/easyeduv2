@@ -301,21 +301,74 @@ type ScoreSheetAssessmentSessionAccess = {
   isManual: boolean;
 };
 
+async function areManualScoreSheetStudentsAccessible(req: any, input: any): Promise<boolean> {
+  if (req.isSuperAdmin) return true;
+  const [staffRecord] = await db
+    .select({ id: staff.id })
+    .from(staff)
+    .where(eq(staff.userId, (req.user as any)?.id))
+    .limit(1);
+  if (!staffRecord || input.manualStudentIds.length === 0) return false;
+
+  const classConstraint = input.manualSelectionMode === "class" && input.manualClassId
+    ? sql`AND c.id = ${input.manualClassId}::uuid`
+    : sql``;
+  const result = await db.execute(sql`
+    SELECT DISTINCT sc.student_id
+    FROM student_classes sc
+    JOIN classes c ON c.id = sc.class_id
+    WHERE sc.status = 'active'
+      AND sc.student_id = ANY(${input.manualStudentIds}::uuid[])
+      ${classConstraint}
+      AND (
+        ${staffRecord.id} = ANY(c.teacher_ids)
+        OR EXISTS (
+          SELECT 1 FROM class_sessions cs
+          WHERE cs.class_id = c.id
+            AND (
+              cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
+              OR EXISTS (
+                SELECT 1 FROM class_session_teacher_assignments csta
+                WHERE csta.class_session_id = cs.id
+                  AND csta.teacher_id = ${staffRecord.id}
+              )
+            )
+        )
+      )
+      AND EXISTS (
+        SELECT 1 FROM staff_assignments sa
+        WHERE sa.staff_id = ${staffRecord.id}
+          AND sa.location_id = c.location_id
+      )
+  `);
+  return new Set(result.rows.map((row: any) => String(row.student_id))).size
+    === input.manualStudentIds.length;
+}
+
 async function hasScoreConversionPermission(
   req: any,
-  action: "view" | "edit" | "delete",
+  action: "view" | "viewAll" | "create" | "edit" | "delete",
 ): Promise<boolean> {
   if (req.isSuperAdmin) return true;
-  const permissions = await storage.getEffectivePermissions(req.roleIds ?? [], "/assessments#list");
-  if (action === "edit") return permissions.canEdit;
-  if (action === "delete") return permissions.canDelete;
-  return Boolean(
-    permissions.canView
-    || permissions.canViewAll
-    || permissions.canCreate
-    || permissions.canEdit
-    || permissions.canDelete,
-  );
+  const roleIds = req.roleIds ?? [];
+  const [permissions, legacyPermissions, oldPermissions] = await Promise.all([
+    storage.getEffectivePermissions(roleIds, "/score-conversion#list"),
+    storage.getEffectivePermissions(roleIds, "/score-conversion"),
+    storage.getEffectivePermissions(roleIds, "/assessments#list"),
+  ]);
+  const canView = permissions.canView || permissions.canViewAll
+    || legacyPermissions.canView || legacyPermissions.canViewAll
+    || oldPermissions.canView || oldPermissions.canViewAll;
+  const canViewAll = permissions.canViewAll || legacyPermissions.canViewAll || oldPermissions.canViewAll;
+  const canCreate = permissions.canCreate || legacyPermissions.canCreate || oldPermissions.canCreate;
+  const canEdit = permissions.canEdit || legacyPermissions.canEdit || oldPermissions.canEdit;
+  const canDelete = permissions.canDelete || legacyPermissions.canDelete || oldPermissions.canDelete;
+  if (action === "viewAll") return canViewAll;
+  if (action === "view") return canView;
+  if (action === "create") return canCreate;
+  if (action === "edit") return canEdit;
+  if (action === "delete") return canDelete;
+  return Boolean(canView || permissions.canCreate || legacyPermissions.canCreate || oldPermissions.canCreate);
 }
 
 async function getAuthorizedScoreSheetSession(
@@ -323,6 +376,10 @@ async function getAuthorizedScoreSheetSession(
   sessionId: string,
   options: { queryable?: any; lock?: boolean; permission?: "view" | "edit" | "delete" } = {},
 ): Promise<ScoreSheetAssessmentSessionAccess | null> {
+  const canViewAssignedScoreSheets =
+    await hasScoreConversionPermission(req, "view")
+    || await hasMySpaceScoreSheetPermission(req, "view");
+  if (!canViewAssignedScoreSheets) return null;
   const queryable = options.queryable ?? db;
   const staffRecord = await getStaffForUser(req.user.id);
   let accessRow: Record<string, unknown> | undefined;
@@ -351,7 +408,6 @@ async function getAuthorizedScoreSheetSession(
         AND cs.score_sheet_assessment_id IS NOT NULL
         AND (
           ${staffRecord.id} = ANY(c.teacher_ids)
-          OR ${staffRecord.id} = ANY(c.manager_ids)
           OR cs.teacher_ids @> ARRAY[${staffRecord.id}]::uuid[]
           OR EXISTS (
             SELECT 1
@@ -373,7 +429,7 @@ async function getAuthorizedScoreSheetSession(
     accessThroughStaff = Boolean(accessRow);
   }
 
-  if (!accessRow && await hasScoreConversionPermission(req, options.permission ?? "view")) {
+  if (!accessRow && await hasScoreConversionPermission(req, "viewAll")) {
     const conversionAccess = await queryable.execute(sql`
       SELECT
         cs.score_sheet_assessment_id AS assessment_id,
@@ -405,9 +461,12 @@ async function getAuthorizedScoreSheetSession(
       || !manualAssessment.templateSnapshot.scoreConversionTemplateId
     ) return null;
     const action = options.permission ?? "view";
-    const authorized = await hasScoreConversionPermission(req, action)
+    const inScope = await hasScoreConversionPermission(req, "viewAll")
+      || manualAssessment.createdByUserId === (req.user as any)?.id
+      || await areManualScoreSheetStudentsAccessible(req, manualAssessment);
+    const hasActionPermission = await hasScoreConversionPermission(req, action)
       || await hasMySpaceScoreSheetPermission(req, action);
-    if (!authorized) return null;
+    if (!inScope || !hasActionPermission) return null;
     const currentTemplate = await getCurrentScoreSheetTemplate(
       manualAssessment.scoreSheetTemplateId,
       queryable,
@@ -5705,10 +5764,52 @@ export function registerMySpaceRoutes(app: Express): void {
           });
           if (
             !access?.assessment
-            || access.isManual
             || !access.assessment.templateSnapshot.scoreConversionTemplateId
           ) {
             return { status: 404, message: "Không tìm thấy bảng điểm của buổi học này." };
+          }
+
+          if (access.isManual) {
+            const attempts = await tx
+              .select({ result: scoreSheetAssessmentStudentAttempts.result })
+              .from(scoreSheetAssessmentStudentAttempts)
+              .where(and(
+                eq(scoreSheetAssessmentStudentAttempts.assessmentId, access.assessmentId),
+                isNull(scoreSheetAssessmentStudentAttempts.classSessionId),
+              ));
+            if (attempts.some((attempt) => isScoreSheetAssessmentStudentPublished(attempt.result))) {
+              return {
+                status: 409,
+                message: "Hãy thu hồi công bố riêng của tất cả học viên trước khi xóa bảng điểm.",
+              };
+            }
+            const [settingsRow] = await tx
+              .select({ value: systemSettings.value })
+              .from(systemSettings)
+              .where(eq(systemSettings.key, "scoreSheetAssessments"))
+              .for("update")
+              .limit(1);
+            if (!settingsRow) {
+              return { status: 404, message: "Không tìm thấy bảng điểm thủ công." };
+            }
+            const assessments = z.array(scoreSheetAssessmentSchema).parse(JSON.parse(settingsRow.value));
+            if (!assessments.some((assessment) => assessment.id === access.assessmentId)) {
+              return { status: 404, message: "Bảng điểm thủ công đã thay đổi hoặc không còn tồn tại." };
+            }
+            await tx
+              .delete(scoreSheetAssessmentStudentAttempts)
+              .where(and(
+                eq(scoreSheetAssessmentStudentAttempts.assessmentId, access.assessmentId),
+                isNull(scoreSheetAssessmentStudentAttempts.classSessionId),
+              ));
+            await tx
+              .update(systemSettings)
+              .set({
+                value: JSON.stringify(assessments.filter((assessment) => assessment.id !== access.assessmentId)),
+                updatedAt: new Date(),
+              })
+              .where(eq(systemSettings.key, "scoreSheetAssessments"));
+            return { status: 200, message: "" };
           }
 
           const [session] = await tx
@@ -5945,7 +6046,7 @@ export function registerMySpaceRoutes(app: Express): void {
           const access = await getAuthorizedScoreSheetSession(req, sessionId.data, {
             queryable: tx,
             lock: true,
-            permission: "edit",
+            permission: "view",
           });
           if (!access) {
             const error: any = new Error("Không tìm thấy buổi thi hoặc bạn không có quyền nhập điểm.");
@@ -6128,6 +6229,18 @@ export function registerMySpaceRoutes(app: Express): void {
           const attemptExists = existingAttempts.some(
             (attempt) => attempt.attemptNumber === attemptNumber.data,
           );
+          if (
+            !await hasScoreConversionPermission(req, attemptExists ? "edit" : "create")
+            && !await hasMySpaceScoreSheetPermission(req, attemptExists ? "edit" : "create")
+          ) {
+            const error: any = new Error(
+              attemptExists
+                ? "Bạn không có quyền sửa điểm đã nhập."
+                : "Bạn không có quyền nhập điểm lần đầu.",
+            );
+            error.status = 403;
+            throw error;
+          }
           if (!attemptExists && attemptNumber.data !== highestAttempt + 1) {
             const error: any = new Error("Hãy nhập các lần thi theo thứ tự, bắt đầu từ lần tiếp theo.");
             error.status = 409;

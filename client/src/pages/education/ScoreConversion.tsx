@@ -48,6 +48,7 @@ import { useMyPermissions } from "@/hooks/use-my-permissions";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
+  SCORE_CONVERSION_ASSESSMENTS_PERMISSION,
   SCORE_CONVERSION_CONFIG_PERMISSION,
   SCORE_SHEET_TEMPLATE_PERMISSION,
 } from "@shared/score-conversion-permissions";
@@ -413,17 +414,24 @@ export default function ScoreConversion() {
   const [deadlineDateFrom, setDeadlineDateFrom] = useState("");
   const [deadlineDateTo, setDeadlineDateTo] = useState("");
   const [activeConfigTab, setActiveConfigTab] = useState("international");
-  const assessmentPermissions = myPermissions?.permissions["/assessments#list"];
-  const legacyScoreConversionPermissions = myPermissions?.permissions["/score-conversion"];
-  const canCreate = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canCreate || legacyScoreConversionPermissions?.canCreate);
-  const canEdit = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canEdit || legacyScoreConversionPermissions?.canEdit);
-  const canDelete = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canDelete || legacyScoreConversionPermissions?.canDelete);
+  const assessmentPermissionSources = [
+    myPermissions?.permissions[SCORE_CONVERSION_ASSESSMENTS_PERMISSION],
+    myPermissions?.permissions["/score-conversion"],
+    myPermissions?.permissions["/assessments#list"],
+  ];
+  const assessmentPermissions = {
+    canView: assessmentPermissionSources.some((permission) => permission?.canView),
+    canViewAll: assessmentPermissionSources.some((permission) => permission?.canViewAll),
+    canCreate: assessmentPermissionSources.some((permission) => permission?.canCreate),
+    canEdit: assessmentPermissionSources.some((permission) => permission?.canEdit),
+    canDelete: assessmentPermissionSources.some((permission) => permission?.canDelete),
+  };
+  const canCreate = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canCreate);
+  const canEdit = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canEdit);
+  const canDelete = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canDelete);
   const conversionConfigPermissions = myPermissions?.permissions[SCORE_CONVERSION_CONFIG_PERMISSION];
   const scoreSheetTemplatePermissions = myPermissions?.permissions[SCORE_SHEET_TEMPLATE_PERMISSION];
-  const mySpaceScoreSheetPermissions = myPermissions?.permissions["/my-space/score-sheet"];
-  const canCreateManualScoreSheet = Boolean(
-    myPermissions?.isSuperAdmin || mySpaceScoreSheetPermissions?.canCreate,
-  );
+  const canCreateManualScoreSheet = canCreate;
   const canViewConversionConfig = Boolean(myPermissions?.isSuperAdmin || conversionConfigPermissions?.canView || conversionConfigPermissions?.canViewAll);
   const canViewScoreSheetTemplates = Boolean(myPermissions?.isSuperAdmin || scoreSheetTemplatePermissions?.canView || scoreSheetTemplatePermissions?.canViewAll);
   const canCreateConversionConfig = Boolean(myPermissions?.isSuperAdmin || conversionConfigPermissions?.canCreate);
@@ -432,7 +440,7 @@ export default function ScoreConversion() {
   const canCreateScoreSheetTemplate = Boolean(myPermissions?.isSuperAdmin || scoreSheetTemplatePermissions?.canCreate);
   const canEditScoreSheetTemplate = Boolean(myPermissions?.isSuperAdmin || scoreSheetTemplatePermissions?.canEdit);
   const canDeleteScoreSheetTemplate = Boolean(myPermissions?.isSuperAdmin || scoreSheetTemplatePermissions?.canDelete);
-  const canViewAssessmentList = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canView || assessmentPermissions?.canViewAll || legacyScoreConversionPermissions?.canView || legacyScoreConversionPermissions?.canViewAll);
+  const canViewAssessmentList = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canView || assessmentPermissions?.canViewAll);
 
   useEffect(() => {
     const firstAvailableTab = canViewConversionConfig
@@ -2311,7 +2319,13 @@ export default function ScoreConversion() {
         open={!!selectedAssessment}
         canManageScores={canEdit}
         canEnterScores={
-          selectedAssessment !== null
+          canCreate
+          && selectedAssessment !== null
+          && getAssessmentStatus(selectedAssessment, nowWallClockMs)?.key !== "not_started"
+        }
+        canEditScores={
+          canEdit
+          && selectedAssessment !== null
           && getAssessmentStatus(selectedAssessment, nowWallClockMs)?.key !== "not_started"
         }
         canManagePublication

@@ -239,21 +239,10 @@ export const navigation: NavEntry[] = [
         name: "Bảng điểm quy đổi",
         href: "/score-conversion",
         icon: BarChart3,
-        permissionHref: "/score-conversion",
-        permissionLabel: "Danh sách bảng điểm quy đổi",
-        permissionItems: [
-          {
-            value: "score-conversion-config",
-            resource: "/score-conversion#international",
-            name: "Cấu hình điểm Quy đổi",
-            permissionKeys: ["canView", "canViewAll", "canCreate", "canEdit", "canDelete"],
-          },
-          {
-            value: "score-sheet-templates",
-            resource: "/score-conversion#sample",
-            name: "Bảng điểm mẫu",
-            permissionKeys: ["canView", "canViewAll", "canCreate", "canEdit", "canDelete"],
-          },
+        subTabs: [
+          { value: "international", name: "Cấu hình điểm Quy đổi" },
+          { value: "sample", name: "Bảng điểm mẫu" },
+          { value: "list", name: "Danh sách bảng điểm quy đổi" },
         ],
         defaultVisible: false,
       },
