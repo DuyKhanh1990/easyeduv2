@@ -351,24 +351,23 @@ async function hasScoreConversionPermission(
 ): Promise<boolean> {
   if (req.isSuperAdmin) return true;
   const roleIds = req.roleIds ?? [];
-  const [permissions, legacyPermissions, oldPermissions] = await Promise.all([
-    storage.getEffectivePermissions(roleIds, "/score-conversion#list"),
-    storage.getEffectivePermissions(roleIds, "/score-conversion"),
-    storage.getEffectivePermissions(roleIds, "/assessments#list"),
-  ]);
-  const canView = permissions.canView || permissions.canViewAll
-    || legacyPermissions.canView || legacyPermissions.canViewAll
-    || oldPermissions.canView || oldPermissions.canViewAll;
-  const canViewAll = permissions.canViewAll || legacyPermissions.canViewAll || oldPermissions.canViewAll;
-  const canCreate = permissions.canCreate || legacyPermissions.canCreate || oldPermissions.canCreate;
-  const canEdit = permissions.canEdit || legacyPermissions.canEdit || oldPermissions.canEdit;
-  const canDelete = permissions.canDelete || legacyPermissions.canDelete || oldPermissions.canDelete;
-  if (action === "viewAll") return canViewAll;
-  if (action === "view") return canView;
-  if (action === "create") return canCreate;
-  if (action === "edit") return canEdit;
-  if (action === "delete") return canDelete;
-  return Boolean(canView || permissions.canCreate || legacyPermissions.canCreate || oldPermissions.canCreate);
+  const permissionRows = await storage.getAllPermissionsForRoles(roleIds);
+  const legacyResources = new Set(["/score-conversion", "/assessments#list"]);
+  return roleIds.some((roleId) => {
+    const roleRows = permissionRows.filter((permission) => permission.roleId === roleId);
+    const current = roleRows.find((permission) => permission.resource === "/score-conversion#list");
+    const sources = current
+      ? [current]
+      : roleRows.filter((permission) => legacyResources.has(permission.resource));
+    return sources.some((permission) => {
+      if (action === "view") return permission.canView || permission.canViewAll;
+      if (action === "viewAll") return permission.canViewAll;
+      if (action === "create") return permission.canCreate;
+      if (action === "edit") return permission.canEdit;
+      if (action === "delete") return permission.canDelete;
+      return false;
+    });
+  });
 }
 
 async function getAuthorizedScoreSheetSession(
@@ -798,7 +797,10 @@ async function getLatestPublishedScoreResults(studentIds: string[]) {
     }
     for (const group of groups.values()) {
       const assessment = assessmentsById.get(group.assessmentId);
-      if (!assessment?.manualStudentIds.includes(group.studentId)) continue;
+      if (
+        !assessment?.manualStudentIds.includes(group.studentId)
+        || assessment.excludedManualStudentIds.includes(group.studentId)
+      ) continue;
       const summary = selectScoreSheetAssessmentAttemptSummary(group.attempts, assessment.scoringPolicy, true);
       if (!summary) continue;
       const selectedAttempt = group.attempts.find((attempt) => attempt.attemptNumber === summary.attemptNumber);
@@ -5377,7 +5379,11 @@ export function registerMySpaceRoutes(app: Express): void {
         && Boolean(assessment.templateSnapshot.scoreConversionTemplateId),
       );
       const manualStudentIds = Array.from(
-        new Set(manualAssessments.flatMap((assessment) => assessment.manualStudentIds)),
+        new Set(manualAssessments.flatMap((assessment) =>
+          assessment.manualStudentIds.filter(
+            (studentId) => !assessment.excludedManualStudentIds.includes(studentId),
+          ),
+        )),
       );
       const manualAccessRows = manualStudentIds.length > 0
         ? await db.execute(sql`
@@ -5420,7 +5426,9 @@ export function registerMySpaceRoutes(app: Express): void {
         accessibleClassesByStudent.set(studentId, classIds);
       }
       const accessibleManualAssessments = manualAssessments.filter((assessment) =>
-        assessment.manualStudentIds.every((studentId) => {
+        assessment.manualStudentIds
+          .filter((studentId) => !assessment.excludedManualStudentIds.includes(studentId))
+          .every((studentId) => {
           const classIds = accessibleClassesByStudent.get(studentId);
           if (!classIds) return false;
           if (assessment.manualSelectionMode === "class" && assessment.manualClassId) {
@@ -5461,6 +5469,9 @@ export function registerMySpaceRoutes(app: Express): void {
         manualAttemptsByAssessment.set(attempt.assessmentId, studentsForAssessment);
       }
       const manualMapped = accessibleManualAssessments.map((assessment) => {
+        const activeManualStudentIds = assessment.manualStudentIds.filter(
+          (studentId) => !assessment.excludedManualStudentIds.includes(studentId),
+        );
         const attemptsByStudent = manualAttemptsByAssessment.get(assessment.id)
           ?? new Map<string, Array<{ attemptNumber: number; result: unknown }>>();
         const allStudentAttempts = Array.from(attemptsByStudent.values());
@@ -5476,9 +5487,9 @@ export function registerMySpaceRoutes(app: Express): void {
           locationName: null,
           teacherNames: null,
           sessionIndex: null,
-          studentCount: assessment.manualStudentIds.length,
+          studentCount: activeManualStudentIds.length,
           enteredStudentCount: attemptsByStudent.size,
-          completedStudentCount: assessment.manualStudentIds.filter((studentId) =>
+          completedStudentCount: activeManualStudentIds.filter((studentId) =>
             selectScoreSheetAssessmentAttemptSummary(
               attemptsByStudent.get(studentId) ?? [],
               assessment.scoringPolicy,
@@ -5486,8 +5497,8 @@ export function registerMySpaceRoutes(app: Express): void {
             )?.result.inputComplete,
           ).length,
           individuallyPublishedStudentCount,
-          allStudentsIndividuallyPublished: assessment.manualStudentIds.length > 0
-            && individuallyPublishedStudentCount === assessment.manualStudentIds.length,
+          allStudentsIndividuallyPublished: activeManualStudentIds.length > 0
+            && individuallyPublishedStudentCount === activeManualStudentIds.length,
           published: false,
           examDate: assessment.createdAt,
           assessmentId: assessment.id,
@@ -5542,7 +5553,10 @@ export function registerMySpaceRoutes(app: Express): void {
           .where(eq(classSessions.id, sessionId.data))
           .limit(1);
       const excludedStudentIds = new Set(
-        (sessionRosterSettings?.excludedStudentIds ?? []).map(String),
+        (access.isManual
+          ? assessment.excludedManualStudentIds
+          : sessionRosterSettings?.excludedStudentIds ?? []
+        ).map(String),
       );
       const roster = access.isManual
         ? await db.select({
@@ -5660,7 +5674,53 @@ export function registerMySpaceRoutes(app: Express): void {
           return { status: 404, message: "Không tìm thấy buổi thi hoặc bạn không có quyền chỉnh sửa" };
         }
         if (access.isManual) {
-          return { status: 409, message: "Danh sách học viên của bảng điểm thủ công được chốt khi tạo." };
+          if (!access.assessment.manualStudentIds.includes(studentId.data)) {
+            return { status: 404, message: "Học viên không thuộc bảng điểm thủ công này" };
+          }
+          const attempts = shouldExclude
+            ? await tx
+              .select({ result: scoreSheetAssessmentStudentAttempts.result })
+              .from(scoreSheetAssessmentStudentAttempts)
+              .where(and(
+                eq(scoreSheetAssessmentStudentAttempts.assessmentId, access.assessmentId),
+                isNull(scoreSheetAssessmentStudentAttempts.classSessionId),
+                eq(scoreSheetAssessmentStudentAttempts.studentId, studentId.data),
+              ))
+            : [];
+          if (attempts.some((attempt) => isScoreSheetAssessmentStudentPublished(attempt.result))) {
+            return {
+              status: 409,
+              message: "Hãy thu hồi công bố riêng trước khi xóa học viên khỏi bảng điểm.",
+            };
+          }
+
+          const [settingsRow] = await tx
+            .select({ value: systemSettings.value })
+            .from(systemSettings)
+            .where(eq(systemSettings.key, "scoreSheetAssessments"))
+            .for("update")
+            .limit(1);
+          if (!settingsRow) {
+            return { status: 404, message: "Không tìm thấy cấu hình bảng điểm thủ công." };
+          }
+          const assessments = z.array(scoreSheetAssessmentSchema).parse(JSON.parse(settingsRow.value));
+          const currentAssessment = assessments.find((item) => item.id === access.assessmentId);
+          if (!currentAssessment) {
+            return { status: 404, message: "Không tìm thấy bảng điểm thủ công." };
+          }
+          const excludedStudentIds = new Set(currentAssessment.excludedManualStudentIds);
+          if (shouldExclude) excludedStudentIds.add(studentId.data);
+          else excludedStudentIds.delete(studentId.data);
+          const updatedAssessments = assessments.map((item) =>
+            item.id === access.assessmentId
+              ? { ...item, excludedManualStudentIds: Array.from(excludedStudentIds) }
+              : item,
+          );
+          await tx
+            .update(systemSettings)
+            .set({ value: JSON.stringify(updatedAssessments) })
+            .where(eq(systemSettings.key, "scoreSheetAssessments"));
+          return { status: 200, message: "" };
         }
 
         const [enrollment] = await tx
@@ -5912,6 +5972,9 @@ export function registerMySpaceRoutes(app: Express): void {
         if (access.isManual) {
           if (!assessment.manualStudentIds.includes(studentId.data)) {
             return res.status(404).json({ message: "Học viên không thuộc bảng điểm này." });
+          }
+          if (assessment.excludedManualStudentIds.includes(studentId.data)) {
+            return res.status(404).json({ message: "Học viên đã bị xóa khỏi danh sách bảng điểm." });
           }
         } else {
           const [membership] = await db
@@ -6183,7 +6246,10 @@ export function registerMySpaceRoutes(app: Express): void {
           }
 
           if (access.isManual) {
-            if (!assessment.manualStudentIds.includes(studentId.data)) {
+            if (
+              !assessment.manualStudentIds.includes(studentId.data)
+              || assessment.excludedManualStudentIds.includes(studentId.data)
+            ) {
               const error: any = new Error("Học viên không thuộc bảng điểm này.");
               error.status = 404;
               throw error;
@@ -6423,7 +6489,10 @@ export function registerMySpaceRoutes(app: Express): void {
           }
 
           if (access.isManual) {
-            if (!access.assessment.manualStudentIds.includes(studentId.data)) {
+            if (
+              !access.assessment.manualStudentIds.includes(studentId.data)
+              || access.assessment.excludedManualStudentIds.includes(studentId.data)
+            ) {
               const error: any = new Error("Học viên không thuộc bảng điểm này.");
               error.status = 404;
               throw error;

@@ -414,11 +414,14 @@ export default function ScoreConversion() {
   const [deadlineDateFrom, setDeadlineDateFrom] = useState("");
   const [deadlineDateTo, setDeadlineDateTo] = useState("");
   const [activeConfigTab, setActiveConfigTab] = useState("international");
-  const assessmentPermissionSources = [
-    myPermissions?.permissions[SCORE_CONVERSION_ASSESSMENTS_PERMISSION],
-    myPermissions?.permissions["/score-conversion"],
-    myPermissions?.permissions["/assessments#list"],
-  ];
+  const currentAssessmentPermissions =
+    myPermissions?.permissions[SCORE_CONVERSION_ASSESSMENTS_PERMISSION];
+  const assessmentPermissionSources = currentAssessmentPermissions
+    ? [currentAssessmentPermissions]
+    : [
+        myPermissions?.permissions["/score-conversion"],
+        myPermissions?.permissions["/assessments#list"],
+      ];
   const assessmentPermissions = {
     canView: assessmentPermissionSources.some((permission) => permission?.canView),
     canViewAll: assessmentPermissionSources.some((permission) => permission?.canViewAll),

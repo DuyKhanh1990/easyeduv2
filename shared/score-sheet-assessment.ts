@@ -31,7 +31,6 @@ const scoreSheetAssessmentCreationFieldsSchema = z.object({
   manualSelectionMode: z.enum(["class", "students"]).nullable().default(null),
   manualClassId: z.string().uuid().nullable().default(null),
   manualStudentIds: z.array(z.string().uuid()).max(500).default([]),
-  excludedManualStudentIds: z.array(z.string().uuid()).max(500).default([]),
 });
 
 const manualScoreSheetValidation = (
@@ -99,6 +98,7 @@ export const scoreSheetAssessmentInputSchema = scoreSheetAssessmentInputFieldsSc
 export const scoreSheetAssessmentSchema = scoreSheetAssessmentInputFieldsSchema
   .merge(scoreSheetAssessmentCreationFieldsSchema)
   .extend({
+  excludedManualStudentIds: z.array(z.string().uuid()).max(500).default([]),
   id: z.string().uuid(),
   // Non-null values are retained for older assessments created with a fixed deadline.
   scoreDeadlineAt: localDateTimeSchema.nullable().default(null),

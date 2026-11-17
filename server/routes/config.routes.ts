@@ -3770,15 +3770,19 @@ export function registerConfigRoutes(app: Express): void {
         const currentTemplate = scoreSheetTemplatesById.get(assessment.scoreSheetTemplateId);
         const attemptsByStudent = manualAttemptsByAssessment.get(assessment.id)
           ?? new Map<string, Array<{ attemptNumber: number; result: unknown }>>();
-        const enteredStudentCount = attemptsByStudent.size;
-        const completedStudentCount = assessment.manualStudentIds.filter((studentId) =>
+        const activeManualStudentIds = assessment.manualStudentIds.filter(
+          (studentId) => !assessment.excludedManualStudentIds.includes(studentId),
+        );
+        const enteredStudentCount = activeManualStudentIds.filter((studentId) => attemptsByStudent.has(studentId)).length;
+        const completedStudentCount = activeManualStudentIds.filter((studentId) =>
           selectScoreSheetAssessmentAttemptSummary(
             attemptsByStudent.get(studentId) ?? [],
             assessment.scoringPolicy,
             true,
           )?.result.inputComplete,
         ).length;
-        const individuallyPublishedStudentCount = Array.from(attemptsByStudent.values())
+        const individuallyPublishedStudentCount = activeManualStudentIds
+          .map((studentId) => attemptsByStudent.get(studentId) ?? [])
           .filter((attempts) => attempts.some((attempt) =>
             isScoreSheetAssessmentStudentPublished(attempt.result),
           ))
@@ -3793,12 +3797,12 @@ export function registerConfigRoutes(app: Express): void {
           locationName: null,
           teacherNames: assessment.createdByName,
           sessionIndex: null,
-          studentCount: assessment.manualStudentIds.length,
+          studentCount: activeManualStudentIds.length,
           enteredStudentCount,
           completedStudentCount,
           individuallyPublishedStudentCount,
-          allStudentsIndividuallyPublished: assessment.manualStudentIds.length > 0
-            && individuallyPublishedStudentCount === assessment.manualStudentIds.length,
+          allStudentsIndividuallyPublished: activeManualStudentIds.length > 0
+            && individuallyPublishedStudentCount === activeManualStudentIds.length,
           examDate: assessment.createdAt,
           assessmentId: assessment.id,
           scoreSheetTemplateId: assessment.scoreSheetTemplateId,
@@ -3965,7 +3969,11 @@ export function registerConfigRoutes(app: Express): void {
       }
       const manualAssessmentIds = manualAssessments.map((assessment) => assessment.id);
       const allManualStudentIds = Array.from(
-        new Set(manualAssessments.flatMap((assessment) => assessment.manualStudentIds)),
+        new Set(manualAssessments.flatMap((assessment) =>
+          assessment.manualStudentIds.filter(
+            (studentId) => !assessment.excludedManualStudentIds.includes(studentId),
+          ),
+        )),
       );
       const manualStudentIds = customerSummaryMode
         ? allManualStudentIds.filter((studentId) => requestedStudentIds.includes(studentId))
@@ -4164,7 +4172,9 @@ export function registerConfigRoutes(app: Express): void {
       }
       const manualMapped = manualAssessments.flatMap((assessment) => {
         const currentTemplate = scoreSheetTemplatesById.get(assessment.scoreSheetTemplateId);
-        return assessment.manualStudentIds.flatMap((studentId) => {
+        return assessment.manualStudentIds
+          .filter((studentId) => !assessment.excludedManualStudentIds.includes(studentId))
+          .flatMap((studentId) => {
           const student = manualStudentsById.get(studentId);
           if (!student) return [];
           const attempts = manualAttemptsByAssessmentStudent.get(
@@ -4228,7 +4238,7 @@ export function registerConfigRoutes(app: Express): void {
                 ? "complete"
                 : "in_progress",
           }];
-        });
+          });
       });
 
       const allResults = [...mapped, ...manualMapped].sort((left, right) =>
