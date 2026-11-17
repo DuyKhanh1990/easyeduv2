@@ -541,11 +541,11 @@ export function registerAttendanceRoutes(app: Express): void {
       }
 
       const groupedQuery = db.select({
-        studentClassId: sql<string>`(${studentSessions.studentId}::text || ':' || ${studentSessions.classId}::text)`.as("studentClassId"),
+        studentClassId: sql<string>`(${studentSessions.studentId}::text || ':' || ${classSessions.classId}::text)`.as("studentClassId"),
         studentId: sql<string>`${studentSessions.studentId}`.as("studentId"),
         studentCode: sql<string>`${students.code}`.as("studentCode"),
         studentName: sql<string>`${students.fullName}`.as("studentName"),
-        classId: sql<string>`${studentSessions.classId}`.as("classId"),
+        classId: sql<string>`${classSessions.classId}`.as("classId"),
         className: sql<string>`${classes.classCode}`.as("className"),
         startDate: sql<string | null>`min(${studentClasses.startDate})`.as("startDate"),
         endDate: sql<string | null>`max(${studentClasses.endDate})`.as("endDate"),
@@ -558,12 +558,13 @@ export function registerAttendanceRoutes(app: Express): void {
         paused: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} IN ('paused', 'reserved'))::int`.as("paused"),
       })
         .from(studentSessions)
-        .innerJoin(students, eq(studentSessions.studentId, students.id))
-        .innerJoin(classes, eq(studentSessions.classId, classes.id))
         .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+        .innerJoin(students, eq(studentSessions.studentId, students.id))
+        .innerJoin(classes, eq(classSessions.classId, classes.id))
+        .innerJoin(shiftTemplates, eq(classSessions.shiftTemplateId, shiftTemplates.id))
         .leftJoin(studentClasses, eq(studentSessions.studentClassId, studentClasses.id))
         .where(and(...conditions))
-        .groupBy(studentSessions.studentId, students.code, students.fullName, studentSessions.classId, classes.classCode);
+        .groupBy(studentSessions.studentId, students.code, students.fullName, classSessions.classId, classes.classCode);
 
       if (selectedStatuses.length) {
         const statusConditions = selectedStatuses.map((status) => eq(studentSessions.attendanceStatus, status));
