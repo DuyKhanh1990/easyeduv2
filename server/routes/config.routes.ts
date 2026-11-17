@@ -469,10 +469,7 @@ async function getManagedTemplatePermissions(req: any, resource: string) {
     canEdit: boolean;
     canDelete: boolean;
   }>) => {
-    const direct = rows.find((row) => row.resource === resource);
-    return direct
-      ?? rows.find((row) => row.resource === "/score-conversion")
-      ?? rows.find((row) => row.resource === SCORE_CONVERSION_PERMISSION_RESOURCE);
+    return rows.find((row) => row.resource === resource);
   }).filter((row): row is NonNullable<typeof row> => Boolean(row));
   return {
     canView: selectedRows.some((row) => row.canView),
@@ -2960,12 +2957,6 @@ export function registerConfigRoutes(app: Express): void {
             canEdit: existing.canEdit || p.canEdit,
             canDelete: existing.canDelete || p.canDelete,
           };
-        }
-      }
-      const legacyScoreConversionPermissions = permMap["/score-conversion"] ?? permMap[SCORE_CONVERSION_PERMISSION_RESOURCE];
-      for (const resource of [SCORE_CONVERSION_CONFIG_PERMISSION, SCORE_SHEET_TEMPLATE_PERMISSION]) {
-        if (!permMap[resource] && legacyScoreConversionPermissions) {
-          permMap[resource] = { ...legacyScoreConversionPermissions };
         }
       }
       const assignmentsPerm = permMap["/my-space/assignments"];

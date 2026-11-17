@@ -2547,13 +2547,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
         ? { ...local, canView: true, canViewAll: false, canDelete: false }
         : local;
     }
-    const legacyScoreConversionResource =
-      resource === "/score-conversion#international" || resource === "/score-conversion#sample";
-    const fromServer = fetchedPerms?.find(p => p.resource === resource)
-      ?? (legacyScoreConversionResource
-        ? fetchedPerms?.find((p) => p.resource === "/score-conversion")
-          ?? fetchedPerms?.find((p) => p.resource === "/assessments#list")
-        : undefined);
+    const fromServer = fetchedPerms?.find(p => p.resource === resource);
     if (fromServer) {
       const permission = { canView: fromServer.canView, canViewAll: fromServer.canViewAll, canCreate: fromServer.canCreate, canEdit: fromServer.canEdit, canDelete: fromServer.canDelete };
       if (resource === MY_SPACE_CALENDAR_RESOURCE) return normalizeMySpaceCalendarPerm(permission);
@@ -3244,7 +3238,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                     )}
                                   >
                                     <item.icon className="w-4 h-4 text-muted-foreground shrink-0" />
-                                    <span className="text-sm text-foreground">{tNav(item.name)}</span>
+                                    <span className="text-sm text-foreground">{tNav(item.permissionLabel ?? item.name)}</span>
                                     <span className="text-xs text-muted-foreground ml-1">({t("settings.permissions.tabsCount", { count: permittedSubTabs.length })})</span>
                                     {itemExpanded
                                       ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
@@ -3254,7 +3248,7 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                 ) : (
                                   <div className="flex items-center gap-2">
                                     <item.icon className="w-4 h-4 text-muted-foreground shrink-0" />
-                                    <span className="text-sm text-foreground">{tNav(item.name)}</span>
+                                    <span className="text-sm text-foreground">{tNav(item.permissionLabel ?? item.name)}</span>
                                     {(isStudentDefaultLocked || isMySpaceAssignments || isMySpaceScoreSheet) && (
                                       <span className="text-xs text-muted-foreground italic">{t("settings.permissions.default")}</span>
                                     )}
@@ -3384,6 +3378,10 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                             {item.permissionItems?.map((permissionItem, index) => {
                               const resource = permissionItem.resource ?? permissionItem.value;
                               const permission = getResourcePerm(resource);
+                              const permissionKeys = permissionItem.permissionKeys;
+                              const permissionDescription = permissionKeys
+                                ? getPermissionDescription(resource, lang)
+                                : undefined;
                               const previousSection = item.permissionItems?.[index - 1]?.section;
                               return (
                                 <div key={permissionItem.value}>
@@ -3394,15 +3392,43 @@ function PermissionsManager({ canViewAll, canCreate, canEdit }: PermissionsManag
                                   )}
                                   <div className="flex items-center px-5 py-2 hover:bg-muted/10">
                                     <div className="flex items-center gap-2 pl-16 flex-1">
-                                      <Checkbox
-                                        data-testid={`perm-invoices-${permissionItem.value}`}
-                                        checked={permission.canView}
-                                        onCheckedChange={() => handleToggle(resource, "canView")}
-                                        className="w-4 h-4 shrink-0"
-                                      />
+                                      {permissionKeys ? (
+                                        <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 shrink-0" />
+                                      ) : (
+                                        <Checkbox
+                                          data-testid={`perm-invoices-${permissionItem.value}`}
+                                          checked={permission.canView}
+                                          onCheckedChange={() => handleToggle(resource, "canView")}
+                                          className="w-4 h-4 shrink-0"
+                                        />
+                                      )}
                                       <span className="text-sm text-muted-foreground">{tNav(permissionItem.name)}</span>
                                     </div>
+                                    {permissionKeys && (
+                                      <div className="flex items-center gap-0 shrink-0">
+                                        {PERM_COLS.map(col => (
+                                          <div key={col.key} className="w-20 flex justify-center">
+                                            {permissionKeys.includes(col.key) ? (
+                                              <Checkbox
+                                                data-testid={`perm-${permissionItem.value}-${col.key}`}
+                                                aria-label={`${tNav(permissionItem.name)} — ${t(col.labelKey)}`}
+                                                checked={permission[col.key]}
+                                                onCheckedChange={() => handleToggle(resource, col.key)}
+                                                className="w-4 h-4"
+                                              />
+                                            ) : (
+                                              <span className="text-xs text-muted-foreground/30 select-none">—</span>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
                                   </div>
+                                  {permissionDescription && (
+                                    <div className="px-5 pb-2 pl-24 -mt-1">
+                                      <p className="text-[11px] text-muted-foreground/65 italic leading-relaxed">{permissionDescription}</p>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}

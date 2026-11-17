@@ -34,7 +34,7 @@ export type SubTabItem = {
   value: string;
   name: string;
   resource?: string;
-  permissionKeys?: ("canView" | "canViewAll")[];
+  permissionKeys?: ("canView" | "canViewAll" | "canCreate" | "canEdit" | "canDelete")[];
   section?: string;
 };
 
@@ -246,11 +246,13 @@ export const navigation: NavEntry[] = [
             value: "score-conversion-config",
             resource: "/score-conversion#international",
             name: "Cấu hình điểm Quy đổi",
+            permissionKeys: ["canView", "canViewAll", "canCreate", "canEdit", "canDelete"],
           },
           {
             value: "score-sheet-templates",
             resource: "/score-conversion#sample",
             name: "Bảng điểm mẫu",
+            permissionKeys: ["canView", "canViewAll", "canCreate", "canEdit", "canDelete"],
           },
         ],
         defaultVisible: false,
