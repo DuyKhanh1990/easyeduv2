@@ -497,8 +497,6 @@ export function registerAttendanceRoutes(app: Express): void {
       }
 
       const conditions: any[] = [
-        inArray(studentClasses.status, ["active", "waiting"]),
-        sql`${studentSessions.id} IS NOT NULL`,
         ne(studentSessions.status, "transferred"),
         gte(classSessions.sessionDate, dateFrom),
         lte(classSessions.sessionDate, dateTo),
@@ -543,14 +541,14 @@ export function registerAttendanceRoutes(app: Express): void {
       }
 
       const groupedQuery = db.select({
-        studentClassId: sql<string>`${studentClasses.id}`.as("studentClassId"),
-        studentId: sql<string>`${students.id}`.as("studentId"),
+        studentClassId: sql<string>`(${studentSessions.studentId}::text || ':' || ${studentSessions.classId}::text)`.as("studentClassId"),
+        studentId: sql<string>`${studentSessions.studentId}`.as("studentId"),
         studentCode: sql<string>`${students.code}`.as("studentCode"),
         studentName: sql<string>`${students.fullName}`.as("studentName"),
-        classId: sql<string>`${classes.id}`.as("classId"),
+        classId: sql<string>`${studentSessions.classId}`.as("classId"),
         className: sql<string>`${classes.classCode}`.as("className"),
-        startDate: sql<string | null>`${studentClasses.startDate}`.as("startDate"),
-        endDate: sql<string | null>`${studentClasses.endDate}`.as("endDate"),
+        startDate: sql<string | null>`min(${studentClasses.startDate})`.as("startDate"),
+        endDate: sql<string | null>`max(${studentClasses.endDate})`.as("endDate"),
         totalSessions: sql<number>`count(${studentSessions.id})::int`.as("totalSessions"),
         pending: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'pending')::int`.as("pending"),
         attended: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} IN ('present', 'makeup_done'))::int`.as("attended"),
@@ -559,13 +557,13 @@ export function registerAttendanceRoutes(app: Express): void {
         makeupScheduled: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'makeup_scheduled')::int`.as("makeupScheduled"),
         paused: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} IN ('paused', 'reserved'))::int`.as("paused"),
       })
-        .from(studentClasses)
-        .innerJoin(students, eq(studentClasses.studentId, students.id))
-        .innerJoin(classes, eq(studentClasses.classId, classes.id))
-        .innerJoin(studentSessions, eq(studentSessions.studentClassId, studentClasses.id))
+        .from(studentSessions)
+        .innerJoin(students, eq(studentSessions.studentId, students.id))
+        .innerJoin(classes, eq(studentSessions.classId, classes.id))
         .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+        .leftJoin(studentClasses, eq(studentSessions.studentClassId, studentClasses.id))
         .where(and(...conditions))
-        .groupBy(studentClasses.id, students.id, students.code, students.fullName, classes.id, classes.classCode, studentClasses.startDate, studentClasses.endDate);
+        .groupBy(studentSessions.studentId, students.code, students.fullName, studentSessions.classId, classes.classCode);
 
       if (selectedStatuses.length) {
         const statusConditions = selectedStatuses.map((status) => eq(studentSessions.attendanceStatus, status));
