@@ -75,6 +75,7 @@ import {
   type StaffAssignedScoreSheetAssessment,
 } from "@/components/education/StaffScoreSheetAssessmentStudentsDialog";
 import { StaffScoreSheetAssessmentScoreDialog } from "@/components/education/StaffScoreSheetAssessmentScoreDialog";
+import { ScoreSheetConversionSelector } from "@/components/education/ScoreSheetConversionSelector";
 import { SCORE_CONVERSION_TYPES } from "./score-conversion/score-conversion-presets";
 import {
   keepLatestResultPerStudent,
@@ -369,6 +370,7 @@ export default function ScoreConversion() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<ScoreConversionTemplate | null>(null);
   const [scoreSheetDialogOpen, setScoreSheetDialogOpen] = useState(false);
+  const [manualCreateOpen, setManualCreateOpen] = useState(false);
   const [editingScoreSheetTemplate, setEditingScoreSheetTemplate] = useState<ScoreSheetTemplate | null>(null);
   const [initialScoreSheetTemplate, setInitialScoreSheetTemplate] = useState<ScoreSheetTemplate | null>(null);
   const [pendingTemplateDelete, setPendingTemplateDelete] = useState<PendingTemplateDelete | null>(null);
@@ -418,6 +420,10 @@ export default function ScoreConversion() {
   const canDelete = Boolean(myPermissions?.isSuperAdmin || assessmentPermissions?.canDelete || legacyScoreConversionPermissions?.canDelete);
   const conversionConfigPermissions = myPermissions?.permissions[SCORE_CONVERSION_CONFIG_PERMISSION];
   const scoreSheetTemplatePermissions = myPermissions?.permissions[SCORE_SHEET_TEMPLATE_PERMISSION];
+  const mySpaceScoreSheetPermissions = myPermissions?.permissions["/my-space/score-sheet"];
+  const canCreateManualScoreSheet = Boolean(
+    myPermissions?.isSuperAdmin || mySpaceScoreSheetPermissions?.canCreate,
+  );
   const canViewConversionConfig = Boolean(myPermissions?.isSuperAdmin || conversionConfigPermissions?.canView || conversionConfigPermissions?.canViewAll);
   const canViewScoreSheetTemplates = Boolean(myPermissions?.isSuperAdmin || scoreSheetTemplatePermissions?.canView || scoreSheetTemplatePermissions?.canViewAll);
   const canCreateConversionConfig = Boolean(myPermissions?.isSuperAdmin || conversionConfigPermissions?.canCreate);
@@ -1459,6 +1465,18 @@ export default function ScoreConversion() {
                         Xóa lọc
                       </Button>
                     )}
+                    {canCreateManualScoreSheet && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-9 gap-2"
+                        data-testid="button-add-manual-score-sheet"
+                        onClick={() => setManualCreateOpen(true)}
+                      >
+                        <Plus className="h-4 w-4" />
+                        Thêm mới
+                      </Button>
+                    )}
                     <Dialog open={filterDialogOpen} onOpenChange={setFilterDialogOpen}>
                       <Button
                         type="button"
@@ -2169,6 +2187,26 @@ export default function ScoreConversion() {
         }}
         onSave={handleSaveScoreSheetTemplate}
       />
+      <Dialog open={manualCreateOpen} onOpenChange={setManualCreateOpen}>
+        <DialogContent className="flex h-[85vh] max-h-[900px] flex-col overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="shrink-0 px-6 pt-6">
+            <DialogTitle>Thêm bảng điểm thủ công</DialogTitle>
+            <DialogDescription>
+              Chọn lớp hoặc học viên, sau đó chọn bảng điểm mẫu để tạo bảng điểm quy đổi.
+            </DialogDescription>
+          </DialogHeader>
+          <ScoreSheetConversionSelector
+            enabled={manualCreateOpen}
+            onCancel={() => setManualCreateOpen(false)}
+            onSaved={() => {
+              setManualCreateOpen(false);
+              void queryClient.invalidateQueries({
+                queryKey: ASSIGNED_SCORE_SHEET_ASSESSMENT_QUERY_KEY,
+              });
+            }}
+          />
+        </DialogContent>
+      </Dialog>
       <AlertDialog
         open={Boolean(pendingTemplateDelete)}
         onOpenChange={(open) => {
