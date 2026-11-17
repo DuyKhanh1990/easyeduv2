@@ -719,7 +719,9 @@ export function Dashboard() {
   const [customOpen, setCustomOpen] = useState(false);
   const [activeReport, setActiveReport] = useState<string | null>(null);
   const [, setLocation] = useLocation();
-  const isAuthed = !!getAuthHeaders().Authorization;
+  // myPerms is fetched with credentials: "include", so it also reflects a valid
+  // session-cookie login when no localStorage JWT is present.
+  const isAuthed = !!myPerms && !permsError;
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== "undefined") {
       return new URLSearchParams(window.location.search).get("tab") || "khach-hang";
