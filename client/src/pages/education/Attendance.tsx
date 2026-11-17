@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { StudentNameLink } from "@/components/ui/StudentNameLink";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -263,8 +263,15 @@ function AttendanceContent() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
   const [isExporting, setIsExporting] = useState(false);
+  const [activeView, setActiveView] = useState<"detail" | "overview">("detail");
+  const [overviewPage, setOverviewPage] = useState(1);
+  const [overviewPageSize, setOverviewPageSize] = useState(20);
 
   const { toast } = useToast();
+
+  useEffect(() => {
+    setOverviewPage(1);
+  }, [filters]);
 
   const updateAttendanceMutation = useMutation({
     mutationFn: async (data: { record: StudentAttendance; attendanceStatus: string }) => {
@@ -384,6 +391,34 @@ function AttendanceContent() {
       }
     },
   });
+  const { data: overviewData, isLoading: overviewLoading, isError: overviewError } = useQuery<{
+    rows: any[];
+    total: number;
+    summary: { students: number; classes: number; sessions: number };
+    page: number;
+    pageSize: number;
+  }>({
+    queryKey: ["/api/attendance/overview", filters, overviewPage, overviewPageSize],
+    enabled: activeView === "overview",
+    queryFn: async () => {
+      const now = new Date();
+      const params = new URLSearchParams({
+        classes: filters.classes.join(","),
+        students: filters.students.join(","),
+        locations: filters.locations.join(","),
+        statuses: filters.attendanceStatus.join(","),
+        shift: filters.shift,
+        search: filters.studentSearch,
+        dateFrom: format(filters.dateRange.from ?? now, "yyyy-MM-dd"),
+        dateTo: format(filters.dateRange.to ?? filters.dateRange.from ?? now, "yyyy-MM-dd"),
+        page: String(overviewPage),
+        pageSize: String(overviewPageSize),
+      });
+      const response = await fetch(`/api/attendance/overview?${params}`);
+      if (!response.ok) throw new Error("Không thể tải tổng quan điểm danh");
+      return response.json();
+    },
+  });
   const { data: allEvaluationCriteria = [] } = useQuery<any[]>({
     queryKey: ["/api/evaluation-criteria"],
     staleTime: 5 * 60 * 1000,
@@ -488,10 +523,95 @@ function AttendanceContent() {
   const isLoading = loadingClasses || loadingStudents || loadingShifts;
 
   const totalPages = Math.max(1, Math.ceil(Object.keys(attendanceByClass).length / pageSize));
+  const overviewTotalPages = Math.max(1, Math.ceil((overviewData?.total ?? 0) / overviewPageSize));
+
+  const exportOverviewExcel = async () => {
+    if (isExporting || !overviewData?.total) return;
+    setIsExporting(true);
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const now = new Date();
+      const params = new URLSearchParams({
+        classes: filters.classes.join(","),
+        students: filters.students.join(","),
+        locations: filters.locations.join(","),
+        statuses: filters.attendanceStatus.join(","),
+        shift: filters.shift,
+        search: filters.studentSearch,
+        dateFrom: format(filters.dateRange.from ?? now, "yyyy-MM-dd"),
+        dateTo: format(filters.dateRange.to ?? filters.dateRange.from ?? now, "yyyy-MM-dd"),
+        pageSize: "100",
+      });
+      let rows: any[] = [];
+      let page = 1;
+      let total = overviewData.total;
+      while ((page - 1) * 100 < total) {
+        params.set("page", String(page));
+        const response = await fetch(`/api/attendance/overview?${params}`);
+        if (!response.ok) throw new Error("Không thể tải đủ dữ liệu tổng quan để xuất Excel.");
+        const result = await response.json();
+        rows = rows.concat(result.rows ?? []);
+        total = Number(result.total ?? total);
+        page += 1;
+      }
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Tổng quan điểm danh");
+      worksheet.columns = [
+        { header: "Học viên", key: "student", width: 32 },
+        { header: "Lớp học", key: "className", width: 22 },
+        { header: "Tổng số buổi", key: "totalSessions", width: 15 },
+        { header: "Ngày bắt đầu", key: "startDate", width: 15 },
+        { header: "Ngày kết thúc", key: "endDate", width: 15 },
+        { header: "Chưa điểm danh", key: "pending", width: 17 },
+        { header: "Đã điểm danh", key: "attended", width: 16 },
+        { header: "Nghỉ chờ bù", key: "makeupWait", width: 14 },
+        { header: "Nghỉ học", key: "absent", width: 16 },
+        { header: "Đã xếp bù", key: "makeupScheduled", width: 14 },
+        { header: "Bảo lưu", key: "paused", width: 12 },
+      ];
+      worksheet.getRow(1).font = { bold: true };
+      worksheet.views = [{ state: "frozen", ySplit: 1 }];
+      worksheet.autoFilter = { from: "A1", to: "K1" };
+      rows.forEach((row) => worksheet.addRow({
+        student: `${row.studentCode ?? ""} - ${row.studentName ?? ""}`.trim(),
+        className: row.className,
+        totalSessions: row.totalSessions,
+        startDate: row.startDate ?? "",
+        endDate: row.endDate ?? "",
+        pending: row.pending,
+        attended: row.attended,
+        makeupWait: row.makeupWait,
+        absent: row.absent,
+        makeupScheduled: row.makeupScheduled,
+        paused: row.paused,
+      }));
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `tong-quan-diem-danh-${format(filters.dateRange.from ?? now, "yyyyMMdd")}-${format(filters.dateRange.to ?? filters.dateRange.from ?? now, "yyyyMMdd")}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Đã tải Excel tổng quan", description: `${rows.length} dòng theo bộ lọc hiện tại.` });
+    } catch (error) {
+      toast({ title: "Không thể xuất Excel", description: error instanceof Error ? error.message : "Vui lòng thử lại.", variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <DashboardLayout>
       <div className="flex flex-col h-full gap-3 p-0">
+        <div className="flex items-center gap-2">
+          <Button variant={activeView === "detail" ? "default" : "outline"} size="sm" onClick={() => setActiveView("detail")}>
+            Điểm danh
+          </Button>
+          <Button variant={activeView === "overview" ? "default" : "outline"} size="sm" onClick={() => setActiveView("overview")}>
+            Tổng quan
+          </Button>
+        </div>
 
         {/* ── FILTER BAR ── */}
         <div className="bg-white border border-border rounded-2xl shadow-sm flex-shrink-0">
@@ -568,6 +688,7 @@ function AttendanceContent() {
                 variant="outline"
                 size="sm"
                 className="h-8 text-xs gap-1.5 border-border/70"
+                style={{ display: activeView === "detail" ? "inline-flex" : "none" }}
                 onClick={async () => {
                   if (filteredAttendanceRows.length === 0 || isExporting) return;
                   setIsExporting(true);
@@ -956,8 +1077,75 @@ function AttendanceContent() {
           </DialogContent>
         </Dialog>
 
+        {activeView === "overview" && (
+          <div className="bg-white border border-border rounded-2xl shadow-sm flex flex-col flex-1 overflow-hidden min-h-0">
+            <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+              <div className="text-sm text-muted-foreground">
+                Tổng cộng: <b className="text-foreground">{overviewData?.summary?.classes ?? 0}</b> lớp ·
+                <b className="text-foreground"> {overviewData?.summary?.students ?? 0}</b> học viên ·
+                <b className="text-foreground"> {overviewData?.summary?.sessions ?? 0}</b> buổi
+              </div>
+              <Button size="sm" variant="outline" disabled={isExporting || !overviewData?.total} onClick={() => void exportOverviewExcel()}>
+                <Download className="mr-1.5 h-3.5 w-3.5" />{isExporting ? "Đang xuất..." : "Tải Excel tổng quan"}
+              </Button>
+            </div>
+            <div className="flex-1 overflow-auto">
+              {overviewLoading ? (
+                <div className="py-16 text-center text-sm text-muted-foreground">Đang tải tổng quan điểm danh...</div>
+              ) : overviewError ? (
+                <div className="py-16 text-center text-sm text-destructive">Không thể tải tổng quan điểm danh. Hãy thử lại.</div>
+              ) : !overviewData?.rows?.length ? (
+                <div className="py-16 text-center text-sm text-muted-foreground">Không có dữ liệu theo bộ lọc hiện tại.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1120px] text-xs">
+                    <thead className="sticky top-0 z-10 bg-muted/80">
+                      <tr>
+                        {["Học viên", "Lớp học", "Tổng số buổi", "Ngày bắt đầu", "Ngày kết thúc", "Chưa điểm danh", "Đã điểm danh", "Nghỉ chờ bù", "Nghỉ học", "Đã xếp bù", "Bảo lưu"].map((heading) => (
+                          <th key={heading} className="border-b px-3 py-2.5 text-left font-semibold whitespace-nowrap">{heading}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {overviewData.rows.map((row) => (
+                        <tr key={row.studentClassId} className="border-b last:border-0 hover:bg-muted/30">
+                          <td className="px-3 py-2 font-medium whitespace-nowrap">{row.studentCode} - {row.studentName}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{row.className}</td>
+                          <td className="px-3 py-2 text-center">{row.totalSessions}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{row.startDate ?? "—"}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{row.endDate ?? "—"}</td>
+                          <td className="px-3 py-2 text-center">{row.pending}</td>
+                          <td className="px-3 py-2 text-center">{row.attended}</td>
+                          <td className="px-3 py-2 text-center">{row.makeupWait}</td>
+                          <td className="px-3 py-2 text-center">{row.absent}</td>
+                          <td className="px-3 py-2 text-center">{row.makeupScheduled}</td>
+                          <td className="px-3 py-2 text-center">{row.paused}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t px-4 py-2.5">
+              <span className="text-xs text-muted-foreground">
+                {overviewData?.total ? `${(overviewPage - 1) * overviewPageSize + 1}-${Math.min(overviewPage * overviewPageSize, overviewData.total)} / ${overviewData.total}` : "0 dòng"}
+              </span>
+              <div className="flex items-center gap-2">
+                <Select value={String(overviewPageSize)} onValueChange={(value) => { setOverviewPageSize(Number(value)); setOverviewPage(1); }}>
+                  <SelectTrigger className="h-8 w-[78px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>{[20, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size} / trang</SelectItem>)}</SelectContent>
+                </Select>
+                <Button size="icon" variant="outline" className="h-8 w-8" disabled={overviewPage <= 1} onClick={() => setOverviewPage((value) => value - 1)}><ChevronLeft className="h-4 w-4" /></Button>
+                <span className="text-xs">{overviewPage} / {overviewTotalPages}</span>
+                <Button size="icon" variant="outline" className="h-8 w-8" disabled={overviewPage >= overviewTotalPages} onClick={() => setOverviewPage((value) => value + 1)}><ChevronRight className="h-4 w-4" /></Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Main content */}
-        <div className="bg-white border border-border rounded-2xl shadow-sm flex flex-col flex-1 overflow-hidden min-h-0">
+        <div style={{ display: activeView === "detail" ? "flex" : "none" }} className="bg-white border border-border rounded-2xl shadow-sm flex-col flex-1 overflow-hidden min-h-0">
 
           {/* Bulk action bar */}
           {(() => {

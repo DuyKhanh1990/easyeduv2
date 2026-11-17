@@ -463,6 +463,144 @@ export function registerAttendanceRoutes(app: Express): void {
     }
   });
 
+  app.get("/api/attendance/overview", async (req, res) => {
+    try {
+      const attendancePermission = req.isSuperAdmin
+        ? null
+        : await storage.getEffectivePermissions(req.roleIds ?? [], "/attendance");
+      if (!req.isSuperAdmin && !attendancePermission?.canView && !attendancePermission?.canViewAll) {
+        return res.status(403).json({ message: "Bạn không có quyền truy cập trang này." });
+      }
+
+      const canViewAll = req.isSuperAdmin || attendancePermission?.canViewAll === true;
+      const staffId = req.staffId as string | null | undefined;
+      const queryArray = (value: unknown) => typeof value === "string" ? value.split(",").filter(Boolean) : [];
+      const classIds = queryArray(req.query.classes);
+      const studentIds = queryArray(req.query.students);
+      const locationIds = queryArray(req.query.locations);
+      const selectedStatuses = queryArray(req.query.statuses);
+      const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+      const shiftId = typeof req.query.shift === "string" ? req.query.shift : "all";
+      const rawPage = Number(req.query.page) || 1;
+      const page = Math.max(1, Math.floor(rawPage));
+      const rawPageSize = Number(req.query.pageSize) || 20;
+      const pageSize = [20, 50, 100].includes(rawPageSize) ? rawPageSize : 20;
+      const dateFrom = typeof req.query.dateFrom === "string" && req.query.dateFrom
+        ? req.query.dateFrom
+        : getBangkokDateKey();
+      const dateTo = typeof req.query.dateTo === "string" && req.query.dateTo
+        ? req.query.dateTo
+        : dateFrom;
+
+      if (!req.isSuperAdmin && req.allowedLocationIds?.length === 0) {
+        return res.json({ rows: [], total: 0, summary: { students: 0, classes: 0, sessions: 0 } });
+      }
+
+      const conditions: any[] = [
+        inArray(studentClasses.status, ["active", "waiting"]),
+        sql`${studentSessions.id} IS NOT NULL`,
+        ne(studentSessions.status, "transferred"),
+        gte(classSessions.sessionDate, dateFrom),
+        lte(classSessions.sessionDate, dateTo),
+      ];
+      if (classIds.length) conditions.push(inArray(classes.id, classIds));
+      if (studentIds.length) conditions.push(inArray(students.id, studentIds));
+      if (locationIds.length) conditions.push(inArray(classes.locationId, locationIds));
+      if (shiftId && shiftId !== "all") conditions.push(eq(classSessions.shiftTemplateId, shiftId));
+      if (search) {
+        const like = `%${search}%`;
+        conditions.push(or(
+          sql`${students.fullName} ILIKE ${like}`,
+          sql`${students.code} ILIKE ${like}`,
+          sql`${classes.classCode} ILIKE ${like}`,
+          sql`${classes.name} ILIKE ${like}`,
+        ));
+      }
+      if (!req.isSuperAdmin && req.allowedLocationIds?.length) {
+        conditions.push(inArray(classes.locationId, req.allowedLocationIds));
+        conditions.push(sql`EXISTS (
+          SELECT 1 FROM student_locations sl
+          WHERE sl.student_id = ${students.id}
+            AND sl.location_id = ANY(ARRAY[${sql.raw(req.allowedLocationIds.map((id: string) => `'${id}'`).join(","))}]::uuid[])
+        )`);
+      }
+
+      const managerCondition = staffId
+        ? sql`${staffId}::uuid = ANY(COALESCE(${classes.managerIds}, ARRAY[]::uuid[]))`
+        : sql`FALSE`;
+      if (!canViewAll) {
+        conditions.push(staffId
+          ? sql`(
+              ${managerCondition}
+              OR ${staffId}::uuid = ANY(COALESCE(${classSessions.teacherIds}, ARRAY[]::uuid[]))
+              OR EXISTS (
+                SELECT 1 FROM class_session_teacher_assignments csta
+                WHERE csta.class_session_id = ${classSessions.id}
+                  AND csta.teacher_id = ${staffId}::uuid
+              )
+            )`
+          : sql`FALSE`);
+      }
+
+      const groupedQuery = db.select({
+        studentClassId: studentClasses.id,
+        studentId: students.id,
+        studentCode: students.code,
+        studentName: students.fullName,
+        classId: classes.id,
+        className: classes.classCode,
+        startDate: studentClasses.startDate,
+        endDate: studentClasses.endDate,
+        totalSessions: sql<number>`count(${studentSessions.id})::int`,
+        pending: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'pending')::int`,
+        attended: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} IN ('present', 'makeup_done'))::int`,
+        makeupWait: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'makeup_wait')::int`,
+        absent: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'absent')::int`,
+        makeupScheduled: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'makeup_scheduled')::int`,
+        paused: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} IN ('paused', 'reserved'))::int`,
+      })
+        .from(studentClasses)
+        .innerJoin(students, eq(studentClasses.studentId, students.id))
+        .innerJoin(classes, eq(studentClasses.classId, classes.id))
+        .innerJoin(studentSessions, eq(studentSessions.studentClassId, studentClasses.id))
+        .innerJoin(classSessions, eq(studentSessions.classSessionId, classSessions.id))
+        .where(and(...conditions))
+        .groupBy(studentClasses.id, students.id, students.code, students.fullName, classes.id, classes.classCode, studentClasses.startDate, studentClasses.endDate);
+
+      if (selectedStatuses.length) {
+        const statusConditions = selectedStatuses.map((status) => eq(studentSessions.attendanceStatus, status));
+        groupedQuery.having(sql`count(${studentSessions.id}) FILTER (WHERE ${or(...statusConditions)}) > 0`);
+      }
+
+      const grouped = groupedQuery.as("attendance_overview");
+      const [totals] = await db.select({
+        total: sql<number>`count(*)::int`,
+        students: sql<number>`count(DISTINCT ${grouped.studentId})::int`,
+        classes: sql<number>`count(DISTINCT ${grouped.classId})::int`,
+        sessions: sql<number>`coalesce(sum(${grouped.totalSessions}), 0)::int`,
+      }).from(grouped);
+      const rows = await db.select().from(grouped)
+        .orderBy(grouped.studentCode, grouped.className)
+        .limit(pageSize)
+        .offset((page - 1) * pageSize);
+
+      res.json({
+        rows,
+        total: Number(totals?.total ?? 0),
+        summary: {
+          students: Number(totals?.students ?? 0),
+          classes: Number(totals?.classes ?? 0),
+          sessions: Number(totals?.sessions ?? 0),
+        },
+        page,
+        pageSize,
+      });
+    } catch (err: any) {
+      console.error("Attendance overview error:", err);
+      res.status(400).json({ message: err.message || "Không thể tải tổng quan điểm danh." });
+    }
+  });
+
   app.get(api.attendance.list.path, async (req, res) => {
     try {
       const attendancePermission = req.isSuperAdmin
