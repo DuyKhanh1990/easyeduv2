@@ -580,15 +580,16 @@ function AttendanceContent() {
         { header: "Ngày bắt đầu", key: "startDate", width: 15 },
         { header: "Ngày kết thúc", key: "endDate", width: 15 },
         { header: "Chưa điểm danh", key: "pending", width: 17 },
-        { header: "Đã điểm danh", key: "attended", width: 16 },
+        { header: "Có học", key: "attended", width: 12 },
         { header: "Nghỉ chờ bù", key: "makeupWait", width: 14 },
         { header: "Nghỉ học", key: "absent", width: 16 },
         { header: "Đã xếp bù", key: "makeupScheduled", width: 14 },
         { header: "Bảo lưu", key: "paused", width: 12 },
+        { header: "Rate", key: "rate", width: 12 },
       ];
       worksheet.getRow(1).font = { bold: true };
       worksheet.views = [{ state: "frozen", ySplit: 1 }];
-      worksheet.autoFilter = { from: "A1", to: "K1" };
+      worksheet.autoFilter = { from: "A1", to: "L1" };
       rows.forEach((row) => worksheet.addRow({
         student: `${row.studentCode ?? ""} - ${row.studentName ?? ""}`.trim(),
         className: row.className,
@@ -601,7 +602,9 @@ function AttendanceContent() {
         absent: row.absent,
         makeupScheduled: row.makeupScheduled,
         paused: row.paused,
+        rate: Number(row.totalSessions) > 0 ? Number(row.attended) / Number(row.totalSessions) : 0,
       }));
+      worksheet.getColumn(12).numFmt = "0.0%";
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const url = URL.createObjectURL(blob);
@@ -1118,7 +1121,7 @@ function AttendanceContent() {
                   <table className="w-full min-w-[1120px] text-xs">
                     <thead className="sticky top-0 z-10 bg-muted/80">
                       <tr>
-                        {["Học viên", "Lớp học", "Tổng số buổi", "Ngày bắt đầu", "Ngày kết thúc", "Chưa điểm danh", "Đã điểm danh", "Nghỉ chờ bù", "Nghỉ học", "Đã xếp bù", "Bảo lưu"].map((heading) => (
+                        {["Học viên", "Lớp học", "Tổng số buổi", "Ngày bắt đầu", "Ngày kết thúc", "Chưa điểm danh", "Có học", "Nghỉ chờ bù", "Nghỉ học", "Đã xếp bù", "Bảo lưu", "Rate"].map((heading) => (
                           <th key={heading} className="border-b px-3 py-2.5 text-left font-semibold whitespace-nowrap">{heading}</th>
                         ))}
                       </tr>
@@ -1129,7 +1132,7 @@ function AttendanceContent() {
                           <td className="px-3 py-2 font-semibold text-primary whitespace-nowrap">
                             {group.studentCode} {group.studentName}
                           </td>
-                          <td colSpan={10} />
+                          <td colSpan={11} />
                         </tr>,
                         ...group.rows.map((row) => (
                           <tr key={row.studentClassId} className="border-b last:border-0 hover:bg-muted/30">
@@ -1144,6 +1147,11 @@ function AttendanceContent() {
                             <td className="px-3 py-2 text-center">{row.absent}</td>
                             <td className="px-3 py-2 text-center">{row.makeupScheduled}</td>
                             <td className="px-3 py-2 text-center">{row.paused}</td>
+                            <td className="px-3 py-2 text-center font-medium">
+                              {Number(row.totalSessions) > 0
+                                ? `${((Number(row.attended) / Number(row.totalSessions)) * 100).toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`
+                                : "—"}
+                            </td>
                           </tr>
                         )),
                       ])}

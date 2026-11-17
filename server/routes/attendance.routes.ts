@@ -551,7 +551,7 @@ export function registerAttendanceRoutes(app: Express): void {
         endDate: sql<string | null>`max(${studentClasses.endDate})`.as("endDate"),
         totalSessions: sql<number>`count(${studentSessions.id})::int`.as("totalSessions"),
         pending: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'pending')::int`.as("pending"),
-        attended: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} IN ('present', 'makeup_done'))::int`.as("attended"),
+        attended: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'present')::int`.as("attended"),
         makeupWait: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'makeup_wait')::int`.as("makeupWait"),
         absent: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'absent')::int`.as("absent"),
         makeupScheduled: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'makeup_scheduled')::int`.as("makeupScheduled"),
