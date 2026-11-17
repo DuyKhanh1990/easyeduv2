@@ -24,7 +24,10 @@ import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { InvoicePrintTemplateRow } from "@shared/schema";
 import { fmtDate as formatInvoiceDate } from "@/types/invoice-types";
-import { prepareReceiptTemplateForEditing } from "./invoiceReceiptTemplateUtils";
+import {
+  expandInvoiceItemTemplateRows,
+  prepareReceiptTemplateForEditing,
+} from "./invoiceReceiptTemplateUtils";
 
 /* ─────────────────── TYPES ─────────────────── */
 type PageSize = "A4" | "A5" | "K80";
@@ -342,6 +345,16 @@ const VARIABLES: VariableDef[] = [
   { group: "Thanh toán", label: "Thành chữ (tiền đã TT)", key: "thanh_chu", description: "{{thanh_chu}}" },
   { group: "Thanh toán", label: "Thành chữ tổng tiền", key: "thanh_chu_tong_tien", description: "{{thanh_chu_tong_tien}}" },
 
+  // ── Dòng sản phẩm — đặt các biến trong cùng một hàng bảng để lặp theo sản phẩm ──
+  { group: "Dòng sản phẩm (lặp theo hàng)", label: "Tên sản phẩm", key: "ten_san_pham", description: "{{ten_san_pham}}" },
+  { group: "Dòng sản phẩm (lặp theo hàng)", label: "Đơn giá", key: "don_gia", description: "{{don_gia}}" },
+  { group: "Dòng sản phẩm (lặp theo hàng)", label: "Số lượng", key: "so_luong", description: "{{so_luong}}" },
+  { group: "Dòng sản phẩm (lặp theo hàng)", label: "Số tiền trước điều chỉnh", key: "so_tien", description: "{{so_tien}}" },
+  { group: "Dòng sản phẩm (lặp theo hàng)", label: "Thành tiền trước VAT", key: "thanh_tien_truoc_vat", description: "{{thanh_tien_truoc_vat}}" },
+  { group: "Dòng sản phẩm (lặp theo hàng)", label: "Thuế suất VAT", key: "vat_rate", description: "{{vat_rate}}" },
+  { group: "Dòng sản phẩm (lặp theo hàng)", label: "Tiền VAT", key: "tien_vat", description: "{{tien_vat}}" },
+  { group: "Dòng sản phẩm (lặp theo hàng)", label: "Thành tiền sau VAT", key: "thanh_tien_sau_vat", description: "{{thanh_tien_sau_vat}}" },
+
   // ── Bảng động ──
   { group: "Bảng dữ liệu", label: "Bảng sản phẩm", key: "items", description: "{{items}}" },
   { group: "Bảng dữ liệu", label: "Bảng sản phẩm có VAT", key: "items_vat", description: "{{items_vat}}" },
@@ -387,6 +400,14 @@ const VARIABLE_SECTIONS = [
     keys: [
       "so_tien_dot_con", "khuyen_mai_dot_con", "phu_thu_dot_con",
       "tong_sau_kmpt_dot_con", "thu_ky_nay",
+    ],
+  },
+  {
+    id: "items",
+    label: "Dòng sản phẩm",
+    keys: [
+      "ten_san_pham", "don_gia", "so_luong", "so_tien",
+      "thanh_tien_truoc_vat", "vat_rate", "tien_vat", "thanh_tien_sau_vat",
     ],
   },
   {
@@ -443,6 +464,14 @@ const VARIABLE_HELP: Record<string, { meaning: string; example: string }> = {
   tong_sau_kmpt_dot_con: { meaning: "Tổng tiền phải trả của đợt con sau khuyến mãi và phụ thu; đợt con không có khấu trừ riêng.", example: "1.150.000 đ" },
   thanh_chu: { meaning: "Số tiền đã thanh toán của phiếu đang in được viết bằng chữ.", example: "Một triệu đồng" },
   thanh_chu_tong_tien: { meaning: "Tổng tiền của phiếu đang in, khớp với hàng Tổng tiền trong bảng, được viết bằng chữ.", example: "Mười bốn triệu sáu trăm năm mươi nghìn đồng" },
+  ten_san_pham: { meaning: "Tên sản phẩm. Đặt trong cùng hàng bảng với các biến dòng sản phẩm để tự lặp.", example: "Gói học phí tháng 5" },
+  don_gia: { meaning: "Đơn giá sản phẩm; đặt cùng hàng bảng với các biến dòng sản phẩm để tự lặp.", example: "1.000.000" },
+  so_luong: { meaning: "Số lượng hoặc số buổi tham khảo; đặt cùng hàng bảng để tự lặp.", example: "5" },
+  so_tien: { meaning: "Đơn giá nhân số lượng, hoặc giá gói cố định trước khuyến mãi/phụ thu.", example: "5.000.000" },
+  thanh_tien_truoc_vat: { meaning: "Thành tiền của dòng sau khuyến mãi/phụ thu sản phẩm, trước VAT.", example: "999.990" },
+  vat_rate: { meaning: "Thuế suất VAT của dòng sản phẩm, trước VAT.", example: "8%" },
+  tien_vat: { meaning: "Số tiền VAT của dòng sản phẩm.", example: "79.999" },
+  thanh_tien_sau_vat: { meaning: "Thành tiền của dòng sản phẩm đã gồm VAT.", example: "1.079.989" },
   items: { meaning: "Chèn bảng động liệt kê sản phẩm, số lượng, khuyến mãi, phụ thu và thành tiền.", example: "Bảng các gói học phí trên hóa đơn" },
   items_vat: { meaning: "Chèn bảng dịch vụ có thêm cột thuế VAT, dùng cho mẫu phiếu thu.", example: "Tên dịch vụ, số lượng, đơn giá, VAT và thành tiền" },
   lich_su_thanh_toan: { meaning: "Chèn bảng tất cả đợt đã thanh toán và chưa thanh toán của hóa đơn.", example: "Đợt 1 đã thanh toán; Đợt 3 chưa thanh toán" },
@@ -742,6 +771,7 @@ function renderTemplate(html: string, data: typeof SAMPLE_DATA, logoUrl?: string
   }
   output = output.replace(/\{\{items_vat\}\}/g, renderItemsVat(data.items, data.total));
   output = output.replace(/\{\{lich_su_thanh_toan\}\}/g, renderHistory(SAMPLE_HISTORY));
+  output = expandInvoiceItemTemplateRows(output, data.items as Array<Record<string, any>>);
 
   // Step 2a: Replace {{logo}} with real img or dashed placeholder
   output = output.replace(/\{\{logo\}\}/g, () => {

@@ -9,7 +9,10 @@ import { useAuth } from "@/hooks/use-auth";
 import { useStaff } from "@/hooks/use-staff";
 import { fmtDate as formatInvoiceDate, isInvoicePaidLike } from "@/types/invoice-types";
 import { INVOICE_PRINT_BASE_STYLES } from "./invoice-print-base-styles";
-import { prepareReceiptTemplateForEditing } from "./invoiceReceiptTemplateUtils";
+import {
+  expandInvoiceItemTemplateRows,
+  prepareReceiptTemplateForEditing,
+} from "./invoiceReceiptTemplateUtils";
 
 interface InvoicePrintData {
   id: string;
@@ -800,6 +803,7 @@ export function renderTemplate(
   }
   output = output.replace(/\{\{items_vat\}\}/g, renderVatReceiptItemsHtml(items as any, invoice, promotionOptions, surchargeOptions));
   output = output.replace(/\{\{lich_su_thanh_toan\}\}/g, renderHistoryHtml(schedule));
+  output = expandInvoiceItemTemplateRows(output, items as Array<Record<string, any>>);
 
   // Replace {{logo}} with img tag from main branch logo
   output = output.replace(/\{\{logo\}\}/g, () => {

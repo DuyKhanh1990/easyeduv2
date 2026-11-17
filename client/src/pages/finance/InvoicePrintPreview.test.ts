@@ -278,6 +278,44 @@ describe("VAT-enabled invoice item table", () => {
     expect(html).toMatch(/<tr>\s*<td style="[^"]*"><\/td>\s*<td style="[^"]*">Test A - Khóa/);
     expect(html).toMatch(/<tr>\s*<td style="[^"]*"><\/td>\s*<td style="[^"]*">Giấy thi/);
   });
+
+  it("repeats custom product rows and fills individual VAT and amount variables", () => {
+    const html = renderTemplate(
+      `<table><thead><tr><th>Tên</th><th>Đơn giá</th><th>SL</th><th>Trước VAT</th><th>VAT</th><th>Tiền VAT</th><th>Sau VAT</th></tr></thead><tbody><tr><td>{{ten_san_pham}}</td><td>{{don_gia}}</td><td>{{so_luong}}</td><td>{{thanh_tien_truoc_vat}}</td><td>{{vat_rate}}</td><td>{{tien_vat}}</td><td>{{thanh_tien_sau_vat}}</td></tr></tbody></table>`,
+      {
+        id: "custom-item-variables",
+        type: "Thu",
+        grandTotal: "1000180",
+        paidAmount: "0",
+        createdAt: "2026-11-17T00:00:00.000Z",
+        items: [
+          {
+            name: "Gói khóa học",
+            packageType: "khoá",
+            unitPrice: 1000000,
+            quantity: 5,
+            promotionAmount: 10,
+            subtotal: 999990,
+            vatRate: 0,
+            vatAmount: 0,
+          },
+          {
+            name: "Sách",
+            unitPrice: 100,
+            quantity: 2,
+            promotionAmount: 10,
+            subtotal: 190,
+            vatRate: 8,
+            vatAmount: 15.2,
+          },
+        ],
+      },
+    );
+
+    expect(html).toContain("<td>Gói khóa học</td><td>1.000.000</td><td>5</td><td>999.990</td><td>0%</td><td>0</td><td>999.990</td>");
+    expect(html).toContain("<td>Sách</td><td>100</td><td>2</td><td>190</td><td>8%</td><td>15,2</td><td>205,2</td>");
+    expect(html).not.toContain("{{ten_san_pham}}");
+  });
 });
 
 describe("{{lich_su_thanh_toan}}", () => {
