@@ -939,7 +939,10 @@ export default function ScoreConversion() {
   return (
     <DashboardLayout>
       <div className="p-4 md:p-6">
-        <div className="mb-6 flex flex-wrap items-center gap-4">
+        <div
+          className="mb-6 flex flex-wrap items-center justify-between gap-4"
+          data-page-guide-anchor
+        >
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
               <BarChart3 className="h-5 w-5 text-emerald-700 dark:text-emerald-300" />
