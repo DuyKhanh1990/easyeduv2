@@ -27,6 +27,7 @@ interface InvoicePrintData {
   items?: Array<{
     name?: string;
     packageName?: string;
+    packageType?: string | null;
     price?: string | number;
     unitPrice?: string | number;
     quantity?: number;
@@ -324,7 +325,9 @@ function renderVatReceiptItemsHtml(
     const itemSurcharge = Number(item.surchargeAmount ?? item.extra) || 0;
     const vatRate = Number(item.vatRate) || 0;
     const vatAmount = Number(item.vatAmount) || 0;
-    const amount = unitPrice * quantity;
+    // Course-package quantity is a reference count; the saved unitPrice is the
+    // fixed package price, matching CreateInvoiceDialog's calcBase behavior.
+    const amount = item.packageType === "khoá" ? unitPrice : unitPrice * quantity;
     subtotalAfterItemAdjustments += amount - itemPromotion + itemSurcharge;
 
     productRows.push(`<tr>
@@ -429,7 +432,7 @@ function renderItemsHtml(
     const itemPt = Number(item.surchargeAmount ?? item.extra) || 0;
     const vatRate = Number(item.vatRate) || 0;
     const vatAmount = Number(item.vatAmount) || 0;
-    const itemBase = price * qty;
+    const itemBase = item.packageType === "khoá" ? price : price * qty;
     subtotalAfterItemAdj += itemBase - itemKm + itemPt;
 
     bodyRows.push(includeVat

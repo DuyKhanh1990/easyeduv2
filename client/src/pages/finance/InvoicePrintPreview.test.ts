@@ -199,6 +199,32 @@ describe("VAT-enabled invoice item table", () => {
     expect(html).toContain("font-family:'Times New Roman', Times, serif");
     expect(html).toContain("Hình thức thanh toán:");
   });
+
+  it("prints a fixed-price course package once when quantity is only a reference", () => {
+    const html = renderTemplate("{{items_vat}}", {
+      id: "fixed-course-receipt",
+      type: "Thu",
+      grandTotal: "1049990",
+      paidAmount: "1049990",
+      createdAt: "2026-11-17T00:00:00.000Z",
+      items: [{
+        name: "Test A - Khóa",
+        packageType: "khoá",
+        unitPrice: 1000000,
+        quantity: 5,
+        promotionAmount: 10,
+        surchargeAmount: 50000,
+        vatRate: 0,
+        vatAmount: 0,
+      }],
+    });
+
+    expect(html.match(/>1\.000\.000<\/td>/g)).toHaveLength(2);
+    expect(html).not.toContain(">5.000.000</td>");
+    expect(html).toContain(">1.049.990</td>");
+    expect(html).toContain(">10</td>");
+    expect(html).toContain(">50.000</td>");
+  });
 });
 
 describe("{{lich_su_thanh_toan}}", () => {
