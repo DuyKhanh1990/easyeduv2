@@ -551,13 +551,13 @@ export function registerAttendanceRoutes(app: Express): void {
         className: classes.classCode,
         startDate: studentClasses.startDate,
         endDate: studentClasses.endDate,
-        totalSessions: sql<number>`count(${studentSessions.id})::int`,
-        pending: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'pending')::int`,
-        attended: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} IN ('present', 'makeup_done'))::int`,
-        makeupWait: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'makeup_wait')::int`,
-        absent: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'absent')::int`,
-        makeupScheduled: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'makeup_scheduled')::int`,
-        paused: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} IN ('paused', 'reserved'))::int`,
+        totalSessions: sql<number>`count(${studentSessions.id})::int`.as("totalSessions"),
+        pending: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'pending')::int`.as("pending"),
+        attended: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} IN ('present', 'makeup_done'))::int`.as("attended"),
+        makeupWait: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'makeup_wait')::int`.as("makeupWait"),
+        absent: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'absent')::int`.as("absent"),
+        makeupScheduled: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'makeup_scheduled')::int`.as("makeupScheduled"),
+        paused: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} IN ('paused', 'reserved'))::int`.as("paused"),
       })
         .from(studentClasses)
         .innerJoin(students, eq(studentClasses.studentId, students.id))
