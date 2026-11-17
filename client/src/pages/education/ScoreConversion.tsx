@@ -1840,7 +1840,7 @@ export default function ScoreConversion() {
                                                   >
                                                     <Eye className="h-4 w-4" />
                                                   </Button>
-                                                  {canDelete && (
+                                                  {canEdit && (
                                                     <Button
                                                       variant="ghost"
                                                       size="icon"
@@ -1870,7 +1870,7 @@ export default function ScoreConversion() {
                                                       <Pencil className="h-4 w-4" />
                                                     </Button>
                                                   )}
-                                                  {canEdit && (
+                                                  {canDelete && (
                                                     <Button
                                                       variant="ghost"
                                                       size="icon"

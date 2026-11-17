@@ -148,8 +148,8 @@ export function StaffScoreSheetAssessmentStudentsDialog({
   const removedStudents = rosterQuery.data?.removedStudents ?? [];
   const scoreSheetTemplateName = assessment?.templateName ?? "Bảng điểm chưa đặt tên";
   const showIndividualPublication = Boolean(canManagePublication && assessment?.hasConversion);
-  const canManageRoster = canManageScores && !assessment?.isManual;
-  const canDeleteRosterStudent = canDeleteRoster && !assessment?.isManual;
+  const canManageRoster = canManageScores;
+  const canDeleteRosterStudent = canDeleteRoster;
   const [scoreDialogTarget, setScoreDialogTarget] = useState<{
     student: AssessmentRosterStudent;
     mode: "view" | "edit";

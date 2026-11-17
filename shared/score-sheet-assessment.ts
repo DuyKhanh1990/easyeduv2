@@ -31,6 +31,7 @@ const scoreSheetAssessmentCreationFieldsSchema = z.object({
   manualSelectionMode: z.enum(["class", "students"]).nullable().default(null),
   manualClassId: z.string().uuid().nullable().default(null),
   manualStudentIds: z.array(z.string().uuid()).max(500).default([]),
+  excludedManualStudentIds: z.array(z.string().uuid()).max(500).default([]),
 });
 
 const manualScoreSheetValidation = (
