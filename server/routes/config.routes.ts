@@ -2630,12 +2630,43 @@ export function registerConfigRoutes(app: Express): void {
   app.get("/api/system-settings/sidebar-visibility", async (req, res) => {
     try {
       const { systemSettings } = await import("@shared/schema");
-      const row = await db.select().from(systemSettings).where(eq(systemSettings.key, "sidebarVisibility"));
-      if (row.length > 0) {
-        res.json(JSON.parse(row[0].value));
-      } else {
-        res.json({});
-      }
+      const visibility = await db.transaction(async (tx) => {
+        const migrationKey = "sidebarVisibilityDefaultOffsV1";
+        const defaultOffs: Record<string, boolean> = {
+          "item:/customers/organizations": false,
+          "item:/notification-logs": false,
+          "subtab:/shifts:register": false,
+          "item:/reconciliation": false,
+        };
+        await tx.insert(systemSettings)
+          .values({ key: migrationKey, value: "pending" })
+          .onConflictDoNothing();
+        const [migration] = await tx.select({ value: systemSettings.value })
+          .from(systemSettings)
+          .where(eq(systemSettings.key, migrationKey))
+          .for("update")
+          .limit(1);
+        const [row] = await tx.select({ value: systemSettings.value })
+          .from(systemSettings)
+          .where(eq(systemSettings.key, "sidebarVisibility"))
+          .limit(1);
+        const current = row ? JSON.parse(row.value) as Record<string, boolean> : {};
+        if (migration?.value !== "done") {
+          Object.assign(current, defaultOffs);
+          const value = JSON.stringify(current);
+          await tx.insert(systemSettings)
+            .values({ key: "sidebarVisibility", value })
+            .onConflictDoUpdate({
+              target: systemSettings.key,
+              set: { value, updatedAt: new Date() },
+            });
+          await tx.update(systemSettings)
+            .set({ value: "done", updatedAt: new Date() })
+            .where(eq(systemSettings.key, migrationKey));
+        }
+        return current;
+      });
+      res.json(visibility);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

@@ -41,6 +41,7 @@ export type SubTabItem = {
 export type SubTab = {
   value: string;
   name: string;
+  defaultVisible?: boolean;
   subItems?: SubTabItem[];
   permissionItems?: SubTabItem[];
 };
@@ -122,6 +123,7 @@ export const navigation: NavEntry[] = [
         href: "/customers/organizations",
         icon: Building2,
         permissionHref: "/customers",
+        defaultVisible: false,
       },
       {
         name: "Cấu hình CRM",
@@ -137,7 +139,7 @@ export const navigation: NavEntry[] = [
           { value: "registration-form", name: "Form đăng ký" }
         ]
       },
-      { name: "Lịch sử thông báo", href: "/notification-logs", icon: Bell },
+      { name: "Lịch sử thông báo", href: "/notification-logs", icon: Bell, defaultVisible: false },
     ]
   },
   {
@@ -162,7 +164,7 @@ export const navigation: NavEntry[] = [
         href: "/shifts",
         icon: CalendarDays,
         subTabs: [
-          { value: "register", name: "Đăng ký ca dạy" },
+          { value: "register", name: "Đăng ký ca dạy", defaultVisible: false },
           { value: "board", name: "Bảng phân ca" },
           { value: "assign", name: "Phân ca làm việc" },
           { value: "config", name: "Cấu hình ca làm việc" }
@@ -305,7 +307,7 @@ export const navigation: NavEntry[] = [
       },
       { name: "Công nợ", href: "/invoices/debt", icon: FileText, permissionHref: "/invoices" },
       { name: "Học phí trả sau", href: "/deferred-tuition", icon: CreditCard, permissionHref: "/invoices" },
-      { name: "Đối soát", href: "/reconciliation", icon: ArrowLeftRight },
+      { name: "Đối soát", href: "/reconciliation", icon: ArrowLeftRight, defaultVisible: false },
       {
         name: "Cấu hình tài chính",
         href: "/finance-config",
