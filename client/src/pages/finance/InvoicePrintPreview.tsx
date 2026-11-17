@@ -29,6 +29,7 @@ interface InvoicePrintData {
     name?: string;
     packageName?: string;
     packageType?: string | null;
+    category?: string | null;
     price?: string | number;
     unitPrice?: string | number;
     quantity?: number;
@@ -314,6 +315,7 @@ function renderVatReceiptItemsHtml(
       <td colspan="6" style="${cell("center")}">${label}</td>
     </tr>`;
   const productRows: string[] = [];
+  const surchargeItemRows: string[] = [];
   const promotions: Array<{ name: string; amount: number }> = [];
   const surcharges: Array<{ name: string; amount: number }> = [];
   let subtotalAfterItemAdjustments = 0;
@@ -331,15 +333,24 @@ function renderVatReceiptItemsHtml(
     const amount = item.packageType === "khoá" ? unitPrice : unitPrice * quantity;
     subtotalAfterItemAdjustments += amount - itemPromotion + itemSurcharge;
 
-    productRows.push(`<tr>
-      <td style="${cell("center")}">${index + 1}</td>
+    const productRow = `<tr>
+      <td style="${cell("center")}"></td>
       <td style="${cell("left")}">${name}</td>
       <td style="${cell("right")}">${fmtMoney(unitPrice)}</td>
       <td style="${cell("center")}">${quantity}</td>
       <td style="${cell("right")}">${fmtMoney(amount)}</td>
       <td style="${cell("center")}">${vatRate}</td>
       <td style="${cell("right")}"><b>${fmtMoney(amount + vatAmount)}</b></td>
-    </tr>`);
+    </tr>`;
+    const categoryKey = String(item.category ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+    if (categoryKey.includes("phu thu") || categoryKey.includes("surcharge")) {
+      surchargeItemRows.push(productRow);
+    } else {
+      productRows.push(productRow);
+    }
 
     promotions.push(...lookupAdjustments(
       item.promotionKeys, promotionOptions, amount, itemPromotion, "Khuyến mãi",
@@ -379,13 +390,20 @@ function renderVatReceiptItemsHtml(
     <td style="${cell("right")}"><b>${isPromotion ? "-" : ""}${fmtMoney(amount)}</b></td>
   </tr>`);
 
-  const rows = [sectionRow(1, "Gói dịch vụ"), ...productRows];
-  let nextSectionNumber = 2;
+  const rows: string[] = [];
+  let nextSectionNumber = 1;
+  if (productRows.length > 0) {
+    rows.push(sectionRow(nextSectionNumber++, "Gói dịch vụ"), ...productRows);
+  }
   if (promotions.length > 0) {
     rows.push(sectionRow(nextSectionNumber++, "Khuyến mãi"), ...adjustmentRows(promotions, true));
   }
-  if (surcharges.length > 0) {
-    rows.push(sectionRow(nextSectionNumber++, "Phụ thu"), ...adjustmentRows(surcharges, false));
+  if (surchargeItemRows.length > 0 || surcharges.length > 0) {
+    rows.push(
+      sectionRow(nextSectionNumber++, "Phụ thu"),
+      ...surchargeItemRows,
+      ...adjustmentRows(surcharges, false),
+    );
   }
   rows.push(`<tr style="background:#dce8f6;font-weight:bold;">
     <td style="${cell("center")}">${nextSectionNumber}</td>

@@ -240,6 +240,44 @@ describe("VAT-enabled invoice item table", () => {
     expect(html).toContain(">10</td>");
     expect(html).toContain(">50.000</td>");
   });
+
+  it("numbers receipt sections only and groups surcharge products under Phụ thu", () => {
+    const html = renderTemplate("{{items_vat}}", {
+      id: "section-number-receipt",
+      type: "Thu",
+      grandTotal: "1049990",
+      paidAmount: "1049990",
+      createdAt: "2026-11-17T00:00:00.000Z",
+      items: [
+        {
+          name: "Test A - Khóa",
+          packageType: "khoá",
+          category: "Học phí",
+          unitPrice: 1000000,
+          quantity: 5,
+          promotionAmount: 10,
+          vatRate: 0,
+          vatAmount: 0,
+        },
+        {
+          name: "Giấy thi",
+          category: "Phụ thu",
+          unitPrice: 50000,
+          quantity: 1,
+          vatRate: 0,
+          vatAmount: 0,
+        },
+      ],
+    });
+
+    const sectionNumbers = [...html.matchAll(
+      /<tr style="background:#dce8f6;font-weight:bold;">\s*<td[^>]*>(\d+)<\/td>/g,
+    )].map((match) => match[1]);
+    expect(sectionNumbers).toEqual(["1", "2", "3", "4"]);
+    expect(html.indexOf(">Giấy thi</td>")).toBeGreaterThan(html.indexOf(">Phụ thu</td>"));
+    expect(html).toMatch(/<tr>\s*<td style="[^"]*"><\/td>\s*<td style="[^"]*">Test A - Khóa/);
+    expect(html).toMatch(/<tr>\s*<td style="[^"]*"><\/td>\s*<td style="[^"]*">Giấy thi/);
+  });
 });
 
 describe("{{lich_su_thanh_toan}}", () => {

@@ -616,21 +616,31 @@ export function renderItemsVat(items: typeof SAMPLE_DATA.items, total: number): 
       <td style="${cell("center")}">${number}</td><td colspan="6" style="${cell("center")}">${label}</td>
     </tr>`;
   const productRows: string[] = [];
+  const surchargeItemRows: string[] = [];
   const promotions: Array<{ name: string; amount: number }> = [];
   const surcharges: Array<{ name: string; amount: number }> = [];
 
   items.forEach((item, i) => {
     const base = item.price * item.quantity;
     const vatAmount = item.vatAmount ?? 0;
-    productRows.push(`<tr>
-      <td style="${cell("center")}">${i + 1}</td>
+    const productRow = `<tr>
+      <td style="${cell("center")}"></td>
       <td style="${cell("left")}"><b>${item.name}</b></td>
       <td style="${cell("right")}">${fmtMoney(item.price)}</td>
       <td style="${cell("center")}">${item.quantity}</td>
       <td style="${cell("right")}">${fmtMoney(base)}</td>
       <td style="${cell("center")}">${item.vatRate ?? 0}</td>
       <td style="${cell("right")}"><b>${fmtMoney(base + vatAmount)}</b></td>
-    </tr>`);
+    </tr>`;
+    const categoryKey = String((item as any).category ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+    if (categoryKey.includes("phu thu") || categoryKey.includes("surcharge")) {
+      surchargeItemRows.push(productRow);
+    } else {
+      productRows.push(productRow);
+    }
     promotions.push(...(item.promotions ?? (
       item.discount > 0 ? [{ name: "Khuyến mãi", amount: item.discount }] : []
     )));
@@ -646,13 +656,20 @@ export function renderItemsVat(items: typeof SAMPLE_DATA.items, total: number): 
       <td style="${cell("right")}">${fmtMoney(amount)}</td><td style="${cell("center")}">0</td>
       <td style="${cell("right")}"><b>${negative ? "-" : ""}${fmtMoney(amount)}</b></td>
     </tr>`);
-  const rows = [sectionRow(1, "Gói dịch vụ"), ...productRows];
-  let nextSectionNumber = 2;
+  const rows: string[] = [];
+  let nextSectionNumber = 1;
+  if (productRows.length > 0) {
+    rows.push(sectionRow(nextSectionNumber++, "Gói dịch vụ"), ...productRows);
+  }
   if (promotions.length > 0) {
     rows.push(sectionRow(nextSectionNumber++, "Khuyến mãi"), ...adjustmentRows(promotions, true));
   }
-  if (surcharges.length > 0) {
-    rows.push(sectionRow(nextSectionNumber++, "Phụ thu"), ...adjustmentRows(surcharges));
+  if (surchargeItemRows.length > 0 || surcharges.length > 0) {
+    rows.push(
+      sectionRow(nextSectionNumber++, "Phụ thu"),
+      ...surchargeItemRows,
+      ...adjustmentRows(surcharges),
+    );
   }
   rows.push(`<tr style="background:#dce8f6;font-weight:bold;">
     <td style="${cell("center")}">${nextSectionNumber}</td>
