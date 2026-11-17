@@ -385,7 +385,7 @@ function renderVatReceiptItemsHtml(
   }
   rows.push(`<tr style="background:#dce8f6;font-weight:bold;">
     <td style="${cell("center")}">${nextSectionNumber}</td>
-    <td colspan="5" style="${cell("left")}">Thành tiền</td>
+    <td colspan="5" style="${cell("left")}">Tổng tiền</td>
     <td style="${cell("right")}">${fmtMoney(Number(invoice.grandTotal) || 0)}</td>
   </tr>`);
 
@@ -749,6 +749,8 @@ export function renderTemplate(
     con_lai_hd_goc: conLaiHdGoc,
     // Bằng chữ (số tiền đã thanh toán)
     thanh_chu: numberToVietnameseWords(paid),
+    // Tổng tiền trên hàng cuối của bảng, không phụ thuộc số đã thu.
+    thanh_chu_tong_tien: numberToVietnameseWords(Number(invoice.grandTotal) || 0),
     // Cơ sở
     ten_co_so: invoice.locationName ?? "",
     dia_chi_co_so: invoice.locationAddress ?? "",
@@ -762,11 +764,12 @@ export function renderTemplate(
 
   output = output.replace(/\{\{items\}\}/g, renderItemsHtml(items as any, invoice, promotionOptions, surchargeOptions));
   if (isVatReceipt) {
-    // Older saved versions of this preset put the total in a separate table.
-    // Move that line into the dynamic table and leave the amount in words below.
+    // Older saved versions of this preset put a duplicate total in a table
+    // immediately after the dynamic items table. Keep only the amount-in-words
+    // line there; the dynamic table already contains the total row.
     output = output.replace(
-      /(\{\{items_vat\}\}\s*)<table\b[^>]*>\s*<tr>\s*<td\b[^>]*>\s*Thành tiền\s*<\/td>[\s\S]*?Bằng chữ:[\s\S]*?<\/table>/i,
-      '$1<div style="border:1px solid #244d80;padding:5px 8px;font-style:italic;">Bằng chữ: {{thanh_chu}}</div>',
+      /(\{\{items_vat\}\}\s*)<table\b[^>]*>[\s\S]*?<\/table>/i,
+      '$1<div style="font-style:italic;">Tổng tiền bằng chữ: {{thanh_chu_tong_tien}}</div>',
     );
     output = output.replace(
       /font-family:\s*Georgia\s*,\s*'Times New Roman'\s*,\s*serif/gi,

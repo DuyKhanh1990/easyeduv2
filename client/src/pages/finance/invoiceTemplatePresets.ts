@@ -158,7 +158,7 @@ const SINGLE_RECEIPT_HTML = `<div style="font-family:'Times New Roman', Times, s
   <div style="text-align:center;font-size:20px;font-weight:bold;background:#dce8f6;border:1px solid #244d80;border-bottom:0;padding:5px;">THÔNG TIN THANH TOÁN</div>
   {{items_vat}}
 
-  <div style="font-size:17px;font-style:italic;margin:6px 0 12px;">Số tiền bằng chữ: {{thanh_chu}}</div>
+  <div style="font-size:17px;font-style:italic;margin:6px 0 12px;">Tổng tiền bằng chữ: {{thanh_chu_tong_tien}}</div>
   <div style="font-size:17px;margin:6px 0;">Hình thức thanh toán: {{phuong_thuc}}</div>
   <div style="text-align:right;font-size:17px;font-style:italic;margin:10px 0;">Ngày {{ngay_in_phieu}}</div>
 

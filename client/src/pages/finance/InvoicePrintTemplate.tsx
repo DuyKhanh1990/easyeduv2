@@ -260,8 +260,9 @@ const SAMPLE_DATA = {
   tong_hd_goc: 5000000,
   da_thu_hd_goc: 2000000,
   con_lai_hd_goc: 3000000,
-  // Bằng chữ (số tiền đã thanh toán)
-  thanh_chu: numberToVietnameseWords(14650000),
+  // Bằng chữ: thanh_chu là đã thanh toán; thanh_chu_tong_tien khớp hàng tổng tiền.
+  thanh_chu: numberToVietnameseWords(2000000),
+  thanh_chu_tong_tien: numberToVietnameseWords(14650000),
   // Cơ sở
   ten_co_so: "Cơ sở Trung tâm",
   dia_chi_co_so: "123 Đường Giải Phóng, Quận Hai Bà Trưng, Hà Nội",
@@ -338,6 +339,7 @@ const VARIABLES: VariableDef[] = [
 
   // ── Bằng chữ ──
   { group: "Thanh toán", label: "Thành chữ (tiền đã TT)", key: "thanh_chu", description: "{{thanh_chu}}" },
+  { group: "Thanh toán", label: "Thành chữ tổng tiền", key: "thanh_chu_tong_tien", description: "{{thanh_chu_tong_tien}}" },
 
   // ── Bảng động ──
   { group: "Bảng dữ liệu", label: "Bảng sản phẩm", key: "items", description: "{{items}}" },
@@ -392,7 +394,7 @@ const VARIABLE_SECTIONS = [
     keys: [
       "km_theo_sp", "pt_theo_sp", "km_toan_don", "pt_toan_don",
       "phuong_thuc", "nguoi_tao",
-      "nguoi_thanh_toan", "nguoi_thu_tien", "thanh_chu", "items", "items_vat",
+      "nguoi_thanh_toan", "nguoi_thu_tien", "thanh_chu", "thanh_chu_tong_tien", "items", "items_vat",
     ],
   },
 ] as const;
@@ -439,6 +441,7 @@ const VARIABLE_HELP: Record<string, { meaning: string; example: string }> = {
   phu_thu_dot_con: { meaning: "Phụ thu áp dụng riêng cho đợt con đang in.", example: "50.000 đ" },
   tong_sau_kmpt_dot_con: { meaning: "Tổng tiền phải trả của đợt con sau khuyến mãi và phụ thu; đợt con không có khấu trừ riêng.", example: "1.150.000 đ" },
   thanh_chu: { meaning: "Số tiền đã thanh toán của phiếu đang in được viết bằng chữ.", example: "Một triệu đồng" },
+  thanh_chu_tong_tien: { meaning: "Tổng tiền của phiếu đang in, khớp với hàng Tổng tiền trong bảng, được viết bằng chữ.", example: "Mười bốn triệu sáu trăm năm mươi nghìn đồng" },
   items: { meaning: "Chèn bảng động liệt kê sản phẩm, số lượng, khuyến mãi, phụ thu và thành tiền.", example: "Bảng các gói học phí trên hóa đơn" },
   items_vat: { meaning: "Chèn bảng dịch vụ có thêm cột thuế VAT, dùng cho mẫu phiếu thu.", example: "Tên dịch vụ, số lượng, đơn giá, VAT và thành tiền" },
   lich_su_thanh_toan: { meaning: "Chèn bảng tất cả đợt đã thanh toán và chưa thanh toán của hóa đơn.", example: "Đợt 1 đã thanh toán; Đợt 3 chưa thanh toán" },
@@ -652,7 +655,7 @@ export function renderItemsVat(items: typeof SAMPLE_DATA.items, total: number): 
   }
   rows.push(`<tr style="background:#dce8f6;font-weight:bold;">
     <td style="${cell("center")}">${nextSectionNumber}</td>
-    <td colspan="5" style="${cell("left")}">Thành tiền</td>
+    <td colspan="5" style="${cell("left")}">Tổng tiền</td>
     <td style="${cell("right")}">${fmtMoney(total)}</td>
   </tr>`);
 
@@ -711,8 +714,8 @@ function renderTemplate(html: string, data: typeof SAMPLE_DATA, logoUrl?: string
   output = output.replace(/\{\{items\}\}/g, renderItems(data.items));
   if (isVatReceipt) {
     output = output.replace(
-      /(\{\{items_vat\}\}\s*)<table\b[^>]*>\s*<tr>\s*<td\b[^>]*>\s*Thành tiền\s*<\/td>[\s\S]*?Bằng chữ:[\s\S]*?<\/table>/i,
-      '$1<div style="border:1px solid #244d80;padding:5px 8px;font-style:italic;">Số tiền bằng chữ: {{thanh_chu}}</div>',
+      /(\{\{items_vat\}\}\s*)<table\b[^>]*>[\s\S]*?<\/table>/i,
+      '$1<div style="font-style:italic;">Tổng tiền bằng chữ: {{thanh_chu_tong_tien}}</div>',
     );
     output = output.replace(
       /font-family:\s*Georgia\s*,\s*['"]Times New Roman['"]\s*,\s*serif/gi,

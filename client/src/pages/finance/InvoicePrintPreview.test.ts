@@ -136,6 +136,7 @@ describe("VAT-enabled invoice item table", () => {
     expect(preset?.html).toContain("{{items_vat}}");
     expect(preset?.html).toContain("{{invoice_code}}");
     expect(preset?.html).toContain("{{phuong_thuc}}");
+    expect(preset?.html).toContain("{{thanh_chu_tong_tien}}");
   });
 
   it("shows sample line items in the designer preview", () => {
@@ -171,7 +172,7 @@ describe("VAT-enabled invoice item table", () => {
         id: "receipt",
         type: "Thu",
         grandTotal: "226",
-        paidAmount: "226",
+        paidAmount: "30",
         createdAt: "2026-11-17T00:00:00.000Z",
         items: [{
           name: "Gói học",
@@ -190,7 +191,11 @@ describe("VAT-enabled invoice item table", () => {
     expect(html).toContain("Phụ thu");
     expect(html).toContain(">4</td>");
     expect(html).toContain(">226</td>");
-    expect(html.match(/Thành tiền/g)).toHaveLength(2);
+    expect(html).toContain(">Tổng tiền</td>");
+    expect(html.match(/>Tổng tiền<\/td>/g)).toHaveLength(1);
+    expect(html.match(/Thành tiền/g)).toHaveLength(1);
+    expect(html).toContain("Tổng tiền bằng chữ: Hai trăm hai mươi sáu đồng");
+    expect(html).not.toContain("Ba mươi đồng");
     expect(html).toContain("font-family:'Times New Roman', Times, serif");
     expect(html).toContain("Hình thức thanh toán:");
   });
