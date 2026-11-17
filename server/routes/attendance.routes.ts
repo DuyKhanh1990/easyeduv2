@@ -624,6 +624,7 @@ export function registerAttendanceRoutes(app: Express): void {
           : sql`FALSE`);
       }
       const freeRecords = await db.select({
+        studentClassId: studentClasses.id,
         studentId: students.id,
         studentCode: students.code,
         studentName: students.fullName,
@@ -632,14 +633,87 @@ export function registerAttendanceRoutes(app: Express): void {
         startDate: studentClasses.startDate,
         endDate: studentClasses.endDate,
         status: freeClassRegistrations.status,
+        registrationDate: freeClassRegistrations.registrationDate,
       })
         .from(freeClassRegistrations)
         .innerJoin(classes, eq(freeClassRegistrations.classId, classes.id))
         .innerJoin(students, eq(freeClassRegistrations.studentId, students.id))
         .innerJoin(studentClasses, eq(freeClassRegistrations.studentClassId, studentClasses.id))
         .where(and(...freeConditions));
+      const today = getBangkokDateKey();
+      const freeDateKeys = new Set(freeRecords.map((row) => `${row.studentClassId}:${row.registrationDate}`));
+      const selfPracticeMode = or(
+        eq(classes.freeClassMode, "self_practice"),
+        and(isNull(classes.freeClassMode), sql`coalesce(array_length(${classes.teacherIds}, 1), 0) = 0`),
+      );
+      const selfPracticeAccess = canViewAll
+        ? undefined
+        : staffId
+          ? sql`(
+              ${managerCondition}
+              OR EXISTS (
+                SELECT 1 FROM free_class_day_assignments fcda
+                WHERE fcda.class_id = ${classes.id}
+                  AND fcda.assignment_date = ${today}::date
+                  AND fcda.teacher_id = ${staffId}::uuid
+              )
+              OR (
+                NOT EXISTS (
+                  SELECT 1 FROM free_class_day_assignments fcda
+                  WHERE fcda.class_id = ${classes.id}
+                    AND fcda.assignment_date = ${today}::date
+                    AND fcda.teacher_id IS NOT NULL
+                )
+                AND ${staffId}::uuid = ANY(COALESCE(${classes.teacherIds}, ARRAY[]::uuid[]))
+              )
+            )`
+          : sql`FALSE`;
+      const selfPracticeRecords = dateFrom <= today && today <= dateTo
+        ? await db.select({
+            studentClassId: studentClasses.id,
+            studentId: students.id,
+            studentCode: students.code,
+            studentName: students.fullName,
+            classId: classes.id,
+            className: classes.classCode,
+            startDate: studentClasses.startDate,
+            endDate: studentClasses.endDate,
+            status: freeClassRegistrations.status,
+            registrationDate: sql<string>`${today}::date`,
+          })
+          .from(studentClasses)
+          .innerJoin(classes, eq(studentClasses.classId, classes.id))
+          .innerJoin(students, eq(studentClasses.studentId, students.id))
+          .leftJoin(freeClassRegistrations, and(
+            eq(freeClassRegistrations.studentClassId, studentClasses.id),
+            eq(freeClassRegistrations.registrationDate, today),
+          ))
+          .where(and(
+            eq(classes.classType, "free"),
+            selfPracticeMode,
+            inArray(studentClasses.status, ["active", "waiting"]),
+            or(isNull(classes.startDate), lte(classes.startDate, today)),
+            or(isNull(classes.endDate), gte(classes.endDate, today)),
+            or(isNull(studentClasses.startDate), lte(studentClasses.startDate, today)),
+            or(isNull(studentClasses.endDate), gte(studentClasses.endDate, today)),
+            ...(classIds.length ? [inArray(classes.id, classIds)] : []),
+            ...(studentIds.length ? [inArray(students.id, studentIds)] : []),
+            ...(locationIds.length ? [inArray(classes.locationId, locationIds)] : []),
+            ...(search ? [or(
+              sql`${students.fullName} ILIKE ${`%${search}%`}`,
+              sql`${students.code} ILIKE ${`%${search}%`}`,
+              sql`${classes.classCode} ILIKE ${`%${search}%`}`,
+              sql`${classes.name} ILIKE ${`%${search}%`}`,
+            )] : []),
+            ...(selfPracticeAccess ? [selfPracticeAccess] : []),
+          ))
+        : [];
+      const freeRecordsForSummary = [
+        ...freeRecords,
+        ...selfPracticeRecords.filter((row) => !freeDateKeys.has(`${row.studentClassId}:${today}`)),
+      ];
       const freeGroups = new Map<string, any>();
-      for (const record of freeRecords) {
+      for (const record of freeRecordsForSummary) {
         const key = `${record.studentId}:${record.classId}`;
         let group = freeGroups.get(key);
         if (!group) {
