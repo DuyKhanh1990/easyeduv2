@@ -577,14 +577,25 @@ export function registerAttendanceRoutes(app: Express): void {
         classes: sql<number>`count(DISTINCT ${grouped.classId})::int`,
         sessions: sql<number>`coalesce(sum(${grouped.totalSessions}), 0)::int`,
       }).from(grouped);
-      const rows = await db.select().from(grouped)
-        .orderBy(grouped.studentCode, grouped.className)
+      const pagedStudents = await db.select({
+        studentId: grouped.studentId,
+        studentCode: grouped.studentCode,
+      }).from(grouped)
+        .groupBy(grouped.studentId, grouped.studentCode)
+        .orderBy(grouped.studentCode)
         .limit(pageSize)
         .offset((page - 1) * pageSize);
+      const pageStudentIds = Array.from(new Set(pagedStudents.map((row) => row.studentId)));
+      const rows = pageStudentIds.length
+        ? await db.select().from(grouped)
+          .where(inArray(grouped.studentId, pageStudentIds))
+          .orderBy(grouped.studentCode, grouped.className)
+        : [];
 
       res.json({
         rows,
-        total: Number(totals?.total ?? 0),
+        total: Number(totals?.students ?? 0),
+        totalClassRows: Number(totals?.total ?? 0),
         summary: {
           students: Number(totals?.students ?? 0),
           classes: Number(totals?.classes ?? 0),

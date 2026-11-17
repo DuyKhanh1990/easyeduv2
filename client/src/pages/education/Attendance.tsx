@@ -419,6 +419,23 @@ function AttendanceContent() {
       return response.json();
     },
   });
+  const overviewGroups = useMemo(() => {
+    const groups = new Map<string, { studentId: string; studentCode: string; studentName: string; rows: any[] }>();
+    for (const row of overviewData?.rows ?? []) {
+      let group = groups.get(row.studentId);
+      if (!group) {
+        group = {
+          studentId: row.studentId,
+          studentCode: row.studentCode,
+          studentName: row.studentName,
+          rows: [],
+        };
+        groups.set(row.studentId, group);
+      }
+      group.rows.push(row);
+    }
+    return Array.from(groups.values());
+  }, [overviewData?.rows]);
   const { data: allEvaluationCriteria = [] } = useQuery<any[]>({
     queryKey: ["/api/evaluation-criteria"],
     staleTime: 5 * 60 * 1000,
@@ -1107,21 +1124,29 @@ function AttendanceContent() {
                       </tr>
                     </thead>
                     <tbody>
-                      {overviewData.rows.map((row) => (
-                        <tr key={row.studentClassId} className="border-b last:border-0 hover:bg-muted/30">
-                          <td className="px-3 py-2 font-medium whitespace-nowrap">{row.studentCode} - {row.studentName}</td>
-                          <td className="px-3 py-2 whitespace-nowrap">{row.className}</td>
-                          <td className="px-3 py-2 text-center">{row.totalSessions}</td>
-                          <td className="px-3 py-2 whitespace-nowrap">{row.startDate ?? "—"}</td>
-                          <td className="px-3 py-2 whitespace-nowrap">{row.endDate ?? "—"}</td>
-                          <td className="px-3 py-2 text-center">{row.pending}</td>
-                          <td className="px-3 py-2 text-center">{row.attended}</td>
-                          <td className="px-3 py-2 text-center">{row.makeupWait}</td>
-                          <td className="px-3 py-2 text-center">{row.absent}</td>
-                          <td className="px-3 py-2 text-center">{row.makeupScheduled}</td>
-                          <td className="px-3 py-2 text-center">{row.paused}</td>
-                        </tr>
-                      ))}
+                      {overviewGroups.flatMap((group) => [
+                        <tr key={`student-${group.studentId}`} className="border-y bg-blue-50/70">
+                          <td className="px-3 py-2 font-semibold text-primary whitespace-nowrap">
+                            {group.studentCode} {group.studentName}
+                          </td>
+                          <td colSpan={10} />
+                        </tr>,
+                        ...group.rows.map((row) => (
+                          <tr key={row.studentClassId} className="border-b last:border-0 hover:bg-muted/30">
+                            <td className="px-3 py-2" />
+                            <td className="px-3 py-2 whitespace-nowrap">{row.className}</td>
+                            <td className="px-3 py-2 text-center">{row.totalSessions}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">{row.startDate ?? "—"}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">{row.endDate ?? "—"}</td>
+                            <td className="px-3 py-2 text-center">{row.pending}</td>
+                            <td className="px-3 py-2 text-center">{row.attended}</td>
+                            <td className="px-3 py-2 text-center">{row.makeupWait}</td>
+                            <td className="px-3 py-2 text-center">{row.absent}</td>
+                            <td className="px-3 py-2 text-center">{row.makeupScheduled}</td>
+                            <td className="px-3 py-2 text-center">{row.paused}</td>
+                          </tr>
+                        )),
+                      ])}
                     </tbody>
                   </table>
                 </div>
@@ -1129,7 +1154,7 @@ function AttendanceContent() {
             </div>
             <div className="flex items-center justify-between gap-3 border-t px-4 py-2.5">
               <span className="text-xs text-muted-foreground">
-                {overviewData?.total ? `${(overviewPage - 1) * overviewPageSize + 1}-${Math.min(overviewPage * overviewPageSize, overviewData.total)} / ${overviewData.total}` : "0 dòng"}
+                {overviewData?.total ? `${(overviewPage - 1) * overviewPageSize + 1}-${Math.min(overviewPage * overviewPageSize, overviewData.total)} / ${overviewData.total} học viên` : "0 học viên"}
               </span>
               <div className="flex items-center gap-2">
                 <Select value={String(overviewPageSize)} onValueChange={(value) => { setOverviewPageSize(Number(value)); setOverviewPage(1); }}>
