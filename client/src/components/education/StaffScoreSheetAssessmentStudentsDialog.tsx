@@ -278,7 +278,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
-        if (!nextOpen) setEditingStudent(null);
+        if (!nextOpen) setScoreDialogTarget(null);
         onOpenChange(nextOpen);
       }}
     >
