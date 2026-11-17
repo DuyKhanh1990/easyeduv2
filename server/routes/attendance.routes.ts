@@ -543,14 +543,14 @@ export function registerAttendanceRoutes(app: Express): void {
       }
 
       const groupedQuery = db.select({
-        studentClassId: studentClasses.id,
-        studentId: students.id,
-        studentCode: students.code,
-        studentName: students.fullName,
-        classId: classes.id,
-        className: classes.classCode,
-        startDate: studentClasses.startDate,
-        endDate: studentClasses.endDate,
+        studentClassId: sql<string>`${studentClasses.id}`.as("studentClassId"),
+        studentId: sql<string>`${students.id}`.as("studentId"),
+        studentCode: sql<string>`${students.code}`.as("studentCode"),
+        studentName: sql<string>`${students.fullName}`.as("studentName"),
+        classId: sql<string>`${classes.id}`.as("classId"),
+        className: sql<string>`${classes.classCode}`.as("className"),
+        startDate: sql<string | null>`${studentClasses.startDate}`.as("startDate"),
+        endDate: sql<string | null>`${studentClasses.endDate}`.as("endDate"),
         totalSessions: sql<number>`count(${studentSessions.id})::int`.as("totalSessions"),
         pending: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} = 'pending')::int`.as("pending"),
         attended: sql<number>`count(${studentSessions.id}) FILTER (WHERE ${studentSessions.attendanceStatus} IN ('present', 'makeup_done'))::int`.as("attended"),
