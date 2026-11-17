@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderHistoryHtml, renderTemplate } from "./InvoicePrintPreview";
 import { INVOICE_PRINT_BASE_STYLES } from "./invoice-print-base-styles";
+import { TEMPLATE_PRESETS } from "./invoiceTemplatePresets";
 
 describe("legacy invoice-print financial variables", () => {
   it("uses parent invoice amounts when printing an installment", () => {
@@ -92,6 +93,47 @@ describe("invoice note print variables", () => {
     });
 
     expect(html).toBe("Nội dung đã sửa");
+  });
+});
+
+describe("VAT-enabled invoice item table", () => {
+  it("shows the rate and VAT-inclusive line total without changing the regular items table", () => {
+    const invoice = {
+      id: "single-vat",
+      type: "Thu",
+      grandTotal: "216",
+      paidAmount: "216",
+      createdAt: "2026-11-17T00:00:00.000Z",
+      items: [{
+        name: "Gói học",
+        unitPrice: 100,
+        quantity: 2,
+        vatRate: 8,
+        vatAmount: 16,
+      }],
+    };
+
+    const vatHtml = renderTemplate("{{items_vat}}", invoice);
+    expect(vatHtml).toContain("<th");
+    expect(vatHtml).toContain("VAT");
+    expect(vatHtml).toContain(">8</td>");
+    expect(vatHtml).toContain(">216</b>");
+
+    const regularHtml = renderTemplate("{{items}}", invoice);
+    expect(regularHtml).not.toContain(">VAT</th>");
+  });
+
+  it("provides a single-invoice receipt preset with mapped receipt fields", () => {
+    const preset = TEMPLATE_PRESETS.find((item) => item.key === "single_receipt");
+    expect(preset).toMatchObject({
+      invoiceType: "Thu",
+      pageSize: "A4",
+      scope: "single",
+    });
+    expect(preset?.html).toContain("{{logo}}");
+    expect(preset?.html).toContain("{{customer_name}}");
+    expect(preset?.html).toContain("{{items_vat}}");
+    expect(preset?.html).toContain("{{total}}");
   });
 });
 

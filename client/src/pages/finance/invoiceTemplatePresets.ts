@@ -17,6 +17,7 @@ export type TemplatePreset = {
   label: string;
   invoiceType: "Thu" | "Chi" | "ThuGop" | "ChiGop";
   pageSize: "A4" | "A5" | "K80";
+  scope?: "general" | "single" | "multi";
   html: string;
 };
 
@@ -116,6 +117,50 @@ const TUITION_RECEIPT_HTML = `<div style="font-family: Arial, sans-serif; font-s
     </tr>
   </table>
 
+</div>`;
+
+const SINGLE_RECEIPT_HTML = `<div style="font-family: Georgia, 'Times New Roman', serif; font-size: 14px; color:#244d80; line-height:1.3;">
+  <table style="width:100%;border-collapse:collapse;border:1px solid #222;margin-bottom:30px;">
+    <tr>
+      <td style="width:26%;height:112px;border:1px solid #222;vertical-align:top;padding:6px;">{{logo}}</td>
+      <td style="text-align:center;vertical-align:middle;padding:8px;">
+        <div style="font-size:19px;font-weight:bold;">{{ten_co_so}}</div>
+        <div style="font-size:18px;font-weight:bold;">TRUNG TÂM NGOẠI NGỮ</div>
+        <div>Địa chỉ: {{dia_chi_co_so}}</div>
+        <div>Điện thoại: {{sdt_co_so}}</div>
+      </td>
+    </tr>
+  </table>
+
+  <div style="text-align:center;margin-bottom:20px;">
+    <div style="font-size:26px;font-weight:bold;">PHIẾU THU</div>
+    <div><b>Ngày thu: {{ngay_thanh_toan}}</b></div>
+  </div>
+
+  <table style="width:100%;border-collapse:collapse;margin-bottom:18px;font-weight:bold;">
+    <tr>
+      <td style="border:1px solid #222;padding:3px 8px;width:50%;">Học viên: {{customer_name}}</td>
+      <td style="border:1px solid #222;padding:3px 8px;">Lớp: {{lop}}</td>
+    </tr>
+    <tr>
+      <td style="border:1px solid #222;padding:3px 8px;">Số điện thoại: {{phone}}</td>
+      <td style="border:1px solid #222;padding:3px 8px;">Địa chỉ: {{address}}</td>
+    </tr>
+    <tr><td colspan="2" style="border:1px solid #222;padding:3px 8px;">Nội dung: {{ghi_chu}}</td></tr>
+  </table>
+
+  <div style="text-align:center;font-size:17px;font-weight:bold;margin:16px 0;">THÔNG TIN THANH TOÁN</div>
+  {{items_vat}}
+
+  <table style="width:100%;border-collapse:collapse;margin-top:0;font-weight:bold;">
+    <tr>
+      <td style="border:1px solid #222;padding:5px 8px;">Thành tiền</td>
+      <td style="border:1px solid #222;padding:5px 8px;text-align:center;width:20%;">{{total}}</td>
+    </tr>
+    <tr>
+      <td colspan="2" style="border:1px solid #222;padding:5px 8px;font-style:italic;">Bằng chữ: {{thanh_chu}}</td>
+    </tr>
+  </table>
 </div>`;
 
 const BULK_COLLECT_HTML = `<div style="font-family: Arial, sans-serif; font-size: 11px; color:#111; line-height:1.5;">
@@ -222,6 +267,14 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
     invoiceType: "Thu",
     pageSize: "A5",
     html: TUITION_RECEIPT_HTML,
+  },
+  {
+    key: "single_receipt",
+    label: "Phiếu thu một đợt (theo mẫu)",
+    invoiceType: "Thu",
+    pageSize: "A4",
+    scope: "single",
+    html: SINGLE_RECEIPT_HTML,
   },
   {
     key: "bulk_collect_thu",

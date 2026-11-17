@@ -380,7 +380,7 @@ const VARIABLE_SECTIONS = [
     keys: [
       "km_theo_sp", "pt_theo_sp", "km_toan_don", "pt_toan_don",
       "phuong_thuc", "nguoi_tao",
-      "nguoi_thanh_toan", "nguoi_thu_tien", "thanh_chu", "items",
+      "nguoi_thanh_toan", "nguoi_thu_tien", "thanh_chu", "items", "items_vat",
     ],
   },
 ] as const;
@@ -428,6 +428,7 @@ const VARIABLE_HELP: Record<string, { meaning: string; example: string }> = {
   tong_sau_kmpt_dot_con: { meaning: "Tổng tiền phải trả của đợt con sau khuyến mãi và phụ thu; đợt con không có khấu trừ riêng.", example: "1.150.000 đ" },
   thanh_chu: { meaning: "Số tiền đã thanh toán của phiếu đang in được viết bằng chữ.", example: "Một triệu đồng" },
   items: { meaning: "Chèn bảng động liệt kê sản phẩm, số lượng, khuyến mãi, phụ thu và thành tiền.", example: "Bảng các gói học phí trên hóa đơn" },
+  items_vat: { meaning: "Chèn bảng dịch vụ có thêm cột thuế VAT, dùng cho mẫu phiếu thu.", example: "Tên dịch vụ, số lượng, đơn giá, VAT và thành tiền" },
   lich_su_thanh_toan: { meaning: "Chèn bảng tất cả đợt đã thanh toán và chưa thanh toán của hóa đơn.", example: "Đợt 1 đã thanh toán; Đợt 3 chưa thanh toán" },
   logo: { meaning: "Logo của cơ sở chính.", example: "Ảnh logo EduManage" },
   ten_co_so: { meaning: "Tên cơ sở phát hành hóa đơn.", example: "Cơ sở Minh Khai" },

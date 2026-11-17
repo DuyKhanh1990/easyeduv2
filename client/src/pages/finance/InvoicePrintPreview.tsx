@@ -34,6 +34,8 @@ interface InvoicePrintData {
     extra?: string | number;
     promotionAmount?: string | number;
     surchargeAmount?: string | number;
+    vatRate?: string | number;
+    vatAmount?: string | number;
     promotionKeys?: string[];
     surchargeKeys?: string[];
   }>;
@@ -297,12 +299,13 @@ function renderItemsHtml(
   invoice: InvoicePrintData,
   promotionOptions: PromoOption[],
   surchargeOptions: PromoOption[],
+  includeVat = false,
 ): string {
   if (!items || items.length === 0) {
     return `<div style="text-align:center;font-style:italic;color:#888;padding:8px;font-size:11px;">Hoá đơn này chưa có sản phẩm / dịch vụ.</div>`;
   }
 
-  const COL_COUNT = 5; // STT, Tên, Đơn giá, Số lượng, Thành tiền
+  const COL_COUNT = includeVat ? 7 : 5; // STT, Tên, Đơn giá, Số lượng, Số tiền, VAT, Thành tiền
   const cell = (align: "left" | "right" | "center" = "left") =>
     `border:1px solid #111;padding:6px;text-align:${align};vertical-align:middle;`;
 
@@ -315,39 +318,71 @@ function renderItemsHtml(
     const qty = Number(item.quantity) || 1;
     const itemKm = Number(item.promotionAmount ?? item.discount) || 0;
     const itemPt = Number(item.surchargeAmount ?? item.extra) || 0;
+    const vatRate = Number(item.vatRate) || 0;
+    const vatAmount = Number(item.vatAmount) || 0;
     const itemBase = price * qty;
     subtotalAfterItemAdj += itemBase - itemKm + itemPt;
 
-    bodyRows.push(`<tr>
-      <td style="${cell("center")}">${i + 1}</td>
-      <td style="${cell("left")}"><b>${name}</b></td>
-      <td style="${cell("right")}">${fmtMoney(price)}</td>
-      <td style="${cell("center")}">${qty}</td>
-      <td style="${cell("right")}"><b>${fmtMoney(itemBase)}</b></td>
-    </tr>`);
+    bodyRows.push(includeVat
+      ? `<tr>
+          <td style="${cell("center")}">${i + 1}</td>
+          <td style="${cell("left")}"><b>${name}</b></td>
+          <td style="${cell("right")}">${fmtMoney(price)}</td>
+          <td style="${cell("center")}">${qty}</td>
+          <td style="${cell("right")}">${fmtMoney(itemBase)}</td>
+          <td style="${cell("center")}">${vatRate}</td>
+          <td style="${cell("right")}"><b>${fmtMoney(itemBase + vatAmount)}</b></td>
+        </tr>`
+      : `<tr>
+          <td style="${cell("center")}">${i + 1}</td>
+          <td style="${cell("left")}"><b>${name}</b></td>
+          <td style="${cell("right")}">${fmtMoney(price)}</td>
+          <td style="${cell("center")}">${qty}</td>
+          <td style="${cell("right")}"><b>${fmtMoney(itemBase)}</b></td>
+        </tr>`);
 
     const kmList = lookupAdjustments(item.promotionKeys, promotionOptions, itemBase, itemKm, "Khuyến mãi");
     kmList.forEach((adj) => {
       if (adj.amount <= 0) return;
-      bodyRows.push(`<tr>
-        <td style="${cell("center")}"></td>
-        <td style="${cell("left")}">${adj.name}</td>
-        <td style="${cell("right")}">${fmtMoney(adj.amount)}</td>
-        <td style="${cell("center")}">1</td>
-        <td style="${cell("right")}"><b>${fmtMoney(adj.amount)}</b></td>
-      </tr>`);
+      bodyRows.push(includeVat
+        ? `<tr>
+            <td style="${cell("center")}"></td>
+            <td style="${cell("left")}">${adj.name}</td>
+            <td style="${cell("right")}">${fmtMoney(adj.amount)}</td>
+            <td style="${cell("center")}">1</td>
+            <td style="${cell("right")}">${fmtMoney(adj.amount)}</td>
+            <td style="${cell("center")}">0</td>
+            <td style="${cell("right")}"><b>-${fmtMoney(adj.amount)}</b></td>
+          </tr>`
+        : `<tr>
+            <td style="${cell("center")}"></td>
+            <td style="${cell("left")}">${adj.name}</td>
+            <td style="${cell("right")}">${fmtMoney(adj.amount)}</td>
+            <td style="${cell("center")}">1</td>
+            <td style="${cell("right")}"><b>${fmtMoney(adj.amount)}</b></td>
+          </tr>`);
     });
 
     const ptList = lookupAdjustments(item.surchargeKeys, surchargeOptions, itemBase, itemPt, "Phụ thu");
     ptList.forEach((adj) => {
       if (adj.amount <= 0) return;
-      bodyRows.push(`<tr>
-        <td style="${cell("center")}"></td>
-        <td style="${cell("left")}">${adj.name}</td>
-        <td style="${cell("right")}">${fmtMoney(adj.amount)}</td>
-        <td style="${cell("center")}">1</td>
-        <td style="${cell("right")}"><b>${fmtMoney(adj.amount)}</b></td>
-      </tr>`);
+      bodyRows.push(includeVat
+        ? `<tr>
+            <td style="${cell("center")}"></td>
+            <td style="${cell("left")}">${adj.name}</td>
+            <td style="${cell("right")}">${fmtMoney(adj.amount)}</td>
+            <td style="${cell("center")}">1</td>
+            <td style="${cell("right")}">${fmtMoney(adj.amount)}</td>
+            <td style="${cell("center")}">0</td>
+            <td style="${cell("right")}"><b>${fmtMoney(adj.amount)}</b></td>
+          </tr>`
+        : `<tr>
+            <td style="${cell("center")}"></td>
+            <td style="${cell("left")}">${adj.name}</td>
+            <td style="${cell("right")}">${fmtMoney(adj.amount)}</td>
+            <td style="${cell("center")}">1</td>
+            <td style="${cell("right")}"><b>${fmtMoney(adj.amount)}</b></td>
+          </tr>`);
     });
   });
 
@@ -400,31 +435,36 @@ function renderItemsHtml(
 
   const footerRows: string[] = [];
 
-  // Divider row "Thông tin thanh toán"
-  footerRows.push(`<tr>
-    <td style="${cell("center")}"></td>
-    <td colspan="${COL_COUNT - 1}" style="${cell("center")}font-style:italic;background:#f9fafb;">Thông tin thanh toán</td>
-  </tr>`);
-
-  // "Số tiền" — chỉ hiển thị khi có KM/PT toàn đơn
-  if (hasInvoiceAdj) {
-    footerRows.push(footerRow("Số tiền", subtotalAfterItemAdj, { bold: true }));
-    invoiceKmList.forEach((adj) => footerRows.push(footerRow(adj.name, adj.amount)));
+  if (includeVat) {
+    invoiceKmList.forEach((adj) => footerRows.push(footerRow(adj.name, -adj.amount)));
     invoicePtList.forEach((adj) => footerRows.push(footerRow(adj.name, adj.amount)));
+  } else {
+    // Divider row "Thông tin thanh toán"
+    footerRows.push(`<tr>
+      <td style="${cell("center")}"></td>
+      <td colspan="${COL_COUNT - 1}" style="${cell("center")}font-style:italic;background:#f9fafb;">Thông tin thanh toán</td>
+    </tr>`);
+
+    // "Số tiền" — chỉ hiển thị khi có KM/PT toàn đơn
+    if (hasInvoiceAdj) {
+      footerRows.push(footerRow("Số tiền", subtotalAfterItemAdj, { bold: true }));
+      invoiceKmList.forEach((adj) => footerRows.push(footerRow(adj.name, adj.amount)));
+      invoicePtList.forEach((adj) => footerRows.push(footerRow(adj.name, adj.amount)));
+    }
+
+    footerRows.push(footerRow("Thành tiền", thanhTien, { bold: true }));
+    footerRows.push(footerRow("Đặt cọc", khauTru));
+    footerRows.push(footerRow("TỔNG TIỀN", tongTien, { bold: true, uppercase: true, color: "#ea580c" }));
+    footerRows.push(footerRow("Đã thanh toán", daThanhToan, { color: "#16a34a" }));
+    footerRows.push(footerRow("Còn thiếu", conThieu, { color: "#dc2626" }));
+
+    // Bằng chữ — đọc số tiền của "Đã thanh toán"
+    sttCounter += 1;
+    footerRows.push(`<tr>
+      <td style="${cell("center")}">${sttCounter}</td>
+      <td colspan="${COL_COUNT - 1}" style="${cell("left")}font-style:italic;">Bằng chữ: ${numberToVietnameseWords(daThanhToan)} ./</td>
+    </tr>`);
   }
-
-  footerRows.push(footerRow("Thành tiền", thanhTien, { bold: true }));
-  footerRows.push(footerRow("Đặt cọc", khauTru));
-  footerRows.push(footerRow("TỔNG TIỀN", tongTien, { bold: true, uppercase: true, color: "#ea580c" }));
-  footerRows.push(footerRow("Đã thanh toán", daThanhToan, { color: "#16a34a" }));
-  footerRows.push(footerRow("Còn thiếu", conThieu, { color: "#dc2626" }));
-
-  // Bằng chữ — đọc số tiền của "Đã thanh toán"
-  sttCounter += 1;
-  footerRows.push(`<tr>
-    <td style="${cell("center")}">${sttCounter}</td>
-    <td colspan="${COL_COUNT - 1}" style="${cell("left")}font-style:italic;">Bằng chữ: ${numberToVietnameseWords(daThanhToan)} ./</td>
-  </tr>`);
 
   return `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:4px;">
     <thead>
@@ -433,6 +473,7 @@ function renderItemsHtml(
         <th style="${cell("center")}">Tên dịch vụ/SP</th>
         <th style="${cell("center")}">Đơn giá</th>
         <th style="${cell("center")}width:80px">Số lượng</th>
+        ${includeVat ? `<th style="${cell("center")}">Số tiền</th><th style="${cell("center")}">VAT</th>` : ""}
         <th style="${cell("center")}">Thành tiền</th>
       </tr>
     </thead>
@@ -610,6 +651,7 @@ export function renderTemplate(
   let output = html;
 
   output = output.replace(/\{\{items\}\}/g, renderItemsHtml(items as any, invoice, promotionOptions, surchargeOptions));
+  output = output.replace(/\{\{items_vat\}\}/g, renderItemsHtml(items as any, invoice, promotionOptions, surchargeOptions, true));
   output = output.replace(/\{\{lich_su_thanh_toan\}\}/g, renderHistoryHtml(schedule));
 
   // Replace {{logo}} with img tag from main branch logo

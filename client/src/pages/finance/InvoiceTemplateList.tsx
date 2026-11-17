@@ -89,6 +89,7 @@ function CreateTemplateDialog({ open, onOpenChange, onCreated }: CreateDialogPro
     if (p && p.key !== "blank") {
       setInvoiceType(p.invoiceType);
       setPageSize(p.pageSize);
+      if (p.scope) setScope(p.scope);
       if (!name.trim()) setName(p.label);
     }
   };
