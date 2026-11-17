@@ -5635,6 +5635,14 @@ export function registerMySpaceRoutes(app: Express): void {
   ) {
     try {
       if (!(req.user as any)) return res.status(401).json({ message: "Unauthorized" });
+      const requiredPermission = shouldExclude ? "delete" : "edit";
+      if (!(await hasScoreConversionPermission(req, requiredPermission))) {
+        return res.status(403).json({
+          message: shouldExclude
+            ? "Bạn không có quyền xóa học viên khỏi bảng điểm."
+            : "Bạn không có quyền khôi phục học viên vào bảng điểm.",
+        });
+      }
 
       const sessionId = z.string().uuid().safeParse(req.params.sessionId);
       const studentId = z.string().uuid().safeParse(req.params.studentId);
@@ -5646,7 +5654,7 @@ export function registerMySpaceRoutes(app: Express): void {
         const access = await getAuthorizedScoreSheetSession(req, sessionId.data, {
           queryable: tx,
           lock: true,
-          permission: "edit",
+          permission: requiredPermission,
         });
         if (!access?.assessment) {
           return { status: 404, message: "Không tìm thấy buổi thi hoặc bạn không có quyền chỉnh sửa" };

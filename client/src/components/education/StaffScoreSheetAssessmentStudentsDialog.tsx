@@ -105,6 +105,7 @@ type StaffScoreSheetAssessmentStudentsDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   canManageScores?: boolean;
+  canDeleteRoster?: boolean;
   canEnterScores?: boolean;
   canEditScores?: boolean;
   canManagePublication?: boolean;
@@ -115,6 +116,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
   open,
   onOpenChange,
   canManageScores = true,
+  canDeleteRoster = false,
   canEnterScores = canManageScores,
   canEditScores = canManageScores,
   canManagePublication = false,
@@ -147,6 +149,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
   const scoreSheetTemplateName = assessment?.templateName ?? "Bảng điểm chưa đặt tên";
   const showIndividualPublication = Boolean(canManagePublication && assessment?.hasConversion);
   const canManageRoster = canManageScores && !assessment?.isManual;
+  const canDeleteRosterStudent = canDeleteRoster && !assessment?.isManual;
   const [scoreDialogTarget, setScoreDialogTarget] = useState<{
     student: AssessmentRosterStudent;
     mode: "view" | "edit";
@@ -509,7 +512,7 @@ export function StaffScoreSheetAssessmentStudentsDialog({
                                   <Settings2 className="h-4 w-4" />
                                 </Button>
                               )}
-                              {canManageRoster && (
+                              {canDeleteRosterStudent && (
                                 <Button
                                   variant="ghost"
                                   size="icon"

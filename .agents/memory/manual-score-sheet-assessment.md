@@ -20,3 +20,9 @@ description: Keep manually assembled student rosters on the existing score-conve
 **Why:** The user confirmed this visibility rule so manually created boards linked to a teaching session remain accessible to the creator or assigned teacher without exposing unrelated boards.
 
 **How to apply:** Apply the same visibility scope to list, student, and score-entry APIs. Keep create/edit/delete rights separate from visibility; preserve the existing deletion business rules.
+
+**Rule:** Removing a student from a score-assessment roster is a Delete action, not an Edit or Add action; hide its trash icon and reject its API request without Delete permission.
+
+**Why:** The user clarified that Add permission must not expose delete controls inside the student dialog.
+
+**How to apply:** Gate roster-removal controls and server mutations with the dedicated Delete permission; keep roster restoration separate.

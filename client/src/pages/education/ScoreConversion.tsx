@@ -2318,6 +2318,7 @@ export default function ScoreConversion() {
         assessment={selectedAssessment}
         open={!!selectedAssessment}
         canManageScores={canEdit}
+        canDeleteRoster={canDelete}
         canEnterScores={
           canCreate
           && selectedAssessment !== null
