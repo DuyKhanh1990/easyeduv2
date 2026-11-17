@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useStaff } from "@/hooks/use-staff";
 import { fmtDate as formatInvoiceDate, isInvoicePaidLike } from "@/types/invoice-types";
 import { INVOICE_PRINT_BASE_STYLES } from "./invoice-print-base-styles";
+import { prepareReceiptTemplateForEditing } from "./invoiceReceiptTemplateUtils";
 
 interface InvoicePrintData {
   id: string;
@@ -762,7 +763,7 @@ export function renderTemplate(
     ...resolveInvoiceBankVars(invoice),
   };
 
-  let output = html;
+  let output = prepareReceiptTemplateForEditing(html);
   const isVatReceipt = output.includes("{{items_vat}}");
 
   output = output.replace(/\{\{items\}\}/g, renderItemsHtml(items as any, invoice, promotionOptions, surchargeOptions));
@@ -778,17 +779,6 @@ export function renderTemplate(
       /font-family:\s*Georgia\s*,\s*'Times New Roman'\s*,\s*serif/gi,
       "font-family:'Times New Roman', Times, serif",
     );
-    if (!output.includes("{{phuong_thuc}}")) {
-      output = output.replace(
-        /<\/div>\s*$/,
-        `<div style="font-family:'Times New Roman',Times,serif;font-size:17px;margin:6px 0;">Hình thức thanh toán: {{phuong_thuc}}</div>
-        <div style="text-align:right;font-size:17px;font-style:italic;margin:10px 0;">Ngày {{ngay_in_phieu}}</div>
-        <table style="width:100%;border-collapse:collapse;text-align:center;font-size:18px;font-weight:bold;margin-top:24px;">
-          <tr><td style="width:25%;">Giám đốc</td><td style="width:25%;">Kế toán trưởng</td><td style="width:25%;">Người lập phiếu</td><td style="width:25%;">Người nộp tiền</td></tr>
-          <tr><td style="height:66px;font-size:15px;font-style:italic;">(ký, họ tên, đóng dấu)</td><td style="font-size:15px;font-style:italic;">(ký, họ tên)</td><td style="font-size:15px;font-style:italic;">{{nguoi_tao}}</td><td style="font-size:15px;font-style:italic;">(ký, họ tên)</td></tr>
-        </table></div>`,
-      );
-    }
   }
   output = output.replace(/\{\{items_vat\}\}/g, renderVatReceiptItemsHtml(items as any, invoice, promotionOptions, surchargeOptions));
   output = output.replace(/\{\{lich_su_thanh_toan\}\}/g, renderHistoryHtml(schedule));

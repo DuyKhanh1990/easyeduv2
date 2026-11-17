@@ -3,6 +3,7 @@ import { renderHistoryHtml, renderTemplate } from "./InvoicePrintPreview";
 import { INVOICE_PRINT_BASE_STYLES } from "./invoice-print-base-styles";
 import { TEMPLATE_PRESETS } from "./invoiceTemplatePresets";
 import { renderItemsVat } from "./InvoicePrintTemplate";
+import { prepareReceiptTemplateForEditing } from "./invoiceReceiptTemplateUtils";
 
 describe("legacy invoice-print financial variables", () => {
   it("uses parent invoice amounts when printing an installment", () => {
@@ -137,6 +138,20 @@ describe("VAT-enabled invoice item table", () => {
     expect(preset?.html).toContain("{{invoice_code}}");
     expect(preset?.html).toContain("{{phuong_thuc}}");
     expect(preset?.html).toContain("{{thanh_chu_tong_tien}}");
+  });
+
+  it("puts the legacy receipt footer in editable HTML at matching font sizes", () => {
+    const editable = prepareReceiptTemplateForEditing(`<div style="font-family:'Times New Roman',serif">{{items_vat}}</div>`);
+
+    expect(editable).toContain('data-receipt-footer-editable="v1"');
+    expect(editable).toContain("{{phuong_thuc}}");
+    expect(editable).toContain("{{ngay_in_phieu}}");
+    expect(editable).toContain("Giám đốc");
+    expect(editable).toContain("font-size:12px");
+    expect(editable).not.toContain("font-size:18px");
+
+    const userRemovedSignature = editable.replace("Giám đốc", "");
+    expect(prepareReceiptTemplateForEditing(userRemovedSignature)).not.toContain("Giám đốc");
   });
 
   it("shows sample line items in the designer preview", () => {

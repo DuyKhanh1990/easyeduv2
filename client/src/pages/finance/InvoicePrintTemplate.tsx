@@ -24,6 +24,7 @@ import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { InvoicePrintTemplateRow } from "@shared/schema";
 import { fmtDate as formatInvoiceDate } from "@/types/invoice-types";
+import { prepareReceiptTemplateForEditing } from "./invoiceReceiptTemplateUtils";
 
 /* ─────────────────── TYPES ─────────────────── */
 type PageSize = "A4" | "A5" | "K80";
@@ -707,7 +708,7 @@ function renderTemplate(html: string, data: typeof SAMPLE_DATA, logoUrl?: string
   const { items: _items, ...rest } = data;
   const numericData: Record<string, number | string> = rest as Record<string, number | string>;
 
-  let output = html;
+  let output = prepareReceiptTemplateForEditing(html);
   const isVatReceipt = output.includes("{{items_vat}}");
 
   // Step 1: Replace dynamic tables with their sample-data previews.
@@ -721,17 +722,6 @@ function renderTemplate(html: string, data: typeof SAMPLE_DATA, logoUrl?: string
       /font-family:\s*Georgia\s*,\s*['"]Times New Roman['"]\s*,\s*serif/gi,
       "font-family:'Times New Roman', Times, serif",
     );
-    if (!output.includes("{{phuong_thuc}}")) {
-      output = output.replace(
-        /<\/div>\s*$/,
-        `<div style="font-family:'Times New Roman',Times,serif;font-size:17px;margin:6px 0;">Hình thức thanh toán: {{phuong_thuc}}</div>
-        <div style="text-align:right;font-size:17px;font-style:italic;margin:10px 0;">Ngày {{ngay_in_phieu}}</div>
-        <table style="width:100%;border-collapse:collapse;text-align:center;font-size:18px;font-weight:bold;margin-top:24px;">
-          <tr><td style="width:25%;">Giám đốc</td><td style="width:25%;">Kế toán trưởng</td><td style="width:25%;">Người lập phiếu</td><td style="width:25%;">Người nộp tiền</td></tr>
-          <tr><td style="height:66px;font-size:15px;font-style:italic;">(ký, họ tên, đóng dấu)</td><td style="font-size:15px;font-style:italic;">(ký, họ tên)</td><td style="font-size:15px;font-style:italic;">{{nguoi_tao}}</td><td style="font-size:15px;font-style:italic;">(ký, họ tên)</td></tr>
-        </table></div>`,
-      );
-    }
   }
   output = output.replace(/\{\{items_vat\}\}/g, renderItemsVat(data.items, data.total));
   output = output.replace(/\{\{lich_su_thanh_toan\}\}/g, renderHistory(SAMPLE_HISTORY));
@@ -1020,7 +1010,9 @@ export function InvoicePrintTemplate({
 
   useEffect(() => {
     if (editorRef.current) {
-      editorRef.current.innerHTML = template.html || DEFAULT_TEMPLATE;
+      const editableHtml = prepareReceiptTemplateForEditing(template.html || DEFAULT_TEMPLATE);
+      savedEditorHtml.current = editableHtml;
+      editorRef.current.innerHTML = editableHtml;
       refreshPreview();
     }
   }, [template.id, refreshPreview]);
@@ -1651,7 +1643,7 @@ export function InvoicePrintTemplate({
 
   useLayoutEffect(() => {
     if (!isPreview && editorRef.current) {
-      const html = savedEditorHtml.current || template.html || DEFAULT_TEMPLATE;
+      const html = savedEditorHtml.current || prepareReceiptTemplateForEditing(template.html || DEFAULT_TEMPLATE);
       if (html) {
         editorRef.current.innerHTML = html;
         refreshPreview();

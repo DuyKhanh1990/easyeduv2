@@ -158,11 +158,11 @@ const SINGLE_RECEIPT_HTML = `<div style="font-family:'Times New Roman', Times, s
   <div style="text-align:center;font-size:20px;font-weight:bold;background:#dce8f6;border:1px solid #244d80;border-bottom:0;padding:5px;">THÔNG TIN THANH TOÁN</div>
   {{items_vat}}
 
-  <div style="font-size:17px;font-style:italic;margin:6px 0 12px;">Tổng tiền bằng chữ: {{thanh_chu_tong_tien}}</div>
-  <div style="font-size:17px;margin:6px 0;">Hình thức thanh toán: {{phuong_thuc}}</div>
-  <div style="text-align:right;font-size:17px;font-style:italic;margin:10px 0;">Ngày {{ngay_in_phieu}}</div>
+  <div style="font-size:12px;font-style:italic;margin:6px 0 8px;">Tổng tiền bằng chữ: {{thanh_chu_tong_tien}}</div>
+  <div style="font-size:12px;margin:4px 0;">Hình thức thanh toán: {{phuong_thuc}}</div>
+  <div style="text-align:right;font-size:12px;font-style:italic;margin:6px 0;">Ngày {{ngay_in_phieu}}</div>
 
-  <table style="width:100%;border-collapse:collapse;text-align:center;font-size:18px;font-weight:bold;margin-top:24px;">
+  <table style="width:100%;border-collapse:collapse;text-align:center;font-size:12px;font-weight:bold;margin-top:16px;">
     <tr>
       <td style="width:25%;">Giám đốc</td>
       <td style="width:25%;">Kế toán trưởng</td>
@@ -170,10 +170,10 @@ const SINGLE_RECEIPT_HTML = `<div style="font-family:'Times New Roman', Times, s
       <td style="width:25%;">Người nộp tiền</td>
     </tr>
     <tr>
-      <td style="height:66px;font-size:15px;font-style:italic;">(ký, họ tên, đóng dấu)</td>
-      <td style="font-size:15px;font-style:italic;">(ký, họ tên)</td>
-      <td style="font-size:15px;font-style:italic;">{{nguoi_tao}}</td>
-      <td style="font-size:15px;font-style:italic;">(ký, họ tên)</td>
+      <td style="height:44px;font-size:11px;font-style:italic;">(ký, họ tên, đóng dấu)</td>
+      <td style="font-size:11px;font-style:italic;">(ký, họ tên)</td>
+      <td style="font-size:11px;font-style:italic;">{{nguoi_tao}}</td>
+      <td style="font-size:11px;font-style:italic;">(ký, họ tên)</td>
     </tr>
   </table>
 </div>`;
