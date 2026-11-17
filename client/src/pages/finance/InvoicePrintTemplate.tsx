@@ -225,9 +225,9 @@ const SAMPLE_DATA = {
   ngay_in_phieu: formatInvoiceDate(new Date()),
   ngay_thanh_toan: "05/05/2025",
   han_thanh_toan: "05/06/2025",
-  total: 5000000,
-  thanh_tien: 5000000,
-  tong_sau_khau_tru: 5000000,
+  total: 14650000,
+  thanh_tien: 14650000,
+  tong_sau_khau_tru: 14650000,
   da_thanh_toan: 2000000,
   con_lai: 3000000,
   lop: "A1 - Toán nâng cao 6",
@@ -261,7 +261,7 @@ const SAMPLE_DATA = {
   da_thu_hd_goc: 2000000,
   con_lai_hd_goc: 3000000,
   // Bằng chữ (số tiền đã thanh toán)
-  thanh_chu: numberToVietnameseWords(2000000),
+  thanh_chu: numberToVietnameseWords(14650000),
   // Cơ sở
   ten_co_so: "Cơ sở Trung tâm",
   dia_chi_co_so: "123 Đường Giải Phóng, Quận Hai Bà Trưng, Hà Nội",
@@ -273,9 +273,20 @@ const SAMPLE_DATA = {
   so_tai_khoan: "1234567890",
   chu_tai_khoan: "NGUYEN VAN A",
   items: [
-    { name: "Dịch vụ cắt tóc nam", price: 150000, quantity: 2, discount: 0, extra: 0, vatRate: 0, vatAmount: 0 },
-    { name: "Nhuộm tóc cao cấp", price: 600000, quantity: 1, discount: 50000, extra: 0, vatRate: 0, vatAmount: 0 },
-    { name: "Gội đầu massage", price: 80000, quantity: 2, discount: 10000, extra: 20000, vatRate: 0, vatAmount: 0 },
+    {
+      name: "Gói 96 tiết (S-IE)",
+      price: 40000,
+      quantity: 48,
+      discount: 4600000,
+      extra: 50000,
+      vatRate: 0,
+      vatAmount: 0,
+      promotions: [
+        { name: "Anh em học chung", amount: 960000 },
+        { name: "Đăng ký >= 4 Khóa", amount: 3640000 },
+      ],
+      surcharges: [{ name: "Phụ thu giấy thi", amount: 50000 }],
+    },
   ],
 };
 
@@ -593,15 +604,21 @@ function renderItems(items: typeof SAMPLE_DATA.items): string {
   </table>`;
 }
 
-export function renderItemsVat(items: typeof SAMPLE_DATA.items): string {
+export function renderItemsVat(items: typeof SAMPLE_DATA.items, total: number): string {
   const cell = (align: "left" | "right" | "center" = "left") =>
-    `border:1px solid #111;padding:5px;text-align:${align};vertical-align:middle;`;
-  const rows: string[] = [];
+    `border:1px solid #244d80;padding:5px;text-align:${align};vertical-align:middle;`;
+  const sectionRow = (number: number, label: string) =>
+    `<tr style="background:#dce8f6;font-weight:bold;">
+      <td style="${cell("center")}">${number}</td><td colspan="6" style="${cell("center")}">${label}</td>
+    </tr>`;
+  const productRows: string[] = [];
+  const promotions: Array<{ name: string; amount: number }> = [];
+  const surcharges: Array<{ name: string; amount: number }> = [];
 
   items.forEach((item, i) => {
     const base = item.price * item.quantity;
     const vatAmount = item.vatAmount ?? 0;
-    rows.push(`<tr>
+    productRows.push(`<tr>
       <td style="${cell("center")}">${i + 1}</td>
       <td style="${cell("left")}"><b>${item.name}</b></td>
       <td style="${cell("right")}">${fmtMoney(item.price)}</td>
@@ -610,24 +627,34 @@ export function renderItemsVat(items: typeof SAMPLE_DATA.items): string {
       <td style="${cell("center")}">${item.vatRate ?? 0}</td>
       <td style="${cell("right")}"><b>${fmtMoney(base + vatAmount)}</b></td>
     </tr>`);
-
-    if (item.discount > 0) {
-      rows.push(`<tr>
-        <td style="${cell("center")}"></td><td style="${cell("left")}">Khuyến mãi</td>
-        <td style="${cell("right")}">${fmtMoney(item.discount)}</td><td style="${cell("center")}">1</td>
-        <td style="${cell("right")}">${fmtMoney(item.discount)}</td><td style="${cell("center")}">0</td>
-        <td style="${cell("right")}"><b>-${fmtMoney(item.discount)}</b></td>
-      </tr>`);
-    }
-    if (item.extra > 0) {
-      rows.push(`<tr>
-        <td style="${cell("center")}"></td><td style="${cell("left")}">Phụ thu</td>
-        <td style="${cell("right")}">${fmtMoney(item.extra)}</td><td style="${cell("center")}">1</td>
-        <td style="${cell("right")}">${fmtMoney(item.extra)}</td><td style="${cell("center")}">0</td>
-        <td style="${cell("right")}"><b>${fmtMoney(item.extra)}</b></td>
-      </tr>`);
-    }
+    promotions.push(...(item.promotions ?? (
+      item.discount > 0 ? [{ name: "Khuyến mãi", amount: item.discount }] : []
+    )));
+    surcharges.push(...(item.surcharges ?? (
+      item.extra > 0 ? [{ name: "Phụ thu", amount: item.extra }] : []
+    )));
   });
+
+  const adjustmentRows = (adjustments: Array<{ name: string; amount: number }>, negative = false) =>
+    adjustments.map(({ name, amount }) => `<tr>
+      <td style="${cell("center")}"></td><td style="${cell("left")}">${name}</td>
+      <td style="${cell("right")}">${fmtMoney(amount)}</td><td style="${cell("center")}">1</td>
+      <td style="${cell("right")}">${fmtMoney(amount)}</td><td style="${cell("center")}">0</td>
+      <td style="${cell("right")}"><b>${negative ? "-" : ""}${fmtMoney(amount)}</b></td>
+    </tr>`);
+  const rows = [sectionRow(1, "Gói dịch vụ"), ...productRows];
+  let nextSectionNumber = 2;
+  if (promotions.length > 0) {
+    rows.push(sectionRow(nextSectionNumber++, "Khuyến mãi"), ...adjustmentRows(promotions, true));
+  }
+  if (surcharges.length > 0) {
+    rows.push(sectionRow(nextSectionNumber++, "Phụ thu"), ...adjustmentRows(surcharges));
+  }
+  rows.push(`<tr style="background:#dce8f6;font-weight:bold;">
+    <td style="${cell("center")}">${nextSectionNumber}</td>
+    <td colspan="5" style="${cell("left")}">Thành tiền</td>
+    <td style="${cell("right")}">${fmtMoney(total)}</td>
+  </tr>`);
 
   return `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:4px;">
     <thead><tr>
@@ -678,10 +705,32 @@ function renderTemplate(html: string, data: typeof SAMPLE_DATA, logoUrl?: string
   const numericData: Record<string, number | string> = rest as Record<string, number | string>;
 
   let output = html;
+  const isVatReceipt = output.includes("{{items_vat}}");
 
   // Step 1: Replace dynamic tables with their sample-data previews.
   output = output.replace(/\{\{items\}\}/g, renderItems(data.items));
-  output = output.replace(/\{\{items_vat\}\}/g, renderItemsVat(data.items));
+  if (isVatReceipt) {
+    output = output.replace(
+      /(\{\{items_vat\}\}\s*)<table\b[^>]*>\s*<tr>\s*<td\b[^>]*>\s*Thành tiền\s*<\/td>[\s\S]*?Bằng chữ:[\s\S]*?<\/table>/i,
+      '$1<div style="border:1px solid #244d80;padding:5px 8px;font-style:italic;">Số tiền bằng chữ: {{thanh_chu}}</div>',
+    );
+    output = output.replace(
+      /font-family:\s*Georgia\s*,\s*['"]Times New Roman['"]\s*,\s*serif/gi,
+      "font-family:'Times New Roman', Times, serif",
+    );
+    if (!output.includes("{{phuong_thuc}}")) {
+      output = output.replace(
+        /<\/div>\s*$/,
+        `<div style="font-family:'Times New Roman',Times,serif;font-size:17px;margin:6px 0;">Hình thức thanh toán: {{phuong_thuc}}</div>
+        <div style="text-align:right;font-size:17px;font-style:italic;margin:10px 0;">Ngày {{ngay_in_phieu}}</div>
+        <table style="width:100%;border-collapse:collapse;text-align:center;font-size:18px;font-weight:bold;margin-top:24px;">
+          <tr><td style="width:25%;">Giám đốc</td><td style="width:25%;">Kế toán trưởng</td><td style="width:25%;">Người lập phiếu</td><td style="width:25%;">Người nộp tiền</td></tr>
+          <tr><td style="height:66px;font-size:15px;font-style:italic;">(ký, họ tên, đóng dấu)</td><td style="font-size:15px;font-style:italic;">(ký, họ tên)</td><td style="font-size:15px;font-style:italic;">{{nguoi_tao}}</td><td style="font-size:15px;font-style:italic;">(ký, họ tên)</td></tr>
+        </table></div>`,
+      );
+    }
+  }
+  output = output.replace(/\{\{items_vat\}\}/g, renderItemsVat(data.items, data.total));
   output = output.replace(/\{\{lich_su_thanh_toan\}\}/g, renderHistory(SAMPLE_HISTORY));
 
   // Step 2a: Replace {{logo}} with real img or dashed placeholder

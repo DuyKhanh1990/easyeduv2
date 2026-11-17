@@ -119,46 +119,61 @@ const TUITION_RECEIPT_HTML = `<div style="font-family: Arial, sans-serif; font-s
 
 </div>`;
 
-const SINGLE_RECEIPT_HTML = `<div style="font-family: Georgia, 'Times New Roman', serif; font-size: 14px; color:#244d80; line-height:1.3;">
-  <table style="width:100%;border-collapse:collapse;border:1px solid #222;margin-bottom:30px;">
+const SINGLE_RECEIPT_HTML = `<div style="font-family:'Times New Roman', Times, serif;font-size:15px;color:#173f73;line-height:1.25;">
+  <table style="width:100%;border-collapse:collapse;border:1px solid #244d80;margin-bottom:14px;">
     <tr>
-      <td style="width:26%;height:112px;border:1px solid #222;vertical-align:top;padding:6px;">{{logo}}</td>
+      <td style="width:24%;height:100px;border:1px solid #244d80;vertical-align:middle;text-align:center;padding:6px;">{{logo}}</td>
       <td style="text-align:center;vertical-align:middle;padding:8px;">
-        <div style="font-size:19px;font-weight:bold;">{{ten_co_so}}</div>
-        <div style="font-size:18px;font-weight:bold;">TRUNG TÂM NGOẠI NGỮ</div>
-        <div>Địa chỉ: {{dia_chi_co_so}}</div>
-        <div>Điện thoại: {{sdt_co_so}}</div>
+        <div style="font-size:21px;font-weight:bold;">{{ten_co_so}}</div>
+        <div style="font-size:20px;font-weight:bold;">TRUNG TÂM NGOẠI NGỮ</div>
+        <div style="font-size:16px;">Địa chỉ: {{dia_chi_co_so}}</div>
+        <div style="font-size:16px;">Điện thoại: {{sdt_co_so}}</div>
       </td>
     </tr>
   </table>
 
-  <div style="text-align:center;margin-bottom:20px;">
-    <div style="font-size:26px;font-weight:bold;">PHIẾU THU</div>
-    <div><b>Ngày thu: {{ngay_thanh_toan}}</b></div>
-  </div>
-
-  <table style="width:100%;border-collapse:collapse;margin-bottom:18px;font-weight:bold;">
+  <table style="width:100%;border-collapse:collapse;margin:0 0 10px;">
     <tr>
-      <td style="border:1px solid #222;padding:3px 8px;width:50%;">Học viên: {{customer_name}}</td>
-      <td style="border:1px solid #222;padding:3px 8px;">Lớp: {{lop}}</td>
+      <td style="width:18%;"></td>
+      <td style="text-align:center;">
+        <div style="font-size:30px;font-weight:bold;">PHIẾU THU</div>
+        <div style="font-size:19px;font-style:italic;">Ngày {{ngay_thanh_toan}}</div>
+      </td>
+      <td style="width:22%;text-align:right;font-size:18px;">Số: {{invoice_code}}</td>
     </tr>
-    <tr>
-      <td style="border:1px solid #222;padding:3px 8px;">Số điện thoại: {{phone}}</td>
-      <td style="border:1px solid #222;padding:3px 8px;">Địa chỉ: {{address}}</td>
-    </tr>
-    <tr><td colspan="2" style="border:1px solid #222;padding:3px 8px;">Nội dung: {{ghi_chu}}</td></tr>
   </table>
 
-  <div style="text-align:center;font-size:17px;font-weight:bold;margin:16px 0;">THÔNG TIN THANH TOÁN</div>
-  {{items_vat}}
-
-  <table style="width:100%;border-collapse:collapse;margin-top:0;font-weight:bold;">
+  <table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:17px;font-weight:bold;">
     <tr>
-      <td style="border:1px solid #222;padding:5px 8px;">Thành tiền</td>
-      <td style="border:1px solid #222;padding:5px 8px;text-align:center;width:20%;">{{total}}</td>
+      <td style="border:1px solid #244d80;padding:4px 8px;width:50%;">Học viên: {{customer_name}}</td>
+      <td style="border:1px solid #244d80;padding:4px 8px;">Lớp: {{lop}}</td>
     </tr>
     <tr>
-      <td colspan="2" style="border:1px solid #222;padding:5px 8px;font-style:italic;">Bằng chữ: {{thanh_chu}}</td>
+      <td style="border:1px solid #244d80;padding:4px 8px;">Số điện thoại: {{phone}}</td>
+      <td style="border:1px solid #244d80;padding:4px 8px;">Địa chỉ: {{address}}</td>
+    </tr>
+    <tr><td colspan="2" style="border:1px solid #244d80;padding:4px 8px;">Nội dung: {{ghi_chu}}</td></tr>
+  </table>
+
+  <div style="text-align:center;font-size:20px;font-weight:bold;background:#dce8f6;border:1px solid #244d80;border-bottom:0;padding:5px;">THÔNG TIN THANH TOÁN</div>
+  {{items_vat}}
+
+  <div style="font-size:17px;font-style:italic;margin:6px 0 12px;">Số tiền bằng chữ: {{thanh_chu}}</div>
+  <div style="font-size:17px;margin:6px 0;">Hình thức thanh toán: {{phuong_thuc}}</div>
+  <div style="text-align:right;font-size:17px;font-style:italic;margin:10px 0;">Ngày {{ngay_in_phieu}}</div>
+
+  <table style="width:100%;border-collapse:collapse;text-align:center;font-size:18px;font-weight:bold;margin-top:24px;">
+    <tr>
+      <td style="width:25%;">Giám đốc</td>
+      <td style="width:25%;">Kế toán trưởng</td>
+      <td style="width:25%;">Người lập phiếu</td>
+      <td style="width:25%;">Người nộp tiền</td>
+    </tr>
+    <tr>
+      <td style="height:66px;font-size:15px;font-style:italic;">(ký, họ tên, đóng dấu)</td>
+      <td style="font-size:15px;font-style:italic;">(ký, họ tên)</td>
+      <td style="font-size:15px;font-style:italic;">{{nguoi_tao}}</td>
+      <td style="font-size:15px;font-style:italic;">(ký, họ tên)</td>
     </tr>
   </table>
 </div>`;

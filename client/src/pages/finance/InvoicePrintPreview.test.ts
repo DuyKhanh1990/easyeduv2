@@ -134,18 +134,65 @@ describe("VAT-enabled invoice item table", () => {
     expect(preset?.html).toContain("{{logo}}");
     expect(preset?.html).toContain("{{customer_name}}");
     expect(preset?.html).toContain("{{items_vat}}");
-    expect(preset?.html).toContain("{{total}}");
+    expect(preset?.html).toContain("{{invoice_code}}");
+    expect(preset?.html).toContain("{{phuong_thuc}}");
   });
 
   it("shows sample line items in the designer preview", () => {
     const html = renderItemsVat([
-      { name: "Gói học", price: 100, quantity: 2, discount: 10, extra: 0, vatRate: 8, vatAmount: 7.2 },
-    ]);
+      {
+        name: "Gói học",
+        price: 100,
+        quantity: 2,
+        discount: 10,
+        extra: 20,
+        vatRate: 8,
+        vatAmount: 7.2,
+        promotions: [{ name: "Ưu đãi học viên", amount: 10 }],
+        surcharges: [{ name: "Phí tài liệu", amount: 20 }],
+      },
+    ], 217.2);
 
     expect(html).toContain("Gói học");
+    expect(html).toContain("Gói dịch vụ");
+    expect(html).toContain("Khuyến mãi");
+    expect(html).toContain("Phụ thu");
     expect(html).toContain(">8</td>");
     expect(html).toContain(">207,2</b>");
-    expect(html).toContain("-10");
+    expect(html).toContain("Ưu đãi học viên");
+    expect(html).toContain("Phí tài liệu");
+    expect(html).toContain(">4</td>");
+  });
+
+  it("groups real invoice adjustments and keeps one final total row", () => {
+    const html = renderTemplate(
+      `<div style="font-family: Georgia, 'Times New Roman', serif;">{{items_vat}}<table style="width:100%;border-collapse:collapse;margin-top:0;font-weight:bold;"><tr><td>Thành tiền</td><td>{{total}}</td></tr><tr><td colspan="2">Bằng chữ: {{thanh_chu}}</td></tr></table></div>`,
+      {
+        id: "receipt",
+        type: "Thu",
+        grandTotal: "226",
+        paidAmount: "226",
+        createdAt: "2026-11-17T00:00:00.000Z",
+        items: [{
+          name: "Gói học",
+          unitPrice: 100,
+          quantity: 2,
+          promotionAmount: 10,
+          surchargeAmount: 20,
+          vatRate: 8,
+          vatAmount: 16,
+        }],
+      },
+    );
+
+    expect(html).toContain("Gói dịch vụ");
+    expect(html).toContain("Khuyến mãi");
+    expect(html).toContain("Phụ thu");
+    expect(html).toContain(">4</td>");
+    expect(html).toContain(">226</td>");
+    expect(html.match(/Thành tiền/g)).toHaveLength(2);
+    expect(html).toContain("font-family:'Times New Roman', Times, serif");
+    expect(html).toContain("Hình thức thanh toán:");
   });
 });
 

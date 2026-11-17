@@ -294,6 +294,115 @@ function lookupAdjustments(
   return [];
 }
 
+function renderVatReceiptItemsHtml(
+  items: NonNullable<InvoicePrintData["items"]>,
+  invoice: InvoicePrintData,
+  promotionOptions: PromoOption[],
+  surchargeOptions: PromoOption[],
+): string {
+  if (!items || items.length === 0) {
+    return `<div style="text-align:center;font-style:italic;color:#888;padding:8px;font-size:11px;">Hoá đơn này chưa có sản phẩm / dịch vụ.</div>`;
+  }
+
+  const cell = (align: "left" | "right" | "center" = "left") =>
+    `border:1px solid #244d80;padding:5px;text-align:${align};vertical-align:middle;`;
+  const sectionRow = (number: number, label: string) =>
+    `<tr style="background:#dce8f6;font-weight:bold;">
+      <td style="${cell("center")}">${number}</td>
+      <td colspan="6" style="${cell("center")}">${label}</td>
+    </tr>`;
+  const productRows: string[] = [];
+  const promotions: Array<{ name: string; amount: number }> = [];
+  const surcharges: Array<{ name: string; amount: number }> = [];
+  let subtotalAfterItemAdjustments = 0;
+
+  items.forEach((item: any, index) => {
+    const name = item.packageName ?? item.name ?? "";
+    const unitPrice = Number(item.unitPrice ?? item.price) || 0;
+    const quantity = Number(item.quantity) || 1;
+    const itemPromotion = Number(item.promotionAmount ?? item.discount) || 0;
+    const itemSurcharge = Number(item.surchargeAmount ?? item.extra) || 0;
+    const vatRate = Number(item.vatRate) || 0;
+    const vatAmount = Number(item.vatAmount) || 0;
+    const amount = unitPrice * quantity;
+    subtotalAfterItemAdjustments += amount - itemPromotion + itemSurcharge;
+
+    productRows.push(`<tr>
+      <td style="${cell("center")}">${index + 1}</td>
+      <td style="${cell("left")}">${name}</td>
+      <td style="${cell("right")}">${fmtMoney(unitPrice)}</td>
+      <td style="${cell("center")}">${quantity}</td>
+      <td style="${cell("right")}">${fmtMoney(amount)}</td>
+      <td style="${cell("center")}">${vatRate}</td>
+      <td style="${cell("right")}"><b>${fmtMoney(amount + vatAmount)}</b></td>
+    </tr>`);
+
+    promotions.push(...lookupAdjustments(
+      item.promotionKeys, promotionOptions, amount, itemPromotion, "Khuyến mãi",
+    ).filter((adjustment) => adjustment.amount > 0));
+    surcharges.push(...lookupAdjustments(
+      item.surchargeKeys, surchargeOptions, amount, itemSurcharge, "Phụ thu",
+    ).filter((adjustment) => adjustment.amount > 0));
+  });
+
+  const invoicePromotionAmount = Number(invoice.invoicePromotionAmount) || 0;
+  const invoiceSurchargeAmount = Number(invoice.invoiceSurchargeAmount) || 0;
+  promotions.push(...lookupAdjustments(
+    invoice.invoicePromotionKeys,
+    promotionOptions,
+    subtotalAfterItemAdjustments,
+    invoicePromotionAmount,
+    "Khuyến mãi",
+  ).filter((adjustment) => adjustment.amount > 0));
+  surcharges.push(...lookupAdjustments(
+    invoice.invoiceSurchargeKeys,
+    surchargeOptions,
+    subtotalAfterItemAdjustments,
+    invoiceSurchargeAmount,
+    "Phụ thu",
+  ).filter((adjustment) => adjustment.amount > 0));
+
+  const adjustmentRows = (
+    adjustments: Array<{ name: string; amount: number }>,
+    isPromotion: boolean,
+  ) => adjustments.map(({ name, amount }) => `<tr>
+    <td style="${cell("center")}"></td>
+    <td style="${cell("left")}">${name}</td>
+    <td style="${cell("right")}">${fmtMoney(amount)}</td>
+    <td style="${cell("center")}">1</td>
+    <td style="${cell("right")}">${fmtMoney(amount)}</td>
+    <td style="${cell("center")}">0</td>
+    <td style="${cell("right")}"><b>${isPromotion ? "-" : ""}${fmtMoney(amount)}</b></td>
+  </tr>`);
+
+  const rows = [sectionRow(1, "Gói dịch vụ"), ...productRows];
+  let nextSectionNumber = 2;
+  if (promotions.length > 0) {
+    rows.push(sectionRow(nextSectionNumber++, "Khuyến mãi"), ...adjustmentRows(promotions, true));
+  }
+  if (surcharges.length > 0) {
+    rows.push(sectionRow(nextSectionNumber++, "Phụ thu"), ...adjustmentRows(surcharges, false));
+  }
+  rows.push(`<tr style="background:#dce8f6;font-weight:bold;">
+    <td style="${cell("center")}">${nextSectionNumber}</td>
+    <td colspan="5" style="${cell("left")}">Thành tiền</td>
+    <td style="${cell("right")}">${fmtMoney(Number(invoice.grandTotal) || 0)}</td>
+  </tr>`);
+
+  return `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:4px;color:#244d80;">
+    <thead><tr style="background:#e7f0fb;font-weight:bold;">
+      <th style="${cell("center")}">STT</th>
+      <th style="${cell("center")}">Dịch vụ</th>
+      <th style="${cell("center")}">Đơn giá</th>
+      <th style="${cell("center")}">SL</th>
+      <th style="${cell("center")}">Số tiền</th>
+      <th style="${cell("center")}">VAT</th>
+      <th style="${cell("center")}">Thành tiền</th>
+    </tr></thead>
+    <tbody>${rows.join("")}</tbody>
+  </table>`;
+}
+
 function renderItemsHtml(
   items: NonNullable<InvoicePrintData["items"]>,
   invoice: InvoicePrintData,
@@ -649,9 +758,33 @@ export function renderTemplate(
   };
 
   let output = html;
+  const isVatReceipt = output.includes("{{items_vat}}");
 
   output = output.replace(/\{\{items\}\}/g, renderItemsHtml(items as any, invoice, promotionOptions, surchargeOptions));
-  output = output.replace(/\{\{items_vat\}\}/g, renderItemsHtml(items as any, invoice, promotionOptions, surchargeOptions, true));
+  if (isVatReceipt) {
+    // Older saved versions of this preset put the total in a separate table.
+    // Move that line into the dynamic table and leave the amount in words below.
+    output = output.replace(
+      /(\{\{items_vat\}\}\s*)<table\b[^>]*>\s*<tr>\s*<td\b[^>]*>\s*Thành tiền\s*<\/td>[\s\S]*?Bằng chữ:[\s\S]*?<\/table>/i,
+      '$1<div style="border:1px solid #244d80;padding:5px 8px;font-style:italic;">Bằng chữ: {{thanh_chu}}</div>',
+    );
+    output = output.replace(
+      /font-family:\s*Georgia\s*,\s*'Times New Roman'\s*,\s*serif/gi,
+      "font-family:'Times New Roman', Times, serif",
+    );
+    if (!output.includes("{{phuong_thuc}}")) {
+      output = output.replace(
+        /<\/div>\s*$/,
+        `<div style="font-family:'Times New Roman',Times,serif;font-size:17px;margin:6px 0;">Hình thức thanh toán: {{phuong_thuc}}</div>
+        <div style="text-align:right;font-size:17px;font-style:italic;margin:10px 0;">Ngày {{ngay_in_phieu}}</div>
+        <table style="width:100%;border-collapse:collapse;text-align:center;font-size:18px;font-weight:bold;margin-top:24px;">
+          <tr><td style="width:25%;">Giám đốc</td><td style="width:25%;">Kế toán trưởng</td><td style="width:25%;">Người lập phiếu</td><td style="width:25%;">Người nộp tiền</td></tr>
+          <tr><td style="height:66px;font-size:15px;font-style:italic;">(ký, họ tên, đóng dấu)</td><td style="font-size:15px;font-style:italic;">(ký, họ tên)</td><td style="font-size:15px;font-style:italic;">{{nguoi_tao}}</td><td style="font-size:15px;font-style:italic;">(ký, họ tên)</td></tr>
+        </table></div>`,
+      );
+    }
+  }
+  output = output.replace(/\{\{items_vat\}\}/g, renderVatReceiptItemsHtml(items as any, invoice, promotionOptions, surchargeOptions));
   output = output.replace(/\{\{lich_su_thanh_toan\}\}/g, renderHistoryHtml(schedule));
 
   // Replace {{logo}} with img tag from main branch logo
