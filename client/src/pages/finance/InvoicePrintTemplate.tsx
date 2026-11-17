@@ -273,9 +273,9 @@ const SAMPLE_DATA = {
   so_tai_khoan: "1234567890",
   chu_tai_khoan: "NGUYEN VAN A",
   items: [
-    { name: "Dịch vụ cắt tóc nam", price: 150000, quantity: 2, discount: 0, extra: 0 },
-    { name: "Nhuộm tóc cao cấp", price: 600000, quantity: 1, discount: 50000, extra: 0 },
-    { name: "Gội đầu massage", price: 80000, quantity: 2, discount: 10000, extra: 20000 },
+    { name: "Dịch vụ cắt tóc nam", price: 150000, quantity: 2, discount: 0, extra: 0, vatRate: 0, vatAmount: 0 },
+    { name: "Nhuộm tóc cao cấp", price: 600000, quantity: 1, discount: 50000, extra: 0, vatRate: 0, vatAmount: 0 },
+    { name: "Gội đầu massage", price: 80000, quantity: 2, discount: 10000, extra: 20000, vatRate: 0, vatAmount: 0 },
   ],
 };
 
@@ -330,6 +330,7 @@ const VARIABLES: VariableDef[] = [
 
   // ── Bảng động ──
   { group: "Bảng dữ liệu", label: "Bảng sản phẩm", key: "items", description: "{{items}}" },
+  { group: "Bảng dữ liệu", label: "Bảng sản phẩm có VAT", key: "items_vat", description: "{{items_vat}}" },
   { group: "Bảng dữ liệu", label: "Lịch sử thanh toán", key: "lich_su_thanh_toan", description: "{{lich_su_thanh_toan}}" },
 
   // ── Cơ sở ──
@@ -592,6 +593,56 @@ function renderItems(items: typeof SAMPLE_DATA.items): string {
   </table>`;
 }
 
+export function renderItemsVat(items: typeof SAMPLE_DATA.items): string {
+  const cell = (align: "left" | "right" | "center" = "left") =>
+    `border:1px solid #111;padding:5px;text-align:${align};vertical-align:middle;`;
+  const rows: string[] = [];
+
+  items.forEach((item, i) => {
+    const base = item.price * item.quantity;
+    const vatAmount = item.vatAmount ?? 0;
+    rows.push(`<tr>
+      <td style="${cell("center")}">${i + 1}</td>
+      <td style="${cell("left")}"><b>${item.name}</b></td>
+      <td style="${cell("right")}">${fmtMoney(item.price)}</td>
+      <td style="${cell("center")}">${item.quantity}</td>
+      <td style="${cell("right")}">${fmtMoney(base)}</td>
+      <td style="${cell("center")}">${item.vatRate ?? 0}</td>
+      <td style="${cell("right")}"><b>${fmtMoney(base + vatAmount)}</b></td>
+    </tr>`);
+
+    if (item.discount > 0) {
+      rows.push(`<tr>
+        <td style="${cell("center")}"></td><td style="${cell("left")}">Khuyến mãi</td>
+        <td style="${cell("right")}">${fmtMoney(item.discount)}</td><td style="${cell("center")}">1</td>
+        <td style="${cell("right")}">${fmtMoney(item.discount)}</td><td style="${cell("center")}">0</td>
+        <td style="${cell("right")}"><b>-${fmtMoney(item.discount)}</b></td>
+      </tr>`);
+    }
+    if (item.extra > 0) {
+      rows.push(`<tr>
+        <td style="${cell("center")}"></td><td style="${cell("left")}">Phụ thu</td>
+        <td style="${cell("right")}">${fmtMoney(item.extra)}</td><td style="${cell("center")}">1</td>
+        <td style="${cell("right")}">${fmtMoney(item.extra)}</td><td style="${cell("center")}">0</td>
+        <td style="${cell("right")}"><b>${fmtMoney(item.extra)}</b></td>
+      </tr>`);
+    }
+  });
+
+  return `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:4px;">
+    <thead><tr>
+      <th style="${cell("center")}">STT</th>
+      <th style="${cell("center")}">Dịch vụ</th>
+      <th style="${cell("center")}">Đơn giá</th>
+      <th style="${cell("center")}">SL</th>
+      <th style="${cell("center")}">Số tiền</th>
+      <th style="${cell("center")}">VAT</th>
+      <th style="${cell("center")}">Thành tiền</th>
+    </tr></thead>
+    <tbody>${rows.join("")}</tbody>
+  </table>`;
+}
+
 
 function renderHistory(history: typeof SAMPLE_HISTORY): string {
   const rows = history.map((s, i) => {
@@ -628,8 +679,9 @@ function renderTemplate(html: string, data: typeof SAMPLE_DATA, logoUrl?: string
 
   let output = html;
 
-  // Step 1: Replace {{items}} & {{lich_su_thanh_toan}} with rendered tables
+  // Step 1: Replace dynamic tables with their sample-data previews.
   output = output.replace(/\{\{items\}\}/g, renderItems(data.items));
+  output = output.replace(/\{\{items_vat\}\}/g, renderItemsVat(data.items));
   output = output.replace(/\{\{lich_su_thanh_toan\}\}/g, renderHistory(SAMPLE_HISTORY));
 
   // Step 2a: Replace {{logo}} with real img or dashed placeholder

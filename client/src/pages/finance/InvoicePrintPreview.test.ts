@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderHistoryHtml, renderTemplate } from "./InvoicePrintPreview";
 import { INVOICE_PRINT_BASE_STYLES } from "./invoice-print-base-styles";
 import { TEMPLATE_PRESETS } from "./invoiceTemplatePresets";
+import { renderItemsVat } from "./InvoicePrintTemplate";
 
 describe("legacy invoice-print financial variables", () => {
   it("uses parent invoice amounts when printing an installment", () => {
@@ -134,6 +135,17 @@ describe("VAT-enabled invoice item table", () => {
     expect(preset?.html).toContain("{{customer_name}}");
     expect(preset?.html).toContain("{{items_vat}}");
     expect(preset?.html).toContain("{{total}}");
+  });
+
+  it("shows sample line items in the designer preview", () => {
+    const html = renderItemsVat([
+      { name: "Gói học", price: 100, quantity: 2, discount: 10, extra: 0, vatRate: 8, vatAmount: 7.2 },
+    ]);
+
+    expect(html).toContain("Gói học");
+    expect(html).toContain(">8</td>");
+    expect(html).toContain(">207,2</b>");
+    expect(html).toContain("-10");
   });
 });
 
