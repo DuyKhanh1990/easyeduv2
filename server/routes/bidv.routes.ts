@@ -1,6 +1,15 @@
 import type { Express } from "express";
 import { db } from "../db";
-import { systemSettings, bidvLocationConfigs, bidvVirtualAccounts, invoices, invoicePaymentSchedule } from "@shared/schema";
+import {
+  systemSettings,
+  bidvLocationConfigs,
+  bidvVirtualAccounts,
+  invoices,
+  invoicePaymentSchedule,
+  locations,
+  centerConfig,
+  gatewayRegistry,
+} from "@shared/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { encrypt, decrypt } from "../services/crypto.service";
@@ -17,6 +26,10 @@ const ALL_SYS_KEYS = [
 ];
 
 const ENCRYPTED_LOC_KEYS = ["merchant_id", "secret_code"];
+
+function createBidvConfigError(message: string, status: number) {
+  return Object.assign(new Error(message), { status });
+}
 
 function sysSetting(key: string) {
   return `bidv.${key}`;
@@ -340,50 +353,118 @@ export function registerBidvAdminRoutes(app: Express) {
     }
 
     try {
-      const [existing] = await db.select().from(bidvLocationConfigs).where(eq(bidvLocationConfigs.locationId, body.locationId));
+      await db.transaction(async (tx) => {
+        const [existing] = await tx
+          .select()
+          .from(bidvLocationConfigs)
+          .where(eq(bidvLocationConfigs.locationId, body.locationId))
+          .limit(1);
 
-      let secretCodeToSave: string | undefined = undefined;
-      if (body.secretCode && body.secretCode !== "__USE_SAVED__") {
-        secretCodeToSave = encrypt(body.secretCode);
-      } else if (!existing) {
-        secretCodeToSave = undefined;
-      }
+        let secretCodeToSave: string | undefined = undefined;
+        if (body.secretCode && body.secretCode !== "__USE_SAVED__") {
+          secretCodeToSave = encrypt(body.secretCode);
+        } else if (!existing) {
+          secretCodeToSave = undefined;
+        }
 
-      let merchantIdToSave: string | undefined = undefined;
-      if (body.merchantId !== undefined) {
-        merchantIdToSave = body.merchantId ? encrypt(body.merchantId) : "";
-      }
+        let merchantIdToSave: string | undefined = undefined;
+        if (body.merchantId !== undefined) {
+          merchantIdToSave = body.merchantId ? encrypt(body.merchantId) : "";
+        }
 
-      // Use manually supplied vaPrefix; fall back to existing value if not provided
-      const vaPrefix = (body.vaPrefix !== undefined)
-        ? (body.vaPrefix.trim() ? body.vaPrefix.trim().toUpperCase() : null)
-        : (existing?.vaPrefix ?? null);
+        // Use manually supplied vaPrefix; fall back to existing value if not provided
+        const vaPrefix = (body.vaPrefix !== undefined)
+          ? (body.vaPrefix.trim() ? body.vaPrefix.trim().toUpperCase() : null)
+          : (existing?.vaPrefix ?? null);
+        const serviceId = (body.serviceId ?? existing?.serviceId ?? "").trim().toUpperCase() || null;
 
-      const upsertData = {
-        locationId: body.locationId,
-        serviceId: body.serviceId ?? existing?.serviceId ?? null,
-        merchantId: merchantIdToSave ?? existing?.merchantId ?? null,
-        secretCode: secretCodeToSave ?? existing?.secretCode ?? null,
-        receiveAccount: body.receiveAccount ?? existing?.receiveAccount ?? null,
-        accountName: body.accountName ?? existing?.accountName ?? null,
-        vaPrefix,
-        isEnabled: body.isEnabled ?? existing?.isEnabled ?? false,
-        isQrEnabled: body.isQrEnabled ?? existing?.isQrEnabled ?? true,
-        autoReconcile: body.autoReconcile ?? existing?.autoReconcile ?? false,
-        notes: body.notes ?? existing?.notes ?? null,
-        updatedAt: new Date(),
-      };
+        const upsertData = {
+          locationId: body.locationId,
+          serviceId,
+          merchantId: merchantIdToSave ?? existing?.merchantId ?? null,
+          secretCode: secretCodeToSave ?? existing?.secretCode ?? null,
+          receiveAccount: body.receiveAccount ?? existing?.receiveAccount ?? null,
+          accountName: body.accountName ?? existing?.accountName ?? null,
+          vaPrefix,
+          isEnabled: body.isEnabled ?? existing?.isEnabled ?? false,
+          isQrEnabled: body.isQrEnabled ?? existing?.isQrEnabled ?? true,
+          autoReconcile: body.autoReconcile ?? existing?.autoReconcile ?? false,
+          notes: body.notes ?? existing?.notes ?? null,
+          updatedAt: new Date(),
+        };
 
-      if (existing) {
-        await db.update(bidvLocationConfigs).set(upsertData).where(eq(bidvLocationConfigs.locationId, body.locationId));
-      } else {
-        await db.insert(bidvLocationConfigs).values({ ...upsertData, createdAt: new Date() });
-      }
+        if (serviceId) {
+          const [center] = await tx
+            .select({ id: centerConfig.id, centerUrl: centerConfig.centerUrl })
+            .from(centerConfig)
+            .limit(1);
+          if (!center?.id || !center.centerUrl.trim()) {
+            throw createBidvConfigError(
+              "Chưa cấu hình URL trung tâm để tạo tuyến BIDV.",
+              503,
+            );
+          }
+
+          const [location] = await tx
+            .select({ name: locations.name })
+            .from(locations)
+            .where(eq(locations.id, body.locationId))
+            .limit(1);
+          if (!location) {
+            throw createBidvConfigError("Không tìm thấy cơ sở để tạo tuyến BIDV.", 404);
+          }
+
+          const [existingRoute] = await tx
+            .select()
+            .from(gatewayRegistry)
+            .where(and(
+              eq(gatewayRegistry.provider, "bidv"),
+              eq(gatewayRegistry.routingKey, serviceId),
+            ))
+            .limit(1);
+
+          if (existingRoute && existingRoute.centerId !== center.id) {
+            throw createBidvConfigError(
+              "Service ID này đã được định tuyến cho một trung tâm khác.",
+              409,
+            );
+          }
+
+          const routeData = {
+            provider: "bidv",
+            routingKey: serviceId,
+            centerId: center.id,
+            name: existingRoute?.name || `${location.name || "Cơ sở"} (${serviceId})`,
+            baseUrl: center.centerUrl.replace(/\/+$/, ""),
+            isActive: true,
+            updatedAt: new Date(),
+          };
+
+          if (existingRoute) {
+            await tx
+              .update(gatewayRegistry)
+              .set(routeData)
+              .where(eq(gatewayRegistry.id, existingRoute.id));
+          } else {
+            await tx.insert(gatewayRegistry).values(routeData);
+          }
+        }
+
+        if (existing) {
+          await tx
+            .update(bidvLocationConfigs)
+            .set(upsertData)
+            .where(eq(bidvLocationConfigs.locationId, body.locationId));
+        } else {
+          await tx.insert(bidvLocationConfigs).values({ ...upsertData, createdAt: new Date() });
+        }
+      });
 
       return res.json({ ok: true, message: "Đã lưu cấu hình BIDV cho cơ sở" });
     } catch (err: any) {
       console.error("[BIDV] PUT location config error:", err);
-      return res.status(500).json({ message: `Lỗi khi lưu cấu hình: ${(err as Error)?.message || "Unknown error"}` });
+      const status = Number(err?.status) || 500;
+      return res.status(status).json({ message: `Lỗi khi lưu cấu hình: ${(err as Error)?.message || "Unknown error"}` });
     }
   });
 
