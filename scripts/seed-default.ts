@@ -36,6 +36,7 @@ const TARGET_URL =
   process.env.TARGET_DB_URL ||
   process.env.APP_DATABASE_URL ||
   process.env.DATABASE_URL;
+const SEED_ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD || "admin123";
 
 if (!TARGET_URL) {
   console.error("❌ Cần set TARGET_DB_URL hoặc APP_DATABASE_URL");
@@ -168,12 +169,12 @@ async function main() {
     .where(eq(schema.users.username, "admin"));
 
   if (!existingAdmin) {
-    const passwordHash = hashPassword("admin123");
+    const passwordHash = hashPassword(SEED_ADMIN_PASSWORD);
     const [adminUser] = await db
       .insert(schema.users)
       .values({ username: "admin", passwordHash, isActive: true })
       .returning();
-    console.log("  [OK]   User 'admin' đã tạo (pass: admin123)");
+    console.log("  [OK]   User 'admin' đã tạo");
 
     const [adminStaff] = await db
       .insert(schema.staff)
@@ -368,7 +369,7 @@ async function main() {
 
   // ── Done ─────────────────────────────────────────────────────────────────────
   console.log("\n[seed] ✅ Seed dữ liệu mặc định hoàn tất!");
-  console.log("       Tài khoản đăng nhập: admin / admin123\n");
+  console.log("       Tài khoản đăng nhập: admin\n");
 
   await pool.end();
 }

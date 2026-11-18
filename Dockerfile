@@ -55,6 +55,7 @@ COPY --from=builder /app/migrations ./migrations
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=builder /app/shared ./shared
+COPY --from=builder /app/server/services/crypto.service.ts ./server/services/crypto.service.ts
 COPY --from=builder /app/gateway/src/schema.ts ./gateway/src/schema.ts
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
 

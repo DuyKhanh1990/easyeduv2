@@ -54,5 +54,14 @@ fi
 if [ "$TABLE_COUNT" != "0" ] && [ "$HAS_CORE" = "t" ]; then
   ./node_modules/.bin/tsx scripts/sync-schema-additive.ts
 fi
+
+USER_COUNT=$(psql "$DB_URL" -tAc "SELECT count(*) FROM public.users")
+if [ "$USER_COUNT" = "0" ]; then
+  echo "[seed] DB chưa có user; chạy seed dữ liệu mặc định"
+  npx tsx scripts/seed-default.ts
+else
+  echo "[seed] skip: DB đã có user"
+fi
+
 ./node_modules/.bin/tsx scripts/check-schema.ts
 echo "[db-setup] Done"
