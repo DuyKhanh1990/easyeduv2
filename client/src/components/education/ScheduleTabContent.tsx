@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { VoucherHint } from "@/components/finance/VoucherHint";
 import { useToast } from "@/hooks/use-toast";
 import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
@@ -78,6 +78,7 @@ export function ScheduleTabContent({
   classPerm,
 }: ScheduleTabContentProps) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { data: pastSchedulePolicy } = usePastSchedulePolicy(true);
   const canRunPast = pastSchedulePolicy?.canRunPast === true;
   const today = getCenterDateString();
@@ -192,6 +193,7 @@ export function ScheduleTabContent({
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [freshSessions, setFreshSessions] = useState<any[] | null>(null);
   const [isSetupDialogOpen, setIsSetupDialogOpen] = useState(false);
+  const [isBulkAttendanceSaving, setIsBulkAttendanceSaving] = useState(false);
 
   // Intercept setIsScheduleForSessionOpen — if class has no sessions, open setup dialog first
   const handleOpenScheduleForSession = (open: boolean) => {
@@ -494,6 +496,68 @@ export function ScheduleTabContent({
     extensionMutation,
     scheduleMutation,
   } = useClassMutations(classId, selectedClassSessionId);
+
+  const handleBulkAttendance = async (status: string) => {
+    const selectedRows = selectedStudentIds
+      .map((studentId) => currentSessionStudents?.find((student: any) => student.studentId === studentId))
+      .filter(Boolean) as any[];
+
+    if (
+      !selectedClassSessionId ||
+      selectedRows.length === 0 ||
+      selectedRows.length !== selectedStudentIds.length
+    ) {
+      toast({
+        title: "Không thể điểm danh",
+        description: "Danh sách học viên hoặc buổi học đã thay đổi. Vui lòng tải lại rồi thử lại.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsBulkAttendanceSaving(true);
+    try {
+      const response = await apiRequest("POST", "/api/student-sessions/bulk-attendance", {
+        session_id: selectedClassSessionId,
+        students: selectedRows.map((student) => ({
+          studentSessionId: student.id,
+          attendanceStatus: status,
+        })),
+      });
+      const result = await response.json();
+      const refreshAttendanceQueries = queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey[0] as string;
+          return typeof key === "string" && (
+            key.includes("/student-sessions") ||
+            key === "/api/my-space/calendar/staff" ||
+            key === "/api/schedule"
+          );
+        },
+      });
+      const refreshClassQueries = Promise.all([
+        queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/active-students`] }),
+        queryClient.invalidateQueries({ queryKey: [`/api/classes/${classId}/all-student-sessions`] }),
+      ]);
+      await Promise.all([refreshAttendanceQueries, refreshClassQueries]);
+
+      setSelectedStudentIds([]);
+      setIsBulkAttendanceDialogOpen(false);
+      setIsActionMenuOpen(false);
+      toast({
+        title: "Thành công",
+        description: `Đã cập nhật điểm danh cho ${result.updatedCount ?? selectedRows.length} học viên`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Lỗi",
+        description: error?.message || "Không thể cập nhật điểm danh. Vui lòng thử lại.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsBulkAttendanceSaving(false);
+    }
+  };
 
   const runWithConflictCheck = async (
     previewUrl: string,
@@ -939,23 +1003,10 @@ export function ScheduleTabContent({
                 key={status}
                 variant="outline"
                 className={`w-full justify-start text-${color}-600 border-${color}-600 hover:bg-${color}-50 dark:hover:bg-${color}-950`}
-                onClick={() => {
-                  selectedStudentIds.forEach((studentId) => {
-                    const student = currentSessionStudents?.find(
-                      (s) => s.studentId === studentId
-                    );
-                    if (student) {
-                      updateAttendanceMutation.mutate({
-                        student_session_id: student.id,
-                        attendance_status: status,
-                      });
-                    }
-                  });
-                  setIsBulkAttendanceDialogOpen(false);
-                  setIsActionMenuOpen(false);
-                }}
+                disabled={isBulkAttendanceSaving}
+                onClick={() => void handleBulkAttendance(status)}
               >
-                {label}
+                {isBulkAttendanceSaving ? "Đang lưu..." : label}
               </Button>
             ))}
           </div>
