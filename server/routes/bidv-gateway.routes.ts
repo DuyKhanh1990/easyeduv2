@@ -24,13 +24,16 @@ import {
   handleGetBill,
   handlePayBill,
 } from "../services/bidv/bidv-request-handler.service";
-import { requireBidvProductionIp } from "../middleware/bidv-ip-allowlist";
+import {
+  requireBidvGetBillIpOrChecksum,
+  requireBidvProductionIp,
+} from "../middleware/bidv-ip-allowlist";
 
 export function registerBidvGatewayRoutes(app: Express) {
 
   // ─── Webhook: POST /api/bidv/getbill ─────────────────────────────────────
   // Public — BIDV gọi vào, bypass auth đã khai báo trong routes.ts
-  app.post("/api/bidv/getbill", requireBidvProductionIp, async (req, res) => {
+  app.post("/api/bidv/getbill", requireBidvGetBillIpOrChecksum, async (req, res) => {
     const requestId = `gbw-${Date.now()}`;
     const start = Date.now();
     try {

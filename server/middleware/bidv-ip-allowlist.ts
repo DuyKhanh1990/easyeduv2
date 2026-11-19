@@ -36,3 +36,35 @@ export function requireBidvProductionIp(
     result_desc: "Forbidden",
   });
 }
+
+/**
+ * Temporary GETBILL fallback: an unlisted IP may reach the existing
+ * checksum validation, but never bypass it. Requests without a checksum keep
+ * the original IP-deny behavior. PAYBILL continues to use the strict IP gate.
+ */
+export function requireBidvGetBillIpOrChecksum(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (process.env.NODE_ENV !== "production") return next();
+
+  const clientIp = normalizeIp(req.ip || req.socket.remoteAddress);
+  if (BIDV_PRODUCTION_IPS.has(clientIp)) return next();
+
+  const checksum = String(req.body?.checksum ?? "").trim();
+  if (!checksum) {
+    console.warn(
+      `[BIDV_IP_ALLOWLIST] GETBILL rejected from ${clientIp || "unknown"} (checksum missing)`,
+    );
+    return res.status(403).json({
+      result_code: "403",
+      result_desc: "Forbidden",
+    });
+  }
+
+  console.warn(
+    `[BIDV_IP_ALLOWLIST] GETBILL unlisted source ${clientIp || "unknown"} has checksum; continuing to checksum validation`,
+  );
+  return next();
+}
