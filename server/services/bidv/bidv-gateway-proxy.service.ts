@@ -13,6 +13,76 @@
 import { db } from "../../db";
 import { gatewayRegistry, centerConfig } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
+import crypto from "crypto";
+import type { Request } from "express";
+
+const GATEWAY_SOURCE = "easyedu-bidv-gateway";
+const INTERNAL_TIMESTAMP_HEADER = "x-bidv-gateway-timestamp";
+const INTERNAL_SIGNATURE_HEADER = "x-bidv-gateway-signature";
+const INTERNAL_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
+
+function getGatewaySharedSecret(): string {
+  const secret = process.env.BIDV_GATEWAY_SHARED_SECRET;
+  if (!secret) {
+    throw new Error("BIDV_GATEWAY_SHARED_SECRET is not configured");
+  }
+  return secret;
+}
+
+function gatewayRequestPayload(
+  timestamp: string,
+  method: string,
+  path: string,
+  body: unknown,
+): string {
+  return [timestamp, method.toUpperCase(), path, JSON.stringify(body ?? null)].join("\n");
+}
+
+function makeGatewaySignature(
+  secret: string,
+  timestamp: string,
+  method: string,
+  path: string,
+  body: unknown,
+): string {
+  return crypto
+    .createHmac("sha256", secret)
+    .update(gatewayRequestPayload(timestamp, method, path, body))
+    .digest("hex");
+}
+
+export function isTrustedBidvGatewayForward(req: Request): boolean {
+  if (req.headers["x-gateway-source"] !== GATEWAY_SOURCE) return false;
+
+  const secret = process.env.BIDV_GATEWAY_SHARED_SECRET;
+  const timestamp = req.headers[INTERNAL_TIMESTAMP_HEADER];
+  const signature = req.headers[INTERNAL_SIGNATURE_HEADER];
+  if (!secret || typeof timestamp !== "string" || typeof signature !== "string") {
+    return false;
+  }
+
+  const timestampMs = Number(timestamp);
+  if (
+    !Number.isFinite(timestampMs) ||
+    Math.abs(Date.now() - timestampMs) > INTERNAL_REQUEST_MAX_AGE_MS
+  ) {
+    return false;
+  }
+
+  const expected = makeGatewaySignature(
+    secret,
+    timestamp,
+    req.method,
+    req.path,
+    req.body,
+  );
+  const expectedBuffer = Buffer.from(expected, "hex");
+  const suppliedBuffer = Buffer.from(signature, "hex");
+  return (
+    expectedBuffer.length === suppliedBuffer.length &&
+    crypto.timingSafeEqual(expectedBuffer, suppliedBuffer)
+  );
+}
 
 // ─── Self-center detection ────────────────────────────────────────────────────
 // Chỉ cache khi đọc thành công; không cache null/undefined để retry được khi DB lỗi
@@ -93,8 +163,18 @@ export async function forwardRequest(
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-Gateway-Source": "easyedu-bidv-gateway",
+    "X-Gateway-Source": GATEWAY_SOURCE,
   };
+
+  const timestamp = String(Date.now());
+  headers[INTERNAL_TIMESTAMP_HEADER] = timestamp;
+  headers[INTERNAL_SIGNATURE_HEADER] = makeGatewaySignature(
+    getGatewaySharedSecret(),
+    timestamp,
+    method,
+    path,
+    body,
+  );
 
   // Forward client IP nếu có
   const xff = incomingHeaders["x-forwarded-for"];

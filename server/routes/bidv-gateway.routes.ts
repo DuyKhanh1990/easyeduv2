@@ -19,6 +19,7 @@ import {
   lookupRegistry,
   isSelfCenter,
   forwardRequest,
+  isTrustedBidvGatewayForward,
 } from "../services/bidv/bidv-gateway-proxy.service";
 import {
   handleGetBill,
@@ -29,18 +30,35 @@ import {
   requireBidvProductionIp,
 } from "../middleware/bidv-ip-allowlist";
 
+function requireGatewayForwardOrPublicAccess(
+  publicAccess: typeof requireBidvGetBillIpOrChecksum,
+) {
+  return (req: Parameters<typeof requireBidvGetBillIpOrChecksum>[0], res: Parameters<typeof requireBidvGetBillIpOrChecksum>[1], next: Parameters<typeof requireBidvGetBillIpOrChecksum>[2]) => {
+    if (req.headers["x-gateway-source"] !== undefined) {
+      if (isTrustedBidvGatewayForward(req)) return next();
+      return res.status(403).json({ result_code: "403", result_desc: "Forbidden" });
+    }
+    return publicAccess(req, res, next);
+  };
+}
+
 export function registerBidvGatewayRoutes(app: Express) {
 
   // ─── Webhook: POST /api/bidv/getbill ─────────────────────────────────────
   // Public — BIDV gọi vào, bypass auth đã khai báo trong routes.ts
-  app.post("/api/bidv/getbill", requireBidvGetBillIpOrChecksum, async (req, res) => {
+  app.post("/api/bidv/getbill", requireGatewayForwardOrPublicAccess(requireBidvGetBillIpOrChecksum), async (req, res) => {
     const requestId = `gbw-${Date.now()}`;
     const start = Date.now();
     try {
-      // Loop detection: nếu request đã đi qua một gateway khác thì dừng ngay
-      if (req.headers["x-gateway-source"]) {
-        console.warn(`[BIDV_GW] ${requestId} | getbill | LOOP DETECTED — X-Gateway-Source: ${req.headers["x-gateway-source"]}`);
-        return res.json({ result_code: "031", result_desc: "Có lỗi phát sinh từ hệ thống" });
+      if (isTrustedBidvGatewayForward(req)) {
+        const { service_id, customer_id, checksum } = req.body ?? {};
+        const result = await handleGetBill(
+          String(service_id ?? ""),
+          String(customer_id ?? ""),
+          String(checksum ?? ""),
+        );
+        console.log(`[BIDV_GW] ${requestId} | getbill | trusted forward | result=${result.result_code}`);
+        return res.json(result);
       }
 
       const { service_id, customer_id, checksum } = req.body ?? {};
@@ -87,14 +105,30 @@ export function registerBidvGatewayRoutes(app: Express) {
 
   // ─── Webhook: POST /api/bidv/paybill ─────────────────────────────────────
   // Public — BIDV gọi vào, bypass auth đã khai báo trong routes.ts
-  app.post("/api/bidv/paybill", requireBidvProductionIp, async (req, res) => {
+  app.post("/api/bidv/paybill", requireGatewayForwardOrPublicAccess(requireBidvProductionIp), async (req, res) => {
     const requestId = `pbw-${Date.now()}`;
     const start = Date.now();
     try {
-      // Loop detection: nếu request đã đi qua một gateway khác thì dừng ngay
-      if (req.headers["x-gateway-source"]) {
-        console.warn(`[BIDV_GW] ${requestId} | paybill | LOOP DETECTED — X-Gateway-Source: ${req.headers["x-gateway-source"]}`);
-        return res.json({ result_code: "031", result_desc: "Có lỗi phát sinh từ hệ thống" });
+      if (isTrustedBidvGatewayForward(req)) {
+        const {
+          service_id, customer_id, checksum,
+          bill_id, amount,
+          trans_id, trans_date, senderName, senderAccount,
+          billCode, transactionId, paymentTime,
+        } = req.body ?? {};
+        const result = await handlePayBill({
+          serviceId: String(service_id ?? ""),
+          customerId: String(customer_id ?? ""),
+          checksum: String(checksum ?? ""),
+          transId: String(trans_id ?? transactionId ?? ""),
+          amount,
+          billId: String(bill_id ?? billCode ?? "") || undefined,
+          transDate: String(trans_date ?? paymentTime ?? ""),
+          senderName: senderName ? String(senderName) : undefined,
+          senderAccount: senderAccount ? String(senderAccount) : undefined,
+        });
+        console.log(`[BIDV_GW] ${requestId} | paybill | trusted forward | result=${result.result_code}`);
+        return res.json(result);
       }
 
       const {
