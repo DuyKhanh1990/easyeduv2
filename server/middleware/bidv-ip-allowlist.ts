@@ -49,6 +49,14 @@ export function requireBidvGetBillIpOrChecksum(
 ) {
   if (process.env.NODE_ENV !== "production") return next();
 
+  console.log("[BIDV_DEBUG]", {
+    remote: req.socket.remoteAddress,
+    ip: req.ip,
+    xff: req.headers["x-forwarded-for"],
+    xreal: req.headers["x-real-ip"],
+    checksumPresent: Boolean(req.body?.checksum),
+  });
+
   const clientIp = normalizeIp(req.ip || req.socket.remoteAddress);
   if (BIDV_PRODUCTION_IPS.has(clientIp)) return next();
 
