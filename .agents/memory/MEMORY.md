@@ -157,3 +157,4 @@
 - [Attendance per-session visibility](attendance-per-session-visibility.md) — ordinary teacher View is restricted to assigned sessions; class managers retain class-wide access, while View All and Super Admin remain unrestricted.
 - [Renewal course-package pricing](renewal-course-package-pricing.md) — fixed-price course packages charge the full package amount in renewals; session count is reference quantity, while session records retain per-session accounting price.
 - [BIDV QR short transfer memo](bidv-qr-short-memo.md) — keep the VA first, then a concise payment label and invoice code within VietQR's 50-character memo limit.
+- [BIDV shared-gateway forwarding](bidv-shared-gateway-forwarding.md) — keep the common callback host, route by service_id, and authenticate internal forwards with a shared signature.
