@@ -156,3 +156,4 @@
 - [Radix hover-card runtime issue](radix-hover-card-runtime.md) — HoverCard caused a runtime hook failure in the preview; prefer the app’s existing Tooltip for simple hover details unless the dependency issue is resolved.
 - [Attendance per-session visibility](attendance-per-session-visibility.md) — ordinary teacher View is restricted to assigned sessions; class managers retain class-wide access, while View All and Super Admin remain unrestricted.
 - [Renewal course-package pricing](renewal-course-package-pricing.md) — fixed-price course packages charge the full package amount in renewals; session count is reference quantity, while session records retain per-session accounting price.
+- [BIDV QR short transfer memo](bidv-qr-short-memo.md) — keep the VA first, then a concise payment label and invoice code within VietQR's 50-character memo limit.
