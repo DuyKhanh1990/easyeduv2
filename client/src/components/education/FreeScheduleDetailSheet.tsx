@@ -153,9 +153,9 @@ export function FreeScheduleDetailSheet({
   const dateLabel = session
     ? format(parseISO(session.sessionDate), "EEEE, dd/MM/yyyy", { locale: vi })
     : "";
-  const criteria = (allEvaluationCriteria as any[]).filter((criterion) =>
-    (session?.evaluationCriteriaIds ?? []).includes(criterion.id),
-  );
+  const criteria = (session?.evaluationCriteriaIds ?? [])
+    .map((id) => (allEvaluationCriteria as any[]).find((criterion) => criterion.id === id))
+    .filter(Boolean);
   const reviewTeachers = (session?.teacherIds ?? []).map((id, index) => ({
     id,
     fullName: session?.teachers?.[index] || "Giáo viên",

@@ -624,9 +624,9 @@ export function FreeClassCalendar({ classId, classData, classPerm, initialDate }
     ?? data?.evaluationCriteriaIds
     ?? classData?.evaluationCriteriaIds
     ?? [];
-  const reviewCriteria = (allEvaluationCriteria as any[]).filter((criterion) =>
-    evaluationCriteriaIds.map(String).includes(String(criterion.id)),
-  );
+  const reviewCriteria: any[] = evaluationCriteriaIds
+    .map((id: string) => (allEvaluationCriteria as any[]).find((criterion: any) => String(criterion.id) === String(id)))
+    .filter(Boolean);
   const criteriaOptions = (allEvaluationCriteria as any[]).map((criterion) => ({
     value: String(criterion.id),
     label: criterion.name,

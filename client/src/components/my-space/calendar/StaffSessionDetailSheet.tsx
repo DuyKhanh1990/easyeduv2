@@ -367,7 +367,9 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
   const dateLabel = formatDate(session.sessionDate);
 
   const sessionCriteriaIds = session.evaluationCriteriaIds ?? [];
-  const sessionCriteria = allCriteria.filter((c: any) => sessionCriteriaIds.includes(c.id));
+  const sessionCriteria = sessionCriteriaIds
+    .map((id: string) => allCriteria.find((criterion: any) => criterion.id === id))
+    .filter(Boolean);
   const sessionTeachers: { id: string; fullName: string }[] = session.teachers ?? [];
 
   const selectedStudentSessions = studentSessions.filter((ss: any) =>

@@ -745,11 +745,12 @@ export function ScheduleTabContent({
         }}
         studentSessionIds={reviewTarget?.ids || []}
         studentNames={reviewTarget?.names || []}
-        criteria={(allEvaluationCriteria || []).filter((c: any) => {
-          const sess = classSessions?.find((s: any) => s.id === selectedClassSessionId);
-          const ids = sess?.evaluationCriteriaIds || [];
-          return ids.includes(c.id);
-        })}
+        criteria={(() => {
+          const ids = classSessions?.find((s: any) => s.id === selectedClassSessionId)?.evaluationCriteriaIds || [];
+          return ids
+            .map((id: string) => (allEvaluationCriteria || []).find((criterion: any) => criterion.id === id))
+            .filter(Boolean);
+        })()}
         teachers={
           (classSessions?.find((s: any) => s.id === selectedClassSessionId)?.teachers || []) as { id: string; fullName: string }[]
         }

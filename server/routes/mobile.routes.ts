@@ -3640,7 +3640,8 @@ export function registerMobileRoutes(app: Express) {
             maxChecked: evaluationSubCriteria.maxChecked,
           })
           .from(evaluationSubCriteria)
-          .where(inArray(evaluationSubCriteria.criteriaId, criteriaIds));
+          .where(inArray(evaluationSubCriteria.criteriaId, criteriaIds))
+          .orderBy(evaluationSubCriteria.name);
 
          const subMap = new Map<string, {
            id: string;

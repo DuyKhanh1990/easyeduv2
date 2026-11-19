@@ -1637,9 +1637,9 @@ function AttendanceContent() {
           onOpenChange={(open) => { if (!open) setReviewTarget(null); }}
           studentSessionIds={reviewTarget.recordType === "free" ? [] : [reviewTarget.id]}
           studentNames={[reviewTarget.studentName]}
-          criteria={allEvaluationCriteria.filter((criterion: any) =>
-            getReviewCriteriaIds(reviewTarget).includes(criterion.id),
-          )}
+          criteria={getReviewCriteriaIds(reviewTarget)
+            .map((id) => allEvaluationCriteria.find((criterion: any) => criterion.id === id))
+            .filter(Boolean)}
           teachers={getReviewTeacherOptions(reviewTarget)}
           existingReviewData={
             reviewTarget.reviewData
