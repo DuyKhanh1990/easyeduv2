@@ -75,23 +75,41 @@ export function createBidvGatewayAuthHeaders(
   };
 }
 
-export function isTrustedBidvGatewayForward(req: Request): boolean {
-  if (req.headers["x-gateway-source"] !== GATEWAY_SOURCE) return false;
+export type BidvGatewayAuthFailureReason =
+  | "source_header_invalid"
+  | "shared_secret_not_configured"
+  | "timestamp_missing"
+  | "timestamp_invalid"
+  | "timestamp_out_of_window"
+  | "signature_missing"
+  | "signature_malformed"
+  | "signature_mismatch";
+
+export function getBidvGatewayAuthFailureReason(
+  req: Request,
+): BidvGatewayAuthFailureReason | null {
+  if (req.headers["x-gateway-source"] !== GATEWAY_SOURCE) {
+    return "source_header_invalid";
+  }
 
   const secret = process.env.BIDV_GATEWAY_SHARED_SECRET;
   const timestamp = req.headers[INTERNAL_TIMESTAMP_HEADER];
   const signature = req.headers[INTERNAL_SIGNATURE_HEADER];
-  if (!secret || typeof timestamp !== "string" || typeof signature !== "string") {
-    return false;
+  if (!secret) return "shared_secret_not_configured";
+  if (typeof timestamp !== "string" || timestamp.trim() === "") {
+    return "timestamp_missing";
   }
 
   const timestampMs = Number(timestamp);
-  if (
-    !Number.isFinite(timestampMs) ||
-    Math.abs(Date.now() - timestampMs) > INTERNAL_REQUEST_MAX_AGE_MS
-  ) {
-    return false;
+  if (!Number.isFinite(timestampMs)) return "timestamp_invalid";
+  if (Math.abs(Date.now() - timestampMs) > INTERNAL_REQUEST_MAX_AGE_MS) {
+    return "timestamp_out_of_window";
   }
+
+  if (typeof signature !== "string" || signature === "") {
+    return "signature_missing";
+  }
+  if (!/^[a-f0-9]{64}$/i.test(signature)) return "signature_malformed";
 
   const expected = makeGatewaySignature(
     secret,
@@ -102,10 +120,14 @@ export function isTrustedBidvGatewayForward(req: Request): boolean {
   );
   const expectedBuffer = Buffer.from(expected, "hex");
   const suppliedBuffer = Buffer.from(signature, "hex");
-  return (
+  const matches =
     expectedBuffer.length === suppliedBuffer.length &&
-    crypto.timingSafeEqual(expectedBuffer, suppliedBuffer)
-  );
+    crypto.timingSafeEqual(expectedBuffer, suppliedBuffer);
+  return matches ? null : "signature_mismatch";
+}
+
+export function isTrustedBidvGatewayForward(req: Request): boolean {
+  return getBidvGatewayAuthFailureReason(req) === null;
 }
 
 export async function registerBidvRouteWithSharedGateway(

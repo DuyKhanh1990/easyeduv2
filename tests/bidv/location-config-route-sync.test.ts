@@ -70,6 +70,10 @@ vi.mock("../../server/services/bidv/bidv-request-handler.service", () => ({
 }));
 
 import { registerBidvAdminRoutes } from "../../server/routes/bidv.routes";
+import {
+  createBidvGatewayAuthHeaders,
+  getBidvGatewayAuthFailureReason,
+} from "../../server/services/bidv/bidv-gateway-proxy.service";
 import { gatewayRegistry } from "@shared/schema";
 
 const LOCATION_ID = "c92b2ff4-9398-4e2a-8f78-a81e767b7202";
@@ -200,6 +204,43 @@ describe("BIDV location config route synchronization", () => {
       .toBe("easyedu-bidv-gateway");
     expect((options.headers as Record<string, string>)["x-bidv-gateway-signature"])
       .toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("reports safe, specific reasons for rejected gateway signatures", () => {
+    vi.stubEnv("BIDV_GATEWAY_SHARED_SECRET", "test-only-shared-secret");
+    const body = { provider: "bidv", routingKey: "EE0005" };
+    const path = "/api/internal/bidv-gateway/registry";
+    const signedHeaders = createBidvGatewayAuthHeaders("POST", path, body);
+    const headers = Object.fromEntries(
+      Object.entries(signedHeaders).map(([key, value]) => [key.toLowerCase(), value]),
+    );
+    const requestShape = {
+      method: "POST",
+      path,
+      body,
+      headers,
+    } as any;
+
+    expect(getBidvGatewayAuthFailureReason(requestShape)).toBeNull();
+    expect(getBidvGatewayAuthFailureReason({
+      ...requestShape,
+      headers: { ...headers, "x-bidv-gateway-signature": "bad-signature" },
+    } as any)).toBe("signature_malformed");
+    expect(getBidvGatewayAuthFailureReason({
+      ...requestShape,
+      headers: { ...headers, "x-bidv-gateway-signature": "0".repeat(64) },
+    } as any)).toBe("signature_mismatch");
+    expect(getBidvGatewayAuthFailureReason({
+      ...requestShape,
+      headers: { ...headers, "x-bidv-gateway-timestamp": "not-a-timestamp" },
+    } as any)).toBe("timestamp_invalid");
+    expect(getBidvGatewayAuthFailureReason({
+      ...requestShape,
+      headers: { ...headers, "x-gateway-source": "unexpected-source" },
+    } as any)).toBe("source_header_invalid");
+
+    vi.stubEnv("BIDV_GATEWAY_SHARED_SECRET", "");
+    expect(getBidvGatewayAuthFailureReason(requestShape)).toBe("shared_secret_not_configured");
   });
 
   it("does not overwrite a service route owned by another center", async () => {

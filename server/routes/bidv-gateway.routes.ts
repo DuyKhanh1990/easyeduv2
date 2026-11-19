@@ -19,6 +19,7 @@ import {
   lookupRegistry,
   isSelfCenter,
   forwardRequest,
+  getBidvGatewayAuthFailureReason,
   isTrustedBidvGatewayForward,
   getCurrentCenterId,
 } from "../services/bidv/bidv-gateway-proxy.service";
@@ -48,7 +49,12 @@ export function registerBidvGatewayRoutes(app: Express) {
   // Authenticated center-to-gateway registration. Center settings stay local;
   // only routing metadata is sent to the shared gateway.
   app.post("/api/internal/bidv-gateway/registry", async (req, res) => {
-    if (!isTrustedBidvGatewayForward(req)) {
+    const authFailure = getBidvGatewayAuthFailureReason(req);
+    if (authFailure) {
+      // Never log the shared secret, signature, timestamp value, or request body.
+      console.warn(
+        `[BIDV_GW_AUTH] route registration rejected reason=${authFailure} method=${req.method} path=${req.path}`,
+      );
       return res.status(403).json({ message: "Forbidden" });
     }
 
