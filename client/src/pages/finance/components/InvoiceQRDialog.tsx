@@ -139,10 +139,22 @@ export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialog
 
   // QR dùng vaCode làm account number trong URL — app ngân hàng sẽ hiển thị TK định danh (ví dụ: V3EE2000128)
   // receiveAccount (TK chuyên thu) là nội bộ BIDV, không cần encode vào QR
-  const descSuffix = invoice?.code ? ` ${invoice.code}` : "";
-  const bidvAddInfo = bidvVa?.vaCode
-    ? sanitizeForBank(`${bidvVa.vaCode}${descSuffix}`)
-    : "";
+  const bidvContentPrefix = bidvVa?.vaCode ?? "";
+  const bidvContentSource = invoiceDescription || invoice?.code || "";
+  const bidvContentMaxLength = Math.max(
+    0,
+    160 - bidvContentPrefix.length - (bidvContentPrefix ? 1 : 0),
+  );
+  const safeBidvContentDetail = sanitizeForBank(
+    bidvContentSource,
+    bidvContentMaxLength,
+  )
+    .replace(/[^a-zA-Z0-9 ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const bidvAddInfo = [bidvContentPrefix, safeBidvContentDetail]
+    .filter(Boolean)
+    .join(" ");
   const bidvQrUrl = bidvVa?.vaCode
     ? `https://img.vietqr.io/image/BIDV-${bidvVa.vaCode}-compact2.png?amount=${Math.round(payAmount)}&addInfo=${encodeURIComponent(bidvAddInfo)}&accountName=${encodeURIComponent(bidvVa.accountName || "BIDV")}`
     : null;
