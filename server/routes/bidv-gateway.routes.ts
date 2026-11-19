@@ -12,14 +12,15 @@
 
 import type { Express } from "express";
 import { db } from "../db";
-import { gatewayRegistry } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { gatewayRegistry, centerConfig } from "@shared/schema";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   lookupRegistry,
   isSelfCenter,
   forwardRequest,
   isTrustedBidvGatewayForward,
+  getCurrentCenterId,
 } from "../services/bidv/bidv-gateway-proxy.service";
 import {
   handleGetBill,
@@ -43,6 +44,83 @@ function requireGatewayForwardOrPublicAccess(
 }
 
 export function registerBidvGatewayRoutes(app: Express) {
+
+  // Authenticated center-to-gateway registration. Center settings stay local;
+  // only routing metadata is sent to the shared gateway.
+  app.post("/api/internal/bidv-gateway/registry", async (req, res) => {
+    if (!isTrustedBidvGatewayForward(req)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const schema = z.object({
+      provider: z.literal("bidv"),
+      routingKey: z.string().min(1).max(100),
+      centerId: z.string().uuid(),
+      name: z.string().min(1).max(200),
+      baseUrl: z.string().url().max(500),
+      isActive: z.literal(true),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Dữ liệu tuyến BIDV không hợp lệ" });
+    }
+
+    try {
+      const [existing] = await db
+        .select()
+        .from(gatewayRegistry)
+        .where(and(
+          eq(gatewayRegistry.provider, "bidv"),
+          eq(gatewayRegistry.routingKey, parsed.data.routingKey),
+        ))
+        .limit(1);
+      const gatewayCenterId = await getCurrentCenterId();
+      const sameTarget =
+        existing?.baseUrl.replace(/\/+$/, "").toLowerCase() ===
+        parsed.data.baseUrl.replace(/\/+$/, "").toLowerCase();
+
+      // Allow an authenticated center to claim a route currently pointing at
+      // the shared gateway itself, or refresh its own route; reject collisions.
+      if (
+        existing &&
+        existing.centerId !== parsed.data.centerId &&
+        existing.centerId !== gatewayCenterId &&
+        !sameTarget
+      ) {
+        return res.status(409).json({
+          message: "Service ID này đã được định tuyến cho trung tâm khác.",
+        });
+      }
+
+      const routeData = {
+        provider: parsed.data.provider,
+        routingKey: parsed.data.routingKey,
+        centerId: parsed.data.centerId,
+        name: parsed.data.name,
+        baseUrl: parsed.data.baseUrl.replace(/\/+$/, ""),
+        isActive: true,
+        updatedAt: new Date(),
+      };
+
+      if (existing) {
+        const [updated] = await db
+          .update(gatewayRegistry)
+          .set(routeData)
+          .where(eq(gatewayRegistry.id, existing.id))
+          .returning();
+        return res.json({ ok: true, route: updated });
+      }
+
+      const [created] = await db
+        .insert(gatewayRegistry)
+        .values(routeData)
+        .returning();
+      return res.status(201).json({ ok: true, route: created });
+    } catch (err: any) {
+      console.error("[BIDV_GW] route registration error:", err?.message ?? err);
+      return res.status(500).json({ message: "Không thể đăng ký tuyến BIDV" });
+    }
+  });
 
   // ─── Webhook: POST /api/bidv/getbill ─────────────────────────────────────
   // Public — BIDV gọi vào, bypass auth đã khai báo trong routes.ts

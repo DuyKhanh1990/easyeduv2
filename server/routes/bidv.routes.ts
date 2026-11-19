@@ -18,6 +18,7 @@ import { validateCertificatePem, validatePrivateKeyPem, validatePrivateKeyUsable
 import { ensureVirtualAccount, ensureInvoiceVirtualAccount, ensureScheduleVirtualAccount, getVirtualAccountByStudentId } from "../services/bidv/bidv-virtual-account.service";
 import { buildBidvQrUrl } from "../services/bidv/bidv-vietqr.service";
 import { handleGetBill, handlePayBill } from "../services/bidv/bidv-request-handler.service";
+import { registerBidvRouteWithSharedGateway } from "../services/bidv/bidv-gateway-proxy.service";
 
 const ENCRYPTED_SYS_KEYS = ["client_secret", "symmetric_key", "private_key"];
 const ALL_SYS_KEYS = [
@@ -352,6 +353,15 @@ export function registerBidvAdminRoutes(app: Express) {
       return res.status(403).json({ message: "Không có quyền chỉnh sửa cơ sở này" });
     }
 
+    let routeRegistrationPayload: {
+      provider: "bidv";
+      routingKey: string;
+      centerId: string;
+      name: string;
+      baseUrl: string;
+      isActive: true;
+    } | null = null;
+
     try {
       await db.transaction(async (tx) => {
         const [existing] = await tx
@@ -423,7 +433,14 @@ export function registerBidvAdminRoutes(app: Express) {
             ))
             .limit(1);
 
-          if (existingRoute && existingRoute.centerId !== center.id) {
+          const existingRouteTargetsCenter =
+            existingRoute?.baseUrl.replace(/\/+$/, "").toLowerCase() ===
+            center.centerUrl.replace(/\/+$/, "").toLowerCase();
+          if (
+            existingRoute &&
+            existingRoute.centerId !== center.id &&
+            !existingRouteTargetsCenter
+          ) {
             throw createBidvConfigError(
               "Service ID này đã được định tuyến cho một trung tâm khác.",
               409,
@@ -438,6 +455,14 @@ export function registerBidvAdminRoutes(app: Express) {
             baseUrl: center.centerUrl.replace(/\/+$/, ""),
             isActive: true,
             updatedAt: new Date(),
+          };
+          routeRegistrationPayload = {
+            provider: "bidv",
+            routingKey: serviceId,
+            centerId: center.id,
+            name: routeData.name,
+            baseUrl: routeData.baseUrl,
+            isActive: true,
           };
 
           if (existingRoute) {
@@ -459,6 +484,17 @@ export function registerBidvAdminRoutes(app: Express) {
           await tx.insert(bidvLocationConfigs).values({ ...upsertData, createdAt: new Date() });
         }
       });
+
+      if (routeRegistrationPayload) {
+        try {
+          await registerBidvRouteWithSharedGateway(routeRegistrationPayload);
+        } catch (registrationError: any) {
+          console.error("[BIDV] shared gateway route registration failed:", registrationError?.message ?? registrationError);
+          return res.status(502).json({
+            message: "Đã lưu cấu hình BIDV tại trung tâm nhưng chưa đăng ký được tuyến ở endpoint chung. Hãy thử lưu lại.",
+          });
+        }
+      }
 
       return res.json({ ok: true, message: "Đã lưu cấu hình BIDV cho cơ sở" });
     } catch (err: any) {

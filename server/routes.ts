@@ -415,6 +415,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (req.path === "/facebook/oauth/callback") return next(); // Facebook OAuth redirect — không có session
     if (req.path === "/bidv/getbill") return next();    // BIDV webhook không cần auth
     if (req.path === "/bidv/paybill") return next();    // BIDV webhook không cần auth
+    if (req.path === "/internal/bidv-gateway/registry") return next(); // HMAC-authenticated gateway registration
     if (req.path === "/admin/tinode-push-test") return next(); // Debug endpoint — localhost only
     if (req.path === "/admin/expo-push-test") return next(); // Debug endpoint — localhost only
     if (req.isAuthenticated() || req.user) return next();
@@ -436,6 +437,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (req.path === "/facebook/oauth/callback") return next(); // Facebook OAuth redirect bypass
     if (req.path === "/bidv/getbill") return next();    // BIDV webhook bypass
     if (req.path === "/bidv/paybill") return next();    // BIDV webhook bypass
+    if (req.path === "/internal/bidv-gateway/registry") return next(); // HMAC-authenticated gateway registration
     if (req.path === "/admin/tinode-push-test") return next(); // Debug endpoint
     if (req.path === "/admin/expo-push-test") return next(); // Debug endpoint
     locationAccessMiddleware(req, res, next);

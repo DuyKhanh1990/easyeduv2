@@ -98,6 +98,8 @@ function queueRouteCreationResults(existingRoute: unknown[] = [], existingConfig
 
 describe("BIDV location config route synchronization", () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
     mocks.selectResults.length = 0;
     mocks.inserts.length = 0;
     mocks.updates.length = 0;
@@ -166,6 +168,38 @@ describe("BIDV location config route synchronization", () => {
       baseUrl: "https://easyeduv2.easyedu.vn",
       isActive: true,
     });
+  });
+
+  it("registers the saved route with the shared gateway", async () => {
+    vi.stubEnv("BIDV_SHARED_GATEWAY_URL", "https://gateway.example.test");
+    vi.stubEnv("BIDV_GATEWAY_SHARED_SECRET", "test-only-shared-secret");
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 201 });
+    vi.stubGlobal("fetch", fetchMock);
+    queueRouteCreationResults();
+
+    const response = await request(buildApp())
+      .put("/api/bidv/location-config")
+      .send({
+        locationId: LOCATION_ID,
+        serviceId: "EE0005",
+        vaPrefix: "96510817",
+      });
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://gateway.example.test/api/internal/bidv-gateway/registry");
+    expect(JSON.parse(String(options.body))).toMatchObject({
+      provider: "bidv",
+      routingKey: "EE0005",
+      centerId: CENTER_ID,
+      baseUrl: "https://easyeduv2.easyedu.vn",
+      isActive: true,
+    });
+    expect((options.headers as Record<string, string>)["X-Gateway-Source"])
+      .toBe("easyedu-bidv-gateway");
+    expect((options.headers as Record<string, string>)["x-bidv-gateway-signature"])
+      .toMatch(/^[a-f0-9]{64}$/);
   });
 
   it("does not overwrite a service route owned by another center", async () => {

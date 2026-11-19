@@ -20,6 +20,10 @@ const GATEWAY_SOURCE = "easyedu-bidv-gateway";
 const INTERNAL_TIMESTAMP_HEADER = "x-bidv-gateway-timestamp";
 const INTERNAL_SIGNATURE_HEADER = "x-bidv-gateway-signature";
 const INTERNAL_REQUEST_MAX_AGE_MS = 5 * 60 * 1000;
+function getSharedGatewayUrl(): string {
+  return process.env.BIDV_SHARED_GATEWAY_URL?.trim() || "https://easyeduv2.easyedu.vn";
+}
+const ROUTE_REGISTRATION_PATH = "/api/internal/bidv-gateway/registry";
 
 function getGatewaySharedSecret(): string {
   const secret = process.env.BIDV_GATEWAY_SHARED_SECRET;
@@ -49,6 +53,26 @@ function makeGatewaySignature(
     .createHmac("sha256", secret)
     .update(gatewayRequestPayload(timestamp, method, path, body))
     .digest("hex");
+}
+
+export function createBidvGatewayAuthHeaders(
+  method: string,
+  path: string,
+  body: unknown,
+): Record<string, string> {
+  const timestamp = String(Date.now());
+  return {
+    "Content-Type": "application/json",
+    "X-Gateway-Source": GATEWAY_SOURCE,
+    [INTERNAL_TIMESTAMP_HEADER]: timestamp,
+    [INTERNAL_SIGNATURE_HEADER]: makeGatewaySignature(
+      getGatewaySharedSecret(),
+      timestamp,
+      method,
+      path,
+      body,
+    ),
+  };
 }
 
 export function isTrustedBidvGatewayForward(req: Request): boolean {
@@ -82,6 +106,49 @@ export function isTrustedBidvGatewayForward(req: Request): boolean {
     expectedBuffer.length === suppliedBuffer.length &&
     crypto.timingSafeEqual(expectedBuffer, suppliedBuffer)
   );
+}
+
+export async function registerBidvRouteWithSharedGateway(
+  route: {
+    provider: "bidv";
+    routingKey: string;
+    centerId: string;
+    name: string;
+    baseUrl: string;
+    isActive: true;
+  },
+): Promise<void> {
+  const gatewayUrl = new URL(getSharedGatewayUrl());
+  const centerUrl = new URL(route.baseUrl);
+  if (gatewayUrl.origin === centerUrl.origin) return;
+
+  const headers = createBidvGatewayAuthHeaders(
+    "POST",
+    ROUTE_REGISTRATION_PATH,
+    route,
+  );
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+
+  try {
+    const response = await fetch(
+      `${gatewayUrl.origin}${ROUTE_REGISTRATION_PATH}`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(route),
+        signal: controller.signal,
+      },
+    );
+    if (!response.ok) {
+      const responseText = await response.text().catch(() => "");
+      throw new Error(
+        `Gateway route registration failed (${response.status})${responseText ? `: ${responseText.slice(0, 300)}` : ""}`,
+      );
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // ─── Self-center detection ────────────────────────────────────────────────────
@@ -161,20 +228,7 @@ export async function forwardRequest(
 ): Promise<ForwardResult> {
   const url = `${baseUrl.replace(/\/$/, "")}${path}`;
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "X-Gateway-Source": GATEWAY_SOURCE,
-  };
-
-  const timestamp = String(Date.now());
-  headers[INTERNAL_TIMESTAMP_HEADER] = timestamp;
-  headers[INTERNAL_SIGNATURE_HEADER] = makeGatewaySignature(
-    getGatewaySharedSecret(),
-    timestamp,
-    method,
-    path,
-    body,
-  );
+  const headers = createBidvGatewayAuthHeaders(method, path, body);
 
   // Forward client IP nếu có
   const xff = incomingHeaders["x-forwarded-for"];
