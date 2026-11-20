@@ -25,6 +25,7 @@ import { codeStem, nextCodeForStem } from "../lib/role-code";
 import { decrypt, encrypt } from "../lib/encryption";
 import { comparePasswords } from "../auth";
 import { hasVisibleStudentReview } from "../lib/student-review-visibility";
+import { uniqueUuidStrings } from "../lib/uuid-list";
 import {
   deletePrivateCustomerImport,
   downloadPrivateCustomerImport,
@@ -3815,13 +3816,14 @@ export function registerStudentsRoutes(app: Express): void {
       // Keep the customer detail view in the same order as the teacher form.
       // Review JSON follows the order in which the teacher submitted items,
       // which is not necessarily the configured group/criterion order.
-      const criteriaIds = [...new Set(result.rows.flatMap((row: any) => {
+      const rawCriteriaIds = result.rows.flatMap((row: any) => {
         const raw = row.review_data;
         if (!raw || typeof raw !== "object") return [];
         return Object.values(raw).flatMap((entry: any) =>
           Array.isArray(entry?.items) ? entry.items.map((item: any) => item.criteriaId).filter(Boolean) : []
         );
-      }))];
+      });
+      const criteriaIds = uniqueUuidStrings(rawCriteriaIds);
       if (criteriaIds.length > 0) {
         const configuredItems = await db.select({
           id: evaluationSubCriteria.id,
