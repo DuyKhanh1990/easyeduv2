@@ -4,10 +4,14 @@ import { useLanguage } from "@/hooks/use-language";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChevronDown } from "lucide-react";
 import { STATUS_CONFIG } from "@/types/invoice-types";
+import {
+  InvoicePaymentStatusDialog,
+  type InvoicePaymentStatusDetails,
+} from "./InvoicePaymentStatusDialog";
 
 interface UpdateStatusMutation {
   mutate: (
-    vars: { scheduleId: string; status: string },
+    vars: { scheduleId: string; status: string } & Partial<InvoicePaymentStatusDetails>,
     options?: { onSuccess?: () => void; onError?: (err: Error) => void }
   ) => void;
   isPending: boolean;
@@ -18,13 +22,19 @@ export function ScheduleStatusDropdown({
   currentStatus,
   allowedStatuses,
   updateStatusMutation,
+  initialAccount,
+  initialCounterAccount,
 }: {
   scheduleId: string;
   currentStatus: string;
   allowedStatuses: readonly string[];
   updateStatusMutation: UpdateStatusMutation;
+  initialAccount?: string | null;
+  initialCounterAccount?: string | null;
 }) {
   const [open, setOpen] = useState(false);
+  const [quickPaymentOpen, setQuickPaymentOpen] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const { toast } = useToast();
   const { t } = useLanguage();
   const getStatusLabel = (status: string) =>
@@ -33,41 +43,75 @@ export function ScheduleStatusDropdown({
   const currentClass = STATUS_CONFIG[currentStatus]?.className ?? STATUS_CONFIG.unpaid.className;
   const statusOptions = (["unpaid", "paid", "confirmed"] as const).filter(status => allowedStatuses.includes(status));
 
+  const selectStatus = (status: string) => {
+    setOpen(false);
+    if (currentStatus === "unpaid" && (status === "paid" || status === "confirmed")) {
+      setPendingStatus(status);
+      setQuickPaymentOpen(true);
+      return;
+    }
+    updateStatusMutation.mutate(
+      { scheduleId, status },
+      {
+        onSuccess: () => setOpen(false),
+        onError: () => toast({ title: t("finance.updateError"), variant: "destructive" }),
+      },
+    );
+  };
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded font-medium cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap ${currentClass}`}
-          data-testid={`schedule-status-${scheduleId}`}
-        >
-          {currentLabel}
-          <ChevronDown className="h-3 w-3" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-44 p-1" align="start">
-        <div className="space-y-0.5">
-          {statusOptions.map(status => (
-            <button
-              key={status}
-              onClick={() =>
-                updateStatusMutation.mutate(
-                  { scheduleId, status },
-                  {
-                    onSuccess: () => setOpen(false),
-                    onError: () => toast({ title: t("finance.updateError"), variant: "destructive" }),
-                  }
-                )
-              }
-              disabled={updateStatusMutation.isPending}
-              className={`w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted transition-colors flex items-center gap-2 ${currentStatus === status ? "font-semibold" : ""}`}
-              data-testid={`schedule-status-${status}-${scheduleId}`}
-            >
-              <span className={`w-2 h-2 rounded-full ${status === "paid" ? "bg-green-500" : status === "confirmed" ? "bg-blue-700" : "bg-yellow-500"}`} />
-              {getStatusLabel(status)}
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded font-medium cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap ${currentClass}`}
+            data-testid={`schedule-status-${scheduleId}`}
+          >
+            {currentLabel}
+            <ChevronDown className="h-3 w-3" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-44 p-1" align="start">
+          <div className="space-y-0.5">
+            {statusOptions.map(status => (
+              <button
+                key={status}
+                onClick={() => selectStatus(status)}
+                disabled={updateStatusMutation.isPending}
+                className={`w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted transition-colors flex items-center gap-2 ${currentStatus === status ? "font-semibold" : ""}`}
+                data-testid={`schedule-status-${status}-${scheduleId}`}
+              >
+                <span className={`w-2 h-2 rounded-full ${status === "paid" ? "bg-green-500" : status === "confirmed" ? "bg-blue-700" : "bg-yellow-500"}`} />
+                {getStatusLabel(status)}
+              </button>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+      <InvoicePaymentStatusDialog
+        open={quickPaymentOpen}
+        onOpenChange={open => {
+          setQuickPaymentOpen(open);
+          if (!open) setPendingStatus(null);
+        }}
+        isPending={updateStatusMutation.isPending}
+        title="Thông tin thanh toán đợt"
+        initialAccount={initialAccount}
+        initialCounterAccount={initialCounterAccount}
+        onConfirm={details => {
+          if (!pendingStatus) return;
+          updateStatusMutation.mutate(
+            { scheduleId, status: pendingStatus, ...details },
+            {
+              onSuccess: () => {
+                setQuickPaymentOpen(false);
+                setPendingStatus(null);
+              },
+              onError: () => toast({ title: t("finance.updateError"), variant: "destructive" }),
+            },
+          );
+        }}
+      />
+    </>
   );
 }

@@ -2792,7 +2792,12 @@ export async function updateInvoiceSchedule(scheduleId: string, data: {
   });
 }
 
-export async function updateInvoiceScheduleStatus(scheduleId: string, status: string, userId?: string | null): Promise<any> {
+export async function updateInvoiceScheduleStatus(
+  scheduleId: string,
+  status: string,
+  userId?: string | null,
+  paymentDetails?: { paymentMethod?: string; account?: string | null; counterAccount?: string | null },
+): Promise<any> {
   return db.transaction(async (tx) => {
     const [before] = await tx
       .select({ status: invoicePaymentSchedule.status, paidAt: invoicePaymentSchedule.paidAt, paidBy: invoicePaymentSchedule.paidBy })
@@ -2806,6 +2811,7 @@ export async function updateInvoiceScheduleStatus(scheduleId: string, status: st
       .update(invoicePaymentSchedule)
       .set({
         status,
+        ...(paymentDetails?.paymentMethod !== undefined ? { paymentMethod: paymentDetails.paymentMethod } : {}),
         paidAt,
         paidBy: nowPaid ? (wasPaid ? (before?.paidBy ?? userId ?? null) : (userId ?? null)) : null,
         updatedAt: new Date(),
@@ -2847,6 +2853,8 @@ export async function updateInvoiceScheduleStatus(scheduleId: string, status: st
           paidAmount: paidAmount.toFixed(2),
           remainingAmount: remainingAmount.toFixed(2),
           status: summaryStatus,
+          ...(paymentDetails?.account !== undefined ? { account: paymentDetails.account } : {}),
+          ...(paymentDetails?.counterAccount !== undefined ? { counterAccount: paymentDetails.counterAccount } : {}),
           updatedAt: new Date(),
           updatedBy: userId ?? null,
         })
@@ -2933,12 +2941,20 @@ export async function appendSalaryPayment(invoiceId: string, amountPaid: number)
   });
 }
 
-export async function updateInvoiceStatus(invoiceId: string, status: string, userId?: string): Promise<any> {
+export async function updateInvoiceStatus(
+  invoiceId: string,
+  status: string,
+  userId?: string,
+  paymentDetails?: { paymentMethod?: string; account?: string | null; counterAccount?: string | null },
+): Promise<any> {
   const [inv] = await db.select().from(invoices).where(eq(invoices.id, invoiceId));
   if (!inv) throw new Error("Không tìm thấy hoá đơn");
 
   const grandTotal = parseFloat(inv.grandTotal ?? "0");
   const extraFields: Record<string, any> = {};
+  if (paymentDetails?.paymentMethod !== undefined) extraFields.paymentMethod = paymentDetails.paymentMethod;
+  if (paymentDetails?.account !== undefined) extraFields.account = paymentDetails.account;
+  if (paymentDetails?.counterAccount !== undefined) extraFields.counterAccount = paymentDetails.counterAccount;
 
   if (isPaidInvoiceStatus(status)) {
     extraFields.paidAmount = grandTotal.toFixed(2);

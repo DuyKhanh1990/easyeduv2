@@ -424,8 +424,18 @@ export interface IStorage {
     paidAt?: Date | null;
     updatedBy?: string | null;
   }): Promise<any>;
-  updateInvoiceScheduleStatus(scheduleId: string, status: string, userId?: string | null): Promise<any>;
-  updateInvoiceStatus(invoiceId: string, status: string, userId?: string): Promise<any>;
+  updateInvoiceScheduleStatus(
+    scheduleId: string,
+    status: string,
+    userId?: string | null,
+    paymentDetails?: { paymentMethod?: string; account?: string | null; counterAccount?: string | null },
+  ): Promise<any>;
+  updateInvoiceStatus(
+    invoiceId: string,
+    status: string,
+    userId?: string,
+    paymentDetails?: { paymentMethod?: string; account?: string | null; counterAccount?: string | null },
+  ): Promise<any>;
   createInvoice(data: any): Promise<any>;
   updateInvoice(id: string, data: any): Promise<any>;
   deleteInvoice(id: string): Promise<void>;
@@ -1320,12 +1330,22 @@ export class DatabaseStorage implements IStorage {
     return financeStorage.updateInvoiceSchedule(scheduleId, data);
   }
 
-  async updateInvoiceScheduleStatus(scheduleId: string, status: string, userId?: string | null): Promise<any> {
-    return financeStorage.updateInvoiceScheduleStatus(scheduleId, status, userId);
+  async updateInvoiceScheduleStatus(
+    scheduleId: string,
+    status: string,
+    userId?: string | null,
+    paymentDetails?: { paymentMethod?: string; account?: string | null; counterAccount?: string | null },
+  ): Promise<any> {
+    return financeStorage.updateInvoiceScheduleStatus(scheduleId, status, userId, paymentDetails);
   }
 
-  async updateInvoiceStatus(invoiceId: string, status: string, userId?: string): Promise<any> {
-    return financeStorage.updateInvoiceStatus(invoiceId, status, userId);
+  async updateInvoiceStatus(
+    invoiceId: string,
+    status: string,
+    userId?: string,
+    paymentDetails?: { paymentMethod?: string; account?: string | null; counterAccount?: string | null },
+  ): Promise<any> {
+    return financeStorage.updateInvoiceStatus(invoiceId, status, userId, paymentDetails);
   }
 
   async deleteInvoice(id: string): Promise<void> {

@@ -2040,6 +2040,24 @@ export function registerFinanceRoutes(app: Express): void {
         return res.status(404).json({ message: "Không tìm thấy đợt thanh toán" });
       }
 
+      const paymentMethod = typeof req.body?.paymentMethod === "string"
+        ? req.body.paymentMethod.trim()
+        : "";
+      const startsPayment = scheduleBefore.status === "unpaid" && isPaidInvoiceStatus(status);
+      const allowedPaymentMethods = new Set(["cash", "transfer", "deposit_wallet", "card", "installment"]);
+      if (startsPayment && !allowedPaymentMethods.has(paymentMethod)) {
+        return res.status(400).json({ message: "Vui lòng chọn hình thức thanh toán." });
+      }
+      const paymentDetails = startsPayment ? {
+        paymentMethod,
+        account: Object.prototype.hasOwnProperty.call(req.body ?? {}, "account")
+          ? (typeof req.body.account === "string" ? (req.body.account.trim() || null) : null)
+          : undefined,
+        counterAccount: Object.prototype.hasOwnProperty.call(req.body ?? {}, "counterAccount")
+          ? (typeof req.body.counterAccount === "string" ? (req.body.counterAccount.trim() || null) : null)
+          : undefined,
+      } : undefined;
+
       if (scheduleBefore?.invoiceId) {
         if (isTuitionRefundInvoice(invoice)) {
           const schedules = await db
@@ -2057,7 +2075,7 @@ export function registerFinanceRoutes(app: Express): void {
         }
       }
 
-      const updated = await storage.updateInvoiceScheduleStatus(req.params.id, status, userId);
+      const updated = await storage.updateInvoiceScheduleStatus(req.params.id, status, userId, paymentDetails);
 
       const schedulesAfterStatusChange = await db
         .select()
@@ -2412,7 +2430,24 @@ export function registerFinanceRoutes(app: Express): void {
           message: "Hoá đơn có các đợt thanh toán; hãy thao tác trên từng đợt con.",
         });
       }
-      const updated = await storage.updateInvoiceStatus(req.params.id, status, userId);
+      const paymentMethod = typeof req.body?.paymentMethod === "string"
+        ? req.body.paymentMethod.trim()
+        : "";
+      const startsPayment = before.status === "unpaid" && isPaidInvoiceStatus(status);
+      const allowedPaymentMethods = new Set(["cash", "transfer", "deposit_wallet", "card", "installment"]);
+      if (startsPayment && !allowedPaymentMethods.has(paymentMethod)) {
+        return res.status(400).json({ message: "Vui lòng chọn hình thức thanh toán." });
+      }
+      const paymentDetails = startsPayment ? {
+        paymentMethod,
+        account: Object.prototype.hasOwnProperty.call(req.body ?? {}, "account")
+          ? (typeof req.body.account === "string" ? (req.body.account.trim() || null) : null)
+          : undefined,
+        counterAccount: Object.prototype.hasOwnProperty.call(req.body ?? {}, "counterAccount")
+          ? (typeof req.body.counterAccount === "string" ? (req.body.counterAccount.trim() || null) : null)
+          : undefined,
+      } : undefined;
+      const updated = await storage.updateInvoiceStatus(req.params.id, status, userId, paymentDetails);
 
       if (before && before.status !== status) {
         createInvoiceAuditLog({
@@ -2424,8 +2459,18 @@ export function registerFinanceRoutes(app: Express): void {
           action: "Đổi trạng thái hoá đơn",
           userId: userId ?? null,
           locationId: updated.locationId ?? before.locationId ?? null,
-          oldContent: { status: before.status },
-          newContent: { status: updated.status },
+          oldContent: {
+            status: before.status,
+            account: before.account ?? null,
+            counterAccount: before.counterAccount ?? null,
+            paymentMethod: before.paymentMethod ?? null,
+          },
+          newContent: {
+            status: updated.status,
+            account: updated.account ?? null,
+            counterAccount: updated.counterAccount ?? null,
+            paymentMethod: updated.paymentMethod ?? null,
+          },
         }).catch(() => {});
       }
 

@@ -21,6 +21,8 @@ export interface InvoiceRow {
   note: string | null;
   paymentNote: string | null;
   status: string;
+  account?: string | null;
+  counterAccount?: string | null;
   dueDate: string | null;
   creatorName: string | null;
   updaterName: string | null;

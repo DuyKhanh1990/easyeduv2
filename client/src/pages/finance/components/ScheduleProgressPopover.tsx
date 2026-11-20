@@ -17,6 +17,10 @@ import { SplitScheduleDialog } from "./SplitScheduleDialog";
 import { ScheduleQRDialog } from "./ScheduleRows";
 import { InvoicePrintPreview } from "../InvoicePrintPreview";
 import { useLanguage } from "@/hooks/use-language";
+import {
+  InvoicePaymentStatusDialog,
+  type InvoicePaymentStatusDetails,
+} from "./InvoicePaymentStatusDialog";
 
 /* ─── Status badge (display only) ────────────────────────── */
 function StatusLabel({ status, dueDate }: { status: string; dueDate?: string | null }) {
@@ -43,6 +47,11 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets, c
   const [printTarget, setPrintTarget]     = useState<ScheduleItem | null>(null);
   const [signTarget, setSignTarget]       = useState<ScheduleItem | null>(null);
   const [signConfirmed, setSignConfirmed] = useState(false);
+  const [paymentStatusTarget, setPaymentStatusTarget] = useState<
+    | { kind: "invoice"; status: string }
+    | { kind: "schedule"; scheduleId: string; status: string }
+    | null
+  >(null);
 
   /* Inline UI state */
   const [calOpenId, setCalOpenId] = useState<string | null>(null);
@@ -66,8 +75,19 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets, c
     onSuccess: invalidate,
   });
   const updateStatusMutation = useMutation({
-    mutationFn: ({ scheduleId, status }: { scheduleId: string; status: string }) =>
-      apiRequest("PATCH", `/api/finance/invoice-schedules/${scheduleId}/status`, { status }),
+    mutationFn: ({
+      scheduleId,
+      status,
+      account,
+      counterAccount,
+      paymentMethod,
+    }: {
+      scheduleId: string;
+      status: string;
+    } & Partial<InvoicePaymentStatusDetails>) =>
+      apiRequest("PATCH", `/api/finance/invoice-schedules/${scheduleId}/status`, {
+        status, account, counterAccount, paymentMethod,
+      }),
     onSuccess: invalidate,
   });
   const updateDueDateMutation = useMutation({
@@ -76,8 +96,12 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets, c
     onSuccess: () => { invalidate(); setCalOpenId(null); },
   });
   const updateInvoiceMutation = useMutation({
-    mutationFn: ({ status }: { status: string }) =>
-      apiRequest("PATCH", `/api/finance/invoices/${inv.id}/status`, { status }),
+    mutationFn: ({ status, account, counterAccount, paymentMethod }: {
+      status: string;
+    } & Partial<InvoicePaymentStatusDetails>) =>
+      apiRequest("PATCH", `/api/finance/invoices/${inv.id}/status`, {
+        status, account, counterAccount, paymentMethod,
+      }),
     onSuccess: invalidate,
   });
   const updateInvoiceDueDateMutation = useMutation({
@@ -405,10 +429,17 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets, c
                             value={sch.status}
                             disabled={allowedStatusTargets.length === 0 || isStatusPending}
                             onChange={(e) => {
+                                const status = e.target.value;
+                                if (sch.status === "unpaid" && (status === "paid" || status === "confirmed")) {
+                                  setPaymentStatusTarget(sch.isSynthetic
+                                    ? { kind: "invoice", status }
+                                    : { kind: "schedule", scheduleId: sch.id, status });
+                                  return;
+                                }
                                 if (sch.isSynthetic) {
-                                  updateInvoiceMutation.mutate({ status: e.target.value });
+                                  updateInvoiceMutation.mutate({ status });
                                 } else {
-                                  updateStatusMutation.mutate({ scheduleId: sch.id, status: e.target.value });
+                                  updateStatusMutation.mutate({ scheduleId: sch.id, status });
                                 }
                             }}
                             className={`text-[11px] font-medium px-2 py-0.5 rounded border cursor-pointer transition-colors outline-none
@@ -469,6 +500,32 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets, c
           </div>
         </DialogContent>
       </Dialog>
+
+      <InvoicePaymentStatusDialog
+        open={paymentStatusTarget !== null}
+        onOpenChange={open => {
+          if (!open) setPaymentStatusTarget(null);
+        }}
+        isPending={updateStatusMutation.isPending || updateInvoiceMutation.isPending}
+        title="Thông tin thanh toán"
+        initialAccount={inv.account}
+        initialCounterAccount={inv.counterAccount}
+        onConfirm={details => {
+          if (!paymentStatusTarget) return;
+          const options = { onSuccess: () => setPaymentStatusTarget(null) };
+          if (paymentStatusTarget.kind === "invoice") {
+            updateInvoiceMutation.mutate(
+              { status: paymentStatusTarget.status, ...details },
+              options,
+            );
+          } else {
+            updateStatusMutation.mutate(
+              { scheduleId: paymentStatusTarget.scheduleId, status: paymentStatusTarget.status, ...details },
+              options,
+            );
+          }
+        }}
+      />
 
       {/* ── Print preview ── */}
       {printTarget && (

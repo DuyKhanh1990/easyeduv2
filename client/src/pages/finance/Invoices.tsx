@@ -50,6 +50,10 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { InvoiceStatusDropdown } from "./components/InvoiceStatusDropdown";
+import {
+  InvoicePaymentStatusDialog,
+  type InvoicePaymentStatusDetails,
+} from "./components/InvoicePaymentStatusDialog";
 import { DebtInvoiceRow } from "./components/DebtInvoiceRow";
 import { DebtScheduleLoader } from "./components/DebtScheduleLoader";
 import { StudentNameLink } from "@/components/ui/StudentNameLink";
@@ -338,7 +342,7 @@ function SortIcon({ k, activeSortKey, activeSortDir }: {
 
 interface InvoiceUpdateStatusMutation {
   mutate: (
-    vars: { invoiceId: string; status: string },
+    vars: { invoiceId: string; status: string } & Partial<InvoicePaymentStatusDetails>,
     options?: { onSuccess?: () => void; onError?: (err: Error) => void }
   ) => void;
   isPending: boolean;
@@ -911,12 +915,21 @@ function renderInvoiceCell(
                 currentStatus={inv.status}
                 allowedStatuses={allowedStatusTargets}
                 updateStatusMutation={updateScheduleStatusMutation}
+                initialAccount={inv.account}
+                initialCounterAccount={inv.counterAccount}
               />
             ) : <Badge className={`text-xs font-medium ${status.className}`}>{invoiceStatusLabel(inv.status, t)}</Badge>
           ) : inv.hasSchedules ? (
             <Badge className={`text-xs font-medium ${status.className}`}>{invoiceStatusLabel(inv.status, t)}</Badge>
           ) : allowedStatusTargets.length > 0 ? (
-            <InvoiceStatusDropdown invoiceId={inv.id} currentStatus={inv.status} allowedStatuses={allowedStatusTargets} updateStatusMutation={updateStatusMutation} />
+            <InvoiceStatusDropdown
+              invoiceId={inv.id}
+              currentStatus={inv.status}
+              allowedStatuses={allowedStatusTargets}
+              updateStatusMutation={updateStatusMutation}
+              initialAccount={inv.account}
+              initialCounterAccount={inv.counterAccount}
+            />
           ) : <Badge className={`text-xs font-medium ${status.className}`}>{invoiceStatusLabel(inv.status, t)}</Badge>}
         </td>
       );
@@ -1614,6 +1627,7 @@ export default function Invoices() {
   });
   const [selectedIds, setSelectedIds]   = useState<Set<string>>(new Set());
   const [selectedSchedules, setSelectedSchedules] = useState<Map<string, ScheduleItem>>(new Map());
+  const [bulkPaymentStatus, setBulkPaymentStatus] = useState<"paid" | "confirmed" | null>(null);
   const [expandedIds, setExpandedIds]   = useState<Set<string>>(new Set());
   const [dialogOpen, setDialogOpen]     = useState(() => !!urlInvoiceId);
   const [bulkEntryOpen, setBulkEntryOpen] = useState(false);
@@ -1776,10 +1790,28 @@ export default function Invoices() {
   });
 
   const bulkUpdateStatusMutation = useMutation({
-    mutationFn: async ({ invoiceIds, scheduleIds, status }: { invoiceIds: string[]; scheduleIds: string[]; status: string }) => {
+    mutationFn: async ({
+      invoiceIds,
+      scheduleIds,
+      status,
+      account,
+      counterAccount,
+      paymentMethod,
+    }: {
+      invoiceIds: string[];
+      scheduleIds: string[];
+      status: string;
+      account?: string | null;
+      counterAccount?: string | null;
+      paymentMethod?: string;
+    }) => {
       await Promise.all([
-        ...invoiceIds.map(id => apiRequest("PATCH", `/api/finance/invoices/${id}/status`, { status })),
-        ...scheduleIds.map(id => apiRequest("PATCH", `/api/finance/invoice-schedules/${id}/status`, { status })),
+        ...invoiceIds.map(id => apiRequest("PATCH", `/api/finance/invoices/${id}/status`, {
+          status, account, counterAccount, paymentMethod,
+        })),
+        ...scheduleIds.map(id => apiRequest("PATCH", `/api/finance/invoice-schedules/${id}/status`, {
+          status, account, counterAccount, paymentMethod,
+        })),
       ]);
     },
     onSuccess: (_data, vars) => {
@@ -2108,8 +2140,22 @@ export default function Invoices() {
       .filter((invoice): invoice is InvoiceRow => !!invoice)
     : filteredDisplayInvoices;
   const updateScheduleStatusMutation = useMutation({
-    mutationFn: ({ scheduleId, status }: { scheduleId: string; status: string }) =>
-      apiRequest("PATCH", `/api/finance/invoice-schedules/${scheduleId}/status`, { status }),
+    mutationFn: ({
+      scheduleId,
+      status,
+      account,
+      counterAccount,
+      paymentMethod,
+    }: {
+      scheduleId: string;
+      status: string;
+      account?: string | null;
+      counterAccount?: string | null;
+      paymentMethod?: string;
+    }) =>
+      apiRequest("PATCH", `/api/finance/invoice-schedules/${scheduleId}/status`, {
+        status, account, counterAccount, paymentMethod,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
     },
@@ -2146,6 +2192,21 @@ export default function Invoices() {
     handleColDragStart,
     handleColDragOver,
   } = useInvoiceColumns();
+
+  const requestBulkStatusChange = (status: string) => {
+    const hasUnpaidSelection =
+      invoices.some(invoice => selectedIds.has(invoice.id) && invoice.status === "unpaid") ||
+      Array.from(selectedSchedules.values()).some(schedule => schedule.status === "unpaid");
+    if ((status === "paid" || status === "confirmed") && hasUnpaidSelection) {
+      setBulkPaymentStatus(status);
+      return;
+    }
+    bulkUpdateStatusMutation.mutate({
+      invoiceIds: Array.from(selectedIds),
+      scheduleIds: Array.from(selectedSchedules.keys()),
+      status,
+    });
+  };
 
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => {
@@ -2611,11 +2672,7 @@ export default function Invoices() {
                       <ActionMenuItem
                         className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
                         disabled={bulkUpdateStatusMutation.isPending}
-                        onClick={() => bulkUpdateStatusMutation.mutate({
-                          invoiceIds: Array.from(selectedIds),
-                          scheduleIds: Array.from(selectedSchedules.keys()),
-                          status: "paid",
-                        })}
+                        onClick={() => requestBulkStatusChange("paid")}
                       >
                         <CheckCircle className="w-4 h-4 text-green-600" /><span>{t("finance.tab.paid")}</span>
                       </ActionMenuItem>
@@ -2624,11 +2681,7 @@ export default function Invoices() {
                       <ActionMenuItem
                         className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
                         disabled={bulkUpdateStatusMutation.isPending}
-                        onClick={() => bulkUpdateStatusMutation.mutate({
-                          invoiceIds: Array.from(selectedIds),
-                          scheduleIds: Array.from(selectedSchedules.keys()),
-                          status: "confirmed",
-                        })}
+                        onClick={() => requestBulkStatusChange("confirmed")}
                       >
                         <CheckCircle className="w-4 h-4 text-blue-700" /><span>{t("finance.tab.confirmed")}</span>
                       </ActionMenuItem>
@@ -3013,7 +3066,18 @@ export default function Invoices() {
                       isExpanded={isExpanded}
                        visibleColumns={visibleColumns.map(({ key, labelKey }) => ({ key, label: t(labelKey) }))}
                       onSplit={(s) => setSplitDialog({ scheduleId: s.id, label: s.label, amount: parseFloat(s.amount ?? "0"), invoiceId: inv.id })}
-                      invoice={{ id: inv.id, status: inv.status, code: inv.code ?? undefined, name: inv.name ?? undefined, branch: inv.branch ?? undefined, dueDate: inv.dueDate ?? undefined, description: (inv as any).description ?? undefined, note: (inv as any).note ?? undefined }}
+                      invoice={{
+                        id: inv.id,
+                        status: inv.status,
+                        code: inv.code ?? undefined,
+                        name: inv.name ?? undefined,
+                        branch: inv.branch ?? undefined,
+                        account: inv.account,
+                        counterAccount: inv.counterAccount,
+                        dueDate: inv.dueDate ?? undefined,
+                        description: (inv as any).description ?? undefined,
+                        note: (inv as any).note ?? undefined,
+                      }}
                       selectedScheduleIds={selectedScheduleIdSet}
                       onToggleSchedule={toggleSchedule}
                       canSelect={invPerm.canDelete}
@@ -3788,6 +3852,25 @@ export default function Invoices() {
           </div>
         </DialogContent>
       </Dialog>
+      <InvoicePaymentStatusDialog
+        open={bulkPaymentStatus !== null}
+        onOpenChange={open => {
+          if (!open) setBulkPaymentStatus(null);
+        }}
+        isPending={bulkUpdateStatusMutation.isPending}
+        title="Thông tin thanh toán cho các hóa đơn đã chọn"
+        onConfirm={details => {
+          if (!bulkPaymentStatus) return;
+          bulkUpdateStatusMutation.mutate({
+            invoiceIds: Array.from(selectedIds),
+            scheduleIds: Array.from(selectedSchedules.keys()),
+            status: bulkPaymentStatus,
+            ...details,
+          }, {
+            onSuccess: () => setBulkPaymentStatus(null),
+          });
+        }}
+      />
     </DashboardLayout>
   );
 }

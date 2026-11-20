@@ -204,8 +204,25 @@ export function useInvoices(queryParams: InvoiceQueryParams = {}) {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: ({ invoiceId, status }: { invoiceId: string; status: string }) =>
-      apiRequest("PATCH", `/api/finance/invoices/${invoiceId}/status`, { status }),
+    mutationFn: ({
+      invoiceId,
+      status,
+      account,
+      counterAccount,
+      paymentMethod,
+    }: {
+      invoiceId: string;
+      status: string;
+      account?: string | null;
+      counterAccount?: string | null;
+      paymentMethod?: string;
+    }) =>
+      apiRequest("PATCH", `/api/finance/invoices/${invoiceId}/status`, {
+        status,
+        account,
+        counterAccount,
+        paymentMethod,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [BASE_KEY] });
     },

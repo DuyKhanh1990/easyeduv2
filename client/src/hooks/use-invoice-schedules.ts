@@ -55,11 +55,22 @@ export function useInvoiceSchedules(invoiceId: string) {
     mutationFn: ({
       scheduleId,
       status,
+      account,
+      counterAccount,
+      paymentMethod,
     }: {
       scheduleId: string;
       status: string;
+      account?: string | null;
+      counterAccount?: string | null;
+      paymentMethod?: string;
     }) =>
-      apiRequest("PATCH", `/api/finance/invoice-schedules/${scheduleId}/status`, { status }),
+      apiRequest("PATCH", `/api/finance/invoice-schedules/${scheduleId}/status`, {
+        status,
+        account,
+        counterAccount,
+        paymentMethod,
+      }),
     onSuccess: invalidate,
   });
 
