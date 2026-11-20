@@ -24,6 +24,7 @@ import { createCrmConfigAuditLog, getCrmConfigAuditLogs } from "../storage/crm-c
 import { codeStem, nextCodeForStem } from "../lib/role-code";
 import { decrypt, encrypt } from "../lib/encryption";
 import { comparePasswords } from "../auth";
+import { hasVisibleStudentReview } from "../lib/student-review-visibility";
 import {
   deletePrivateCustomerImport,
   downloadPrivateCustomerImport,
@@ -3809,7 +3810,7 @@ export function registerStudentsRoutes(app: Express): void {
           reviewData: normalizeStudentReviewData(raw),
           reviewPublished: row.review_published,
         };
-      }).filter((row) => row.reviewData.some(item => item.comment) || (row.overallRating != null && row.overallRating > 0));
+      }).filter((row) => hasVisibleStudentReview(row.reviewData, row.overallRating));
 
       // Keep the customer detail view in the same order as the teacher form.
       // Review JSON follows the order in which the teacher submitted items,
