@@ -12,3 +12,9 @@ Checkbox tiêu chí con có thể có mã loại trừ tùy chọn. Trong câu t
 **How to apply:** Dòng không có nhóm khi tạo mới trở thành `heading`; dòng chọn nhóm trở thành `criterion`. Tiêu chí cũ vẫn là `criterion` dạng text để tương thích. API review phải giữ `inputType` và `checked`: checkbox hiển thị ô đã/chưa tick, text hiển thị nội dung nhận xét. Mọi màn hình học viên (chi tiết học viên, learning overview, my-space calendar) lấy `groupName` làm tiêu đề nhóm, sắp xếp nhóm/con theo thứ tự cấu hình, gom nhóm trước khi render và chỉ hiển thị một `criteriaRating` tổng ở đầu, không lặp tên tiêu chí con. Trong form bảng điểm mẫu, phần xem trước của tiêu chí đã chọn cần hiển thị nhóm, các tiêu chí con và kiểu nhập để người dùng xác nhận nội dung trước khi lưu.
 
 **How to apply:** Chỉ hiển thị/sửa mã loại trừ trên tiêu chí con checkbox; xóa mã khi chuyển thành text hoặc heading; kiểm tra trùng mã trên toàn bộ bảng theo từng học viên ở cả giao diện và API.
+
+**Rule:** Trong tab `/customers` → chi tiết học viên → Bảng điểm - Nhận xét, nhận xét buổi học đã công bố có ít nhất một checkbox được chọn phải được tính là nội dung hiển thị, dù không có nhận xét chữ hay điểm sao. Checkbox chưa chọn một mình không tạo nội dung hiển thị.
+
+**Why:** Các trung tâm có nhận xét chỉ dựa trên tiêu chí checkbox; bộ lọc trước đó loại các bản ghi đó khỏi danh sách.
+
+**How to apply:** Sau khi lọc theo trạng thái đã công bố, giữ bản ghi có nhận xét chữ, checkbox được chọn hoặc điểm sao dương.
