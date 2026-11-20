@@ -94,8 +94,8 @@ describe("student import location matching", () => {
 
   it("does not guess when normalized names match multiple locations", () => {
     const ambiguousLocations = [
-      { id: "one", name: "Cơ sở A, Quận 1" },
-      { id: "two", name: "Cơ sở A Quận 1" },
+      { id: "one", name: "Cơ sở, A, Quận 1" },
+      { id: "two", name: "Cơ sở A, Quận 1" },
     ];
 
     expect(matchStudentImportLocation("Cơ sở A Quận 1", ambiguousLocations)).toEqual({
