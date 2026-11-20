@@ -4094,6 +4094,20 @@ function ProvidersSection() {
 }
 
 function CallCenterConfig() {
+  const [provider, setProvider] = useState<"omicall" | "voip24h">("omicall");
+  return (
+    <>
+      <div className={provider === "omicall" ? "" : "hidden"}>
+        <OmicallConfig onSelectVoip24h={() => setProvider("voip24h")} />
+      </div>
+      <div className={provider === "voip24h" ? "" : "hidden"}>
+        <Voip24hConfig onSelectOmicall={() => setProvider("omicall")} />
+      </div>
+    </>
+  );
+}
+
+function OmicallConfig({ onSelectVoip24h }: { onSelectVoip24h: () => void }) {
   const { toast } = useToast();
   const { data: locations, isLoading: locationsLoading } = useLocations();
   const [selectedLocationId, setSelectedLocationId] = useState("");
@@ -4240,8 +4254,23 @@ function CallCenterConfig() {
           <CardTitle className="text-sm">Nhà cung cấp</CardTitle>
         </CardHeader>
         <CardContent className="p-2">
-          <div className="w-full px-3 py-2.5 rounded-md bg-primary/10 text-primary font-medium text-sm">
-            Omicall
+          <div className="space-y-1">
+            <button
+              type="button"
+              className="w-full px-3 py-2.5 rounded-md bg-primary/10 text-primary font-medium text-sm text-left"
+              aria-current="true"
+              data-testid="provider-omicall"
+            >
+              Omicall
+            </button>
+            <button
+              type="button"
+              onClick={onSelectVoip24h}
+              className="w-full px-3 py-2.5 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground font-medium text-sm text-left transition-colors"
+              data-testid="provider-voip24h"
+            >
+              VoIP24H
+            </button>
           </div>
         </CardContent>
       </Card>
@@ -4447,6 +4476,160 @@ function CallCenterConfig() {
 
           <div className="text-xs text-muted-foreground">
              Call History V3 dùng <code>x-api-key</code> trực tiếp theo tài liệu Omicall. Không nhập URL tài liệu api.omicall.com hoặc trang quản trị *.omicrm.io vào ô Call History URL.
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
+  const { data: locations, isLoading: locationsLoading } = useLocations();
+  const [selectedLocationId, setSelectedLocationId] = useState("");
+  const [form, setForm] = useState({
+    serviceName: "VOIP24H",
+    authUser: "",
+    authKey: "",
+    callHistoryUrl: "https://dial.voip24h.vn/dial/search",
+    autoCallUrl: "https://dial.voip24h.vn/dial",
+  });
+  const [showAuthKey, setShowAuthKey] = useState(false);
+
+  useEffect(() => {
+    if (locations?.length && !selectedLocationId) {
+      setSelectedLocationId(locations[0].id);
+    }
+  }, [locations, selectedLocationId]);
+
+  const selectedLocation = locations?.find(location => location.id === selectedLocationId);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[200px_1fr] gap-4">
+      <Card>
+        <CardHeader className="py-3">
+          <CardTitle className="text-sm">Nhà cung cấp</CardTitle>
+        </CardHeader>
+        <CardContent className="p-2">
+          <div className="space-y-1">
+            <button
+              type="button"
+              onClick={onSelectOmicall}
+              className="w-full px-3 py-2.5 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground font-medium text-sm text-left transition-colors"
+              data-testid="provider-omicall"
+            >
+              Omicall
+            </button>
+            <button
+              type="button"
+              className="w-full px-3 py-2.5 rounded-md bg-primary/10 text-primary font-medium text-sm text-left"
+              aria-current="true"
+              data-testid="provider-voip24h"
+            >
+              VoIP24H
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="py-3">
+          <CardTitle className="text-sm">Cấu hình tổng đài — VoIP24H</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {locationsLoading ? (
+            <div className="text-sm text-muted-foreground">Đang tải danh sách cơ sở...</div>
+          ) : locations?.length ? (
+            <div>
+              <label className="block text-sm font-medium mb-1.5">
+                Khách hàng / Cơ sở
+              </label>
+              <Select value={selectedLocationId} onValueChange={setSelectedLocationId}>
+                <SelectTrigger data-testid="select-voip24h-location">
+                  <SelectValue placeholder="Chọn khách hàng / cơ sở" />
+                </SelectTrigger>
+                <SelectContent>
+                  {locations.map(location => (
+                    <SelectItem key={location.id} value={location.id}>
+                      {location.name} ({location.code})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Cấu hình VoIP24H sẽ được thiết lập riêng cho {selectedLocation?.name || "cơ sở đang chọn"}.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+              Chưa có cơ sở để gán cấu hình VoIP24H.
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Service Name</label>
+            <Input
+              value={form.serviceName}
+              onChange={e => setForm(p => ({ ...p, serviceName: e.target.value }))}
+              data-testid="input-voip24h-service-name"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Auth user</label>
+            <Input
+              value={form.authUser}
+              onChange={e => setForm(p => ({ ...p, authUser: e.target.value }))}
+              data-testid="input-voip24h-auth-user"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Auth key</label>
+            <div className="relative">
+              <Input
+                type={showAuthKey ? "text" : "password"}
+                value={form.authKey}
+                onChange={e => setForm(p => ({ ...p, authKey: e.target.value }))}
+                className="pr-9"
+                data-testid="input-voip24h-auth-key"
+              />
+              <button
+                type="button"
+                onClick={() => setShowAuthKey(value => !value)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label={showAuthKey ? "Ẩn Auth key" : "Hiện Auth key"}
+                data-testid="button-toggle-voip24h-auth-key"
+              >
+                {showAuthKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Call History URL</label>
+            <Input
+              value={form.callHistoryUrl}
+              onChange={e => setForm(p => ({ ...p, callHistoryUrl: e.target.value }))}
+              data-testid="input-voip24h-call-history-url"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Auto Call URL</label>
+            <Input
+              value={form.autoCallUrl}
+              onChange={e => setForm(p => ({ ...p, autoCallUrl: e.target.value }))}
+              data-testid="input-voip24h-auto-call-url"
+            />
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap pt-2 border-t">
+            <Button type="button" disabled data-testid="button-save-voip24h">
+              Lưu cấu hình
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Lưu cấu hình và tích hợp sẽ được kết nối ở bước tiếp theo.
+            </p>
           </div>
         </CardContent>
       </Card>
