@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { getVisibleStudentReviewItems } from "./student-review-utils";
 
 interface ReviewItem {
   criteriaId?: string;
@@ -95,6 +96,7 @@ function ReviewDetailDialog({
 }) {
   if (!review) return null;
 
+  const visibleReviewData = getVisibleStudentReviewItems(review.reviewData);
   const sessionLabel = review.sessionIndex != null ? `Buổi ${review.sessionIndex}` : "—";
   const dateLabel = review.sessionDate
     ? new Date(review.sessionDate).toLocaleDateString("vi-VN")
@@ -105,7 +107,7 @@ function ReviewDetailDialog({
       : review.shiftName;
   const groupedItems = new Map<string, ReviewItem[]>();
   const ungroupedItems: ReviewItem[] = [];
-  for (const item of review.reviewData) {
+  for (const item of visibleReviewData) {
     if (item.groupName) {
       const items = groupedItems.get(item.groupName) ?? [];
       items.push(item);
@@ -138,7 +140,7 @@ function ReviewDetailDialog({
             <span className="font-medium">{shiftLabel}</span>
           </div>
 
-          {review.reviewData.length > 0 ? (
+          {visibleReviewData.length > 0 ? (
             <div>
               <p className="text-muted-foreground mb-2 font-medium">Chi tiết nhận xét</p>
               <div className="rounded-md border bg-background px-4 py-3">
@@ -249,7 +251,7 @@ export function StudentReviewTab({
                 review.startTime && review.endTime
                   ? `${review.shiftName} (${review.startTime} – ${review.endTime})`
                   : review.shiftName;
-              const criteriaCount = review.reviewData.length;
+              const criteriaCount = getVisibleStudentReviewItems(review.reviewData).length;
 
               return (
                 <tr

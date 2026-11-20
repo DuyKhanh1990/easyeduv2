@@ -13,8 +13,8 @@ Checkbox tiêu chí con có thể có mã loại trừ tùy chọn. Trong câu t
 
 **How to apply:** Chỉ hiển thị/sửa mã loại trừ trên tiêu chí con checkbox; xóa mã khi chuyển thành text hoặc heading; kiểm tra trùng mã trên toàn bộ bảng theo từng học viên ở cả giao diện và API.
 
-**Rule:** Trong tab `/customers` → chi tiết học viên → Bảng điểm - Nhận xét, nhận xét buổi học đã công bố có ít nhất một checkbox được chọn phải được tính là nội dung hiển thị, dù không có nhận xét chữ hay điểm sao. Checkbox chưa chọn một mình không tạo nội dung hiển thị.
+**Rule:** Trong tab `/customers` → chi tiết học viên → Bảng điểm - Nhận xét, nhận xét buổi học đã công bố có ít nhất một checkbox được chọn phải được tính là nội dung hiển thị, dù không có nhận xét chữ hay điểm sao. Phần chi tiết chỉ hiện checkbox đã chọn và tiêu chí text có nội dung; checkbox chưa chọn hoặc text trống bị ẩn.
 
 **Why:** Các trung tâm có nhận xét chỉ dựa trên tiêu chí checkbox; bộ lọc trước đó loại các bản ghi đó khỏi danh sách.
 
-**How to apply:** Sau khi lọc theo trạng thái đã công bố, giữ bản ghi có nhận xét chữ, checkbox được chọn hoặc điểm sao dương.
+**How to apply:** Sau khi lọc theo trạng thái đã công bố, giữ bản ghi có nhận xét chữ, checkbox được chọn hoặc điểm sao dương. Khi render chi tiết học viên, chỉ đếm và hiện checkbox `checked=true` cùng text không rỗng.
