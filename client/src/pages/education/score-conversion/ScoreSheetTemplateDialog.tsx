@@ -1,0 +1,1141 @@
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { BookOpen, Plus, Trash2 } from "lucide-react";
+import type { ScoreConversionTemplate } from "@shared/score-conversion";
+import type {
+  ScoreSheetTemplate,
+  ScoreSheetTemplateInput,
+} from "@shared/score-sheet-template";
+import {
+  DEFAULT_SCORE_SHEET_SKILL_COLOR,
+  SCORE_SHEET_SKILL_COLORS,
+} from "@shared/score-sheet-template";
+import { validateScoreConversionFormula } from "@shared/score-conversion-formula";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
+import { apiRequest } from "@/lib/queryClient";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ScoreSheetTemplateGradingThresholds } from "./ScoreSheetTemplateGradingThresholds";
+
+type Part = ScoreSheetTemplateInput["skills"][number]["parts"][number];
+type Skill = ScoreSheetTemplateInput["skills"][number];
+type PartFormula = ScoreSheetTemplateInput["skills"][number]["partFormula"];
+type OverallRule = NonNullable<ScoreSheetTemplateInput["overallRule"]>;
+type PassThreshold = NonNullable<ScoreSheetTemplateInput["passThreshold"]>;
+type EvaluationSubCriterion = {
+  id: string;
+  name: string;
+  parentId?: string | null;
+  itemType?: "heading" | "criterion" | null;
+  inputType?: "text" | "checkbox" | null;
+};
+type EvaluationCriterion = {
+  id: string;
+  name: string;
+  subCriteria?: EvaluationSubCriterion[];
+};
+
+const DEFAULT_OVERALL_RULE: OverallRule = { method: "average", formula: "" };
+const DEFAULT_PART_FORMULA: PartFormula = { method: "sum", formula: "" };
+const DEFAULT_PASS_THRESHOLD: PassThreshold = {
+  enabled: false,
+  minScore: 0,
+  maxScore: 0,
+  scoreSource: "overallConvertedScore",
+};
+
+function skillColorAt(index: number): Skill["color"] {
+  return SCORE_SHEET_SKILL_COLORS[index % SCORE_SHEET_SKILL_COLORS.length]
+    ?? DEFAULT_SCORE_SHEET_SKILL_COLOR;
+}
+
+function conversionSkillMaxScore(skill: Skill | undefined, section: ScoreConversionTemplate["sections"][number]) {
+  if (!skill || (skill.rawMaxScore === 0 && skill.parts.length === 0)) return section.rawMaxScore;
+  return skill.rawMaxScore;
+}
+
+function skillIdentifier(skill: Skill): string {
+  return skill.id ?? skill.sectionId ?? "";
+}
+
+function appendFormulaVariable(formula: string, name: string): string {
+  const trimmed = formula.trim();
+  const prefix = trimmed.startsWith("=") ? "=" : "";
+  const expression = trimmed.replace(/^=/, "").trim();
+  const separator = expression
+    ? /[+\-*/(]$/.test(expression) ? " " : " + "
+    : "";
+  return `${prefix}${expression}${separator}[${name}]`;
+}
+
+type ScoreSheetTemplateDialogProps = {
+  open: boolean;
+  template: ScoreSheetTemplate | null;
+  initialTemplate?: ScoreSheetTemplate | null;
+  conversionTemplates: ScoreConversionTemplate[];
+  conversionTemplatesLoading: boolean;
+  saving: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (draft: ScoreSheetTemplateInput) => Promise<void>;
+};
+
+function emptyDraft(): ScoreSheetTemplateInput {
+  return {
+    code: "",
+    name: "",
+    scoreConversionTemplateId: null,
+    skills: [],
+    overallRule: DEFAULT_OVERALL_RULE,
+    gradeBands: [],
+    passThreshold: { ...DEFAULT_PASS_THRESHOLD },
+    scoreDeadlineOffsetMinutes: 1440,
+    attemptCount: 1,
+    scoringPolicy: "highest",
+    evaluationCriteriaIds: [],
+  };
+}
+
+const numericValue = (value: string) => (value === "" ? 0 : Number(value));
+
+export function ScoreSheetTemplateDialog({
+  open,
+  template,
+  initialTemplate = null,
+  conversionTemplates,
+  conversionTemplatesLoading,
+  saving,
+  onOpenChange,
+  onSave,
+}: ScoreSheetTemplateDialogProps) {
+  const [draft, setDraft] = useState<ScoreSheetTemplateInput>(emptyDraft);
+  const [formError, setFormError] = useState("");
+  const [pendingConversionTemplateId, setPendingConversionTemplateId] = useState<string | null | undefined>();
+  const evaluationCriteriaQuery = useQuery<EvaluationCriterion[]>({
+    queryKey: ["/api/evaluation-criteria"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/evaluation-criteria");
+      return response.json();
+    },
+    enabled: open,
+  });
+
+  useEffect(() => {
+    if (!open || conversionTemplatesLoading) return;
+    const sourceTemplate = template ?? initialTemplate;
+    const linkedConversion = conversionTemplates.find(
+      (item) => item.id === sourceTemplate?.scoreConversionTemplateId,
+    );
+    setDraft(sourceTemplate
+      ? {
+          code: sourceTemplate.code,
+          name: sourceTemplate.name,
+          scoreConversionTemplateId: sourceTemplate.scoreConversionTemplateId,
+          overallRule: sourceTemplate.overallRule
+            ? { ...sourceTemplate.overallRule }
+            : linkedConversion
+              ? { method: linkedConversion.overallRule.method, formula: linkedConversion.overallRule.formula }
+              : DEFAULT_OVERALL_RULE,
+          skills: sourceTemplate.skills.map((skill, skillIndex) => {
+            const conversionSection = linkedConversion?.sections.find(
+              (section) => section.id === skill.sectionId,
+            );
+            return {
+              id: skill.id ?? skill.sectionId ?? crypto.randomUUID(),
+              name: conversionSection?.name ?? skill.name,
+              sectionId: skill.sectionId,
+              parts: skill.parts.map((part) => ({ ...part })),
+              partFormula: skill.partFormula ?? DEFAULT_PART_FORMULA,
+              rawMaxScore: conversionSection
+                ? conversionSkillMaxScore(skill, conversionSection)
+                : skill.rawMaxScore ?? skill.parts.reduce((total, part) => total + part.rawMaxScore, 0),
+              color: skill.color ?? skillColorAt(skillIndex),
+            };
+          }),
+          gradeBands: sourceTemplate.gradeBands?.map((band) => ({ ...band }))
+            ?? linkedConversion?.overallRule.gradeBands.map((band) => ({ ...band }))
+            ?? [],
+          passThreshold: sourceTemplate.passThreshold
+            ? { ...sourceTemplate.passThreshold }
+            : linkedConversion
+              ? { ...linkedConversion.overallRule.passThreshold }
+              : { ...DEFAULT_PASS_THRESHOLD },
+          scoreDeadlineOffsetMinutes: sourceTemplate.scoreDeadlineOffsetMinutes ?? 1440,
+          attemptCount: sourceTemplate.attemptCount ?? 1,
+          scoringPolicy: sourceTemplate.scoringPolicy ?? "highest",
+          evaluationCriteriaIds: sourceTemplate.evaluationCriteriaIds ?? [],
+        }
+      : emptyDraft());
+    setFormError("");
+    setPendingConversionTemplateId(undefined);
+  }, [open, template, initialTemplate, conversionTemplatesLoading]);
+
+  const selectedConversion = conversionTemplates.find(
+    (item) => item.id === draft.scoreConversionTemplateId,
+  );
+  const selectedEvaluationCriteria = draft.evaluationCriteriaIds.map((id) => ({
+    id,
+    criterion: evaluationCriteriaQuery.data?.find((item) => String(item.id) === id) ?? null,
+  }));
+
+  const applyConversionTemplate = (conversionTemplateId: string | null) => {
+    const nextConversion = conversionTemplates.find((item) => item.id === conversionTemplateId);
+    setDraft((current) => ({
+      ...current,
+      scoreConversionTemplateId: conversionTemplateId,
+      skills: nextConversion
+        ? nextConversion.sections.map((section, index) => {
+            const existingSkill = current.skills.find((skill) =>
+              skill.sectionId === section.id
+              || (!skill.sectionId && skill.name.trim().toLocaleLowerCase() === section.name.trim().toLocaleLowerCase()),
+            );
+            return {
+              id: section.id,
+              name: section.name,
+              sectionId: section.id,
+              parts: existingSkill?.parts ?? [],
+              partFormula: existingSkill?.partFormula ?? DEFAULT_PART_FORMULA,
+              rawMaxScore: conversionSkillMaxScore(existingSkill, section),
+              color: existingSkill?.color ?? skillColorAt(index),
+            };
+          })
+        : current.skills.map((skill) => ({
+            ...skill,
+            id: skill.id ?? skill.sectionId ?? crypto.randomUUID(),
+            sectionId: null,
+          })),
+      overallRule: nextConversion
+        ? { method: nextConversion.overallRule.method, formula: nextConversion.overallRule.formula }
+        : current.overallRule ?? DEFAULT_OVERALL_RULE,
+    }));
+    setFormError("");
+  };
+
+  const handleConversionChange = (value: string) => {
+    const conversionTemplateId = value === "none" ? null : value;
+    if (conversionTemplateId === draft.scoreConversionTemplateId) return;
+    if (draft.skills.length > 0) {
+      setPendingConversionTemplateId(conversionTemplateId);
+      return;
+    }
+    applyConversionTemplate(conversionTemplateId);
+  };
+
+  const addManualSkill = () => {
+    setDraft((current) => ({
+      ...current,
+      skills: [
+        ...current.skills,
+        {
+          id: crypto.randomUUID(),
+          name: `Kỹ năng ${current.skills.length + 1}`,
+          sectionId: null,
+          parts: [],
+          partFormula: DEFAULT_PART_FORMULA,
+          rawMaxScore: 0,
+          color: skillColorAt(current.skills.length),
+        },
+      ],
+    }));
+  };
+
+  const removeSkill = (skillId: string) => {
+    setDraft((current) => ({
+      ...current,
+      skills: current.skills.filter((skill) => skillIdentifier(skill) !== skillId),
+    }));
+  };
+
+  const updateSkill = (skillId: string, update: Partial<Skill>) => {
+    setDraft((current) => ({
+      ...current,
+      skills: current.skills.map((skill) => skillIdentifier(skill) === skillId
+        ? { ...skill, ...update }
+        : skill),
+    }));
+  };
+
+  const addPart = (skillId: string) => {
+    setDraft((current) => ({
+      ...current,
+      skills: current.skills.map((skill) => {
+        if (skillIdentifier(skill) !== skillId) return skill;
+        const part: Part = {
+          id: crypto.randomUUID(),
+          name: `Part ${skill.parts.length + 1}`,
+          rawMaxScore: 0,
+        };
+        return { ...skill, parts: [...skill.parts, part] };
+      }),
+    }));
+  };
+
+  const updatePart = (skillId: string, partId: string, update: Partial<Part>) => {
+    setDraft((current) => ({
+      ...current,
+      skills: current.skills.map((skill) => skillIdentifier(skill) === skillId
+        ? {
+            ...skill,
+            parts: skill.parts.map((part) => part.id === partId ? { ...part, ...update } : part),
+          }
+        : skill),
+    }));
+  };
+
+  const removePart = (skillId: string, partId: string) => {
+    setDraft((current) => ({
+      ...current,
+      skills: current.skills.map((skill) => skillIdentifier(skill) === skillId
+        ? { ...skill, parts: skill.parts.filter((part) => part.id !== partId) }
+        : skill),
+    }));
+  };
+
+  const updatePartFormula = (skillId: string, update: Partial<PartFormula>) => {
+    setDraft((current) => ({
+      ...current,
+      skills: current.skills.map((skill) => skillIdentifier(skill) === skillId
+        ? { ...skill, partFormula: { ...skill.partFormula, ...update } }
+        : skill),
+    }));
+  };
+
+  const appendPartVariable = (skillId: string, partName: string) => {
+    const skill = draft.skills.find((item) => skillIdentifier(item) === skillId);
+    if (!skill) return;
+    updatePartFormula(skillId, {
+      formula: appendFormulaVariable(skill.partFormula.formula, partName),
+    });
+  };
+
+  const overallRule = draft.overallRule ?? DEFAULT_OVERALL_RULE;
+  const deadlineOffsetMinutes = draft.scoreDeadlineOffsetMinutes ?? 0;
+  const deadlineDays = Math.floor(deadlineOffsetMinutes / (24 * 60));
+  const deadlineHours = Math.floor((deadlineOffsetMinutes % (24 * 60)) / 60);
+  const updateDeadlinePart = (part: "days" | "hours", rawValue: string) => {
+    setDraft((current) => {
+      const currentOffset = current.scoreDeadlineOffsetMinutes ?? 0;
+      const currentDays = Math.floor(currentOffset / (24 * 60));
+      const currentHours = Math.floor((currentOffset % (24 * 60)) / 60);
+      const parsed = rawValue === "" ? 0 : Math.max(0, Math.trunc(Number(rawValue) || 0));
+      const nextDays = part === "days" ? parsed : currentDays;
+      const nextHours = part === "hours" ? Math.min(23, parsed) : currentHours;
+      return {
+        ...current,
+        scoreDeadlineOffsetMinutes: nextDays * 24 * 60 + nextHours * 60,
+      };
+    });
+  };
+  const updateOverallRule = (update: Partial<OverallRule>) => {
+    setDraft((current) => ({
+      ...current,
+      overallRule: { ...(current.overallRule ?? DEFAULT_OVERALL_RULE), ...update },
+    }));
+  };
+
+  const setOverallRuleMethod = (value: string) => {
+    const method = value as OverallRule["method"];
+    if (method === "custom" && !overallRule.formula.trim()) {
+      updateOverallRule({ method, formula: "=" });
+      return;
+    }
+    updateOverallRule({ method });
+  };
+
+  const appendSkillVariable = (skillName: string) => {
+    updateOverallRule({
+      formula: appendFormulaVariable(overallRule.formula, skillName),
+    });
+  };
+
+  const visibleSkills = selectedConversion
+    ? selectedConversion.sections.map((section, index) => {
+        const savedSkill = draft.skills.find((skill) => skill.sectionId === section.id);
+        return {
+          id: section.id,
+          name: section.name,
+          sectionId: section.id,
+          parts: savedSkill?.parts ?? [],
+          partFormula: savedSkill?.partFormula ?? DEFAULT_PART_FORMULA,
+          rawMaxScore: conversionSkillMaxScore(savedSkill, section),
+          color: savedSkill?.color ?? skillColorAt(index),
+          conversionSection: section,
+          skillIndex: index,
+        };
+      })
+    : draft.skills.map((skill, index) => ({
+        ...skill,
+        id: skillIdentifier(skill),
+        conversionSection: null,
+        skillIndex: index,
+      }));
+
+  const hasInvalidSkillMaximums = visibleSkills.some((skill) =>
+    skill.parts.reduce((total, part) => total + part.rawMaxScore, 0) > skill.rawMaxScore + 1e-9
+    || (!!skill.conversionSection && skill.rawMaxScore > skill.conversionSection.rawMaxScore + 1e-9),
+  );
+  const overallFormulaError = overallRule.method === "custom" && visibleSkills.length > 0
+    ? validateScoreConversionFormula(overallRule.formula, visibleSkills.map((skill) => skill.name))
+    : null;
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormError("");
+    const gradeBands = draft.gradeBands ?? [];
+    if (gradeBands.some((band) => !band.label.trim())) {
+      setFormError("Vui lòng nhập tên cho từng ngưỡng xếp loại.");
+      return;
+    }
+    if (gradeBands.some((band) => band.maxScore < band.minScore)) {
+      setFormError("Điểm đến ngưỡng xếp loại phải lớn hơn hoặc bằng điểm từ.");
+      return;
+    }
+    const passThreshold = draft.passThreshold ?? DEFAULT_PASS_THRESHOLD;
+    if (
+      passThreshold.enabled
+      && (
+        !Number.isFinite(passThreshold.minScore)
+        || !Number.isFinite(passThreshold.maxScore)
+        || passThreshold.maxScore < passThreshold.minScore
+      )
+    ) {
+      setFormError("Điểm đến ngưỡng Đạt phải lớn hơn hoặc bằng điểm từ.");
+      return;
+    }
+    try {
+      const skills = selectedConversion
+        ? selectedConversion.sections.map((section, index) => {
+            const savedSkill = draft.skills.find((skill) => skill.sectionId === section.id);
+            return {
+              id: section.id,
+              name: section.name,
+              sectionId: section.id,
+              parts: savedSkill?.parts ?? [],
+              partFormula: savedSkill?.partFormula ?? DEFAULT_PART_FORMULA,
+              rawMaxScore: conversionSkillMaxScore(savedSkill, section),
+              color: savedSkill?.color ?? skillColorAt(index),
+            };
+          })
+        : draft.skills.map((skill) => ({
+            ...skill,
+            id: skill.id ?? crypto.randomUUID(),
+            name: skill.name.trim(),
+            sectionId: null,
+          }));
+      await onSave({
+        ...draft,
+        code: draft.code.trim().toUpperCase(),
+        name: draft.name.trim(),
+        skills,
+        overallRule,
+        gradeBands,
+        passThreshold,
+      });
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Không thể lưu bảng điểm mẫu.");
+    }
+  };
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="flex h-[98vh] max-h-[98vh] w-[98vw] max-w-[98vw] flex-col gap-0 overflow-hidden bg-slate-100 p-0">
+          <DialogHeader className="shrink-0 border-b bg-white px-5 py-4 pr-14 sm:px-6">
+            <DialogTitle>
+              {template ? "Sửa bảng điểm mẫu" : initialTemplate ? "Sao chép bảng điểm mẫu" : "Thêm bảng điểm mẫu"}
+            </DialogTitle>
+            <DialogDescription>
+              Tạo cấu trúc bảng điểm và tùy chọn liên kết với một bảng quy đổi quốc tế.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 sm:px-6">
+              <div className="grid items-start gap-4 lg:grid-cols-2">
+            <section className="grid gap-4 rounded-lg border bg-white p-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="score-sheet-template-code">Mã bảng điểm</Label>
+                <Input
+                  id="score-sheet-template-code"
+                  value={draft.code}
+                  onChange={(event) => setDraft((current) => ({ ...current, code: event.target.value }))}
+                  placeholder="Ví dụ: IELTS-01"
+                  maxLength={40}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="score-sheet-template-name">Tên bảng điểm</Label>
+                <Input
+                  id="score-sheet-template-name"
+                  value={draft.name}
+                  onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+                  placeholder="Nhập tên bảng điểm"
+                  maxLength={120}
+                  required
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="score-sheet-template-conversion">Bảng quy đổi quốc tế (không bắt buộc)</Label>
+                <Select
+                  value={draft.scoreConversionTemplateId ?? "none"}
+                  onValueChange={handleConversionChange}
+                  disabled={conversionTemplatesLoading}
+                >
+                  <SelectTrigger id="score-sheet-template-conversion">
+                    <SelectValue placeholder="Chọn bảng quy đổi" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Không áp dụng</SelectItem>
+                    {conversionTemplates.map((conversion) => (
+                      <SelectItem key={conversion.id} value={conversion.id}>
+                        {conversion.typeName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {conversionTemplatesLoading && (
+                  <p className="text-xs text-muted-foreground">Đang tải bảng quy đổi...</p>
+                )}
+              </div>
+
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="score-sheet-template-overall-method">Công thức tính điểm Tổng</Label>
+                <Select value={overallRule.method} onValueChange={setOverallRuleMethod}>
+                  <SelectTrigger id="score-sheet-template-overall-method">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="average">Trung bình các phần thi</SelectItem>
+                    <SelectItem value="sum">Cộng điểm các phần thi</SelectItem>
+                    <SelectItem value="custom">Tùy chỉnh công thức</SelectItem>
+                  </SelectContent>
+                </Select>
+                {overallRule.method === "custom" && (
+                  <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+                    <Label htmlFor="score-sheet-template-overall-formula">Công thức tùy chỉnh</Label>
+                    <Input
+                      id="score-sheet-template-overall-formula"
+                      value={overallRule.formula}
+                      onChange={(event) => updateOverallRule({ formula: event.target.value })}
+                      placeholder={`=[${visibleSkills[0]?.name ?? "Kỹ năng 1"}] + [${visibleSkills[1]?.name ?? visibleSkills[0]?.name ?? "Kỹ năng 2"}]`}
+                      maxLength={1000}
+                    />
+                    {visibleSkills.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Biến có sẵn:</span>
+                        {visibleSkills.filter((skill) => skill.name.trim()).map((skill) => (
+                          <Button
+                            key={skill.id}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => appendSkillVariable(skill.name)}
+                          >
+                            {skill.name}
+                          </Button>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Dùng tên kỹ năng trong dấu ngoặc vuông; hỗ trợ +, -, *, /, ngoặc và %.
+                    </p>
+                    {overallRule.formula.trim() && visibleSkills.length > 0 && (
+                      <p
+                        className={`text-xs ${overallFormulaError ? "text-destructive" : "text-muted-foreground"}`}
+                        role="status"
+                      >
+                        {overallFormulaError ?? "Công thức hợp lệ."}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="grid gap-4 rounded-lg border bg-white p-4 sm:grid-cols-2">
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Hạn trả điểm sau ngày thi</Label>
+                <div className="grid max-w-md grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="score-sheet-template-deadline-days" className="text-xs text-muted-foreground">Ngày</Label>
+                    <Input
+                      id="score-sheet-template-deadline-days"
+                      type="number"
+                      min="0"
+                      max="3650"
+                      step="1"
+                      value={deadlineDays}
+                      onChange={(event) => updateDeadlinePart("days", event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="score-sheet-template-deadline-hours" className="text-xs text-muted-foreground">Giờ</Label>
+                    <Input
+                      id="score-sheet-template-deadline-hours"
+                      type="number"
+                      min="0"
+                      max="23"
+                      step="1"
+                      value={deadlineHours}
+                      onChange={(event) => updateDeadlinePart("hours", event.target.value)}
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Hạn được tính từ giờ bắt đầu của buổi học được gán bảng điểm. Ví dụ: 1 ngày 1 giờ.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="score-sheet-template-attempt-count">Số lần chấm bài</Label>
+                <Input
+                  id="score-sheet-template-attempt-count"
+                  type="number"
+                  min="1"
+                  max="100"
+                  step="1"
+                  value={draft.attemptCount}
+                  onChange={(event) => setDraft((current) => ({
+                    ...current,
+                    attemptCount: event.target.value === "" ? 0 : Number(event.target.value),
+                  }))}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="score-sheet-template-scoring-policy">Chính sách tính điểm</Label>
+                <Select
+                  value={draft.scoringPolicy}
+                  onValueChange={(value) => setDraft((current) => ({
+                    ...current,
+                    scoringPolicy: value as ScoreSheetTemplateInput["scoringPolicy"],
+                  }))}
+                >
+                  <SelectTrigger id="score-sheet-template-scoring-policy">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="highest">Lấy điểm cao nhất</SelectItem>
+                    <SelectItem value="latest">Lấy điểm gần nhất</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Tiêu chí đánh giá</Label>
+                <SearchableMultiSelect
+                  options={(evaluationCriteriaQuery.data ?? []).map((criterion: any) => ({
+                    value: String(criterion.id),
+                    label: criterion.name,
+                  }))}
+                  value={draft.evaluationCriteriaIds}
+                  onChange={(evaluationCriteriaIds) => setDraft((current) => ({
+                    ...current,
+                    evaluationCriteriaIds,
+                  }))}
+                  placeholder="Chọn tiêu chí đánh giá (tuỳ chọn)"
+                  searchPlaceholder="Tìm kiếm tiêu chí..."
+                />
+                {evaluationCriteriaQuery.isLoading && (
+                  <p className="text-xs text-muted-foreground">Đang tải tiêu chí đánh giá...</p>
+                )}
+                {evaluationCriteriaQuery.isError && (
+                  <p className="text-xs text-destructive">
+                    Không thể tải tiêu chí đánh giá. Hãy thử đóng rồi mở lại dialog.
+                  </p>
+                )}
+              </div>
+            </section>
+              </div>
+
+            <div className="grid items-start gap-4 md:grid-cols-2">
+            <section className="min-w-0 space-y-3 rounded-lg border bg-white p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h3 className="font-semibold">
+                    {selectedConversion ? `Kỹ năng được tạo từ ${selectedConversion.typeName}` : "Kỹ năng tự tạo"}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedConversion
+                      ? "Các kỹ năng lấy từ bảng quy đổi đã chọn."
+                      : "Tạo kỹ năng riêng và thêm các part con nếu cần."}
+                  </p>
+                </div>
+                {!selectedConversion && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={addManualSkill}
+                    disabled={draft.skills.length >= 20}
+                  >
+                    <Plus className="mr-1 h-4 w-4" />
+                    Thêm kỹ năng
+                  </Button>
+                )}
+              </div>
+
+              {visibleSkills.length === 0 ? (
+                <div className="rounded-md bg-muted/30 p-4 text-sm text-muted-foreground">
+                  {selectedConversion
+                    ? "Bảng quy đổi này chưa có kỹ năng."
+                    : "Chưa có kỹ năng. Nhấn “Thêm kỹ năng” để bắt đầu tạo bảng điểm thủ công."}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {visibleSkills.map((skill) => {
+                    const parts = skill.parts;
+                    const partMaximumTotal = parts.reduce((total, part) => total + part.rawMaxScore, 0);
+                    const exceedsSkillMaximum = partMaximumTotal > skill.rawMaxScore + 1e-9;
+                    const exceedsConversionMaximum = !!skill.conversionSection
+                      && skill.rawMaxScore > skill.conversionSection.rawMaxScore + 1e-9;
+                    const partFormulaError = skill.partFormula.method === "custom" && parts.length > 0
+                      ? validateScoreConversionFormula(skill.partFormula.formula, parts.map((part) => part.name))
+                      : null;
+                    return (
+                      <div
+                        key={skill.id}
+                        className="rounded-lg border border-l-4 bg-white p-3"
+                        style={{ borderLeftColor: skill.color }}
+                      >
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span
+                            aria-hidden="true"
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+                            style={{ backgroundColor: `${skill.color}1A`, color: skill.color }}
+                          >
+                            <BookOpen className="h-5 w-5" />
+                          </span>
+
+                          {skill.conversionSection ? (
+                            <div className="min-w-[220px] flex-1">
+                              <h4 className="font-medium">
+                                {skill.skillIndex + 1}. {skill.name}
+                              </h4>
+                              <p className="text-xs text-muted-foreground">
+                                Thang quy đổi: {skill.conversionSection.rawMinScore}–{skill.conversionSection.rawMaxScore} {skill.conversionSection.rawUnit}
+                                {" → "}
+                                {skill.conversionSection.convertedMinScore}–{skill.conversionSection.convertedMaxScore} {skill.conversionSection.convertedUnit}
+                                {" · "}{skill.conversionSection.mappings.length} khoảng
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="min-w-[220px] flex-1 space-y-1">
+                              <Label htmlFor={`score-manual-skill-name-${skill.id}`}>Tên kỹ năng</Label>
+                              <Input
+                                id={`score-manual-skill-name-${skill.id}`}
+                                value={skill.name}
+                                onChange={(event) => updateSkill(skill.id, { name: event.target.value })}
+                                placeholder="Nhập tên kỹ năng"
+                                maxLength={120}
+                                required
+                                style={{ borderColor: `${skill.color}80` }}
+                              />
+                            </div>
+                          )}
+
+                          <div
+                            role="group"
+                            aria-label={`Màu của kỹ năng ${skill.name || skill.skillIndex + 1}`}
+                            className="flex items-center gap-1.5 rounded-lg border bg-muted/20 px-2 py-1.5"
+                          >
+                            {SCORE_SHEET_SKILL_COLORS.map((color, colorIndex) => (
+                              <button
+                                key={color}
+                                type="button"
+                                title={`Màu ${colorIndex + 1}`}
+                                aria-label={`Chọn màu ${colorIndex + 1} cho kỹ năng ${skill.name || skill.skillIndex + 1}`}
+                                aria-pressed={skill.color === color}
+                                onClick={() => updateSkill(skill.id, { color })}
+                                className={`h-5 w-5 rounded-full border border-black/10 transition ${
+                                  skill.color === color ? "ring-2 ring-offset-2" : "hover:scale-110"
+                                }`}
+                                style={{
+                                  backgroundColor: color,
+                                  ...(skill.color === color ? { outlineColor: color } : {}),
+                                }}
+                              />
+                            ))}
+                          </div>
+
+                          <div className="flex shrink-0 items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => addPart(skill.id)}
+                              disabled={parts.length >= 100}
+                            >
+                              <Plus className="mr-1 h-4 w-4" />
+                              Thêm part
+                            </Button>
+                            {!skill.conversionSection && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                aria-label={`Xóa kỹ năng ${skill.name}`}
+                                onClick={() => removeSkill(skill.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="mt-3 grid gap-3 rounded-md bg-muted/20 p-3 sm:grid-cols-[220px_minmax(0,1fr)] sm:items-end">
+                          <div className="space-y-1">
+                            <Label htmlFor={`score-skill-max-${skill.id}`}>Điểm thô tối đa</Label>
+                            <Input
+                              id={`score-skill-max-${skill.id}`}
+                              type="number"
+                              min="0"
+                              max={skill.conversionSection?.rawMaxScore}
+                              step="any"
+                              value={skill.rawMaxScore}
+                              onChange={(event) => {
+                                const enteredMaximum = numericValue(event.target.value);
+                                updateSkill(skill.id, {
+                                  rawMaxScore: skill.conversionSection
+                                    ? Math.min(enteredMaximum, skill.conversionSection.rawMaxScore)
+                                    : enteredMaximum,
+                                });
+                              }}
+                              required
+                            />
+                          </div>
+                          <div aria-live="polite">
+                            <p className={`text-sm ${exceedsSkillMaximum ? "font-medium text-destructive" : "text-muted-foreground"}`}>
+                              Tổng điểm thô tối đa các part:{" "}
+                              <span className="font-semibold tabular-nums">
+                                {partMaximumTotal.toLocaleString("vi-VN")} / {skill.rawMaxScore.toLocaleString("vi-VN")}
+                              </span>
+                            </p>
+                            {exceedsSkillMaximum ? (
+                              <p className="mt-1 text-xs text-destructive" role="alert">
+                                Tổng điểm các part không được vượt quá điểm thô tối đa của kỹ năng cha.
+                              </p>
+                            ) : exceedsConversionMaximum ? (
+                              <p className="mt-1 text-xs text-destructive" role="alert">
+                                Điểm tối đa không được vượt quá giới hạn của thang quy đổi.
+                              </p>
+                            ) : parts.length > 0 ? (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Giới hạn còn lại cho các part: {(skill.rawMaxScore - partMaximumTotal).toLocaleString("vi-VN")}.
+                              </p>
+                            ) : (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Điểm nhập trực tiếp của kỹ năng cũng bị giới hạn ở mức này.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {parts.length > 0 && (
+                          <div className="mt-3 grid gap-2 rounded-md bg-muted/20 p-2 sm:grid-cols-[minmax(180px,240px)_minmax(0,1fr)] sm:items-center">
+                            <Label htmlFor={`score-part-formula-method-${skill.id}`}>
+                              Công thức điểm kỹ năng
+                            </Label>
+                            <Select
+                              value={skill.partFormula.method}
+                              onValueChange={(value) => updatePartFormula(skill.id, {
+                                method: value as PartFormula["method"],
+                              })}
+                            >
+                              <SelectTrigger id={`score-part-formula-method-${skill.id}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="sum">Tổng các part con</SelectItem>
+                                <SelectItem value="average">Trung bình các part con</SelectItem>
+                                <SelectItem value="custom">Tùy chỉnh</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            {skill.partFormula.method === "custom" && (
+                              <div className="space-y-2 sm:col-span-2">
+                                <Label htmlFor={`score-part-formula-${skill.id}`}>Công thức tùy chỉnh</Label>
+                                <Input
+                                  id={`score-part-formula-${skill.id}`}
+                                  value={skill.partFormula.formula}
+                                  onChange={(event) => updatePartFormula(skill.id, {
+                                    formula: event.target.value,
+                                  })}
+                                  placeholder={`=[${parts[0].name}] + [${parts[1]?.name ?? parts[0].name}]`}
+                                  maxLength={1000}
+                                />
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="text-xs text-muted-foreground">Chèn part:</span>
+                                  {parts.map((part) => (
+                                    <Button
+                                      key={part.id}
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => appendPartVariable(skill.id, part.name)}
+                                    >
+                                      [{part.name}]
+                                    </Button>
+                                  ))}
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  Dùng tên part trong dấu ngoặc vuông; hỗ trợ +, -, *, /, ngoặc và %.
+                                </p>
+                                {partFormulaError && (
+                                  <p className="text-xs text-destructive" role="alert">{partFormulaError}</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {parts.length > 0 && (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Kết quả là điểm thô của kỹ năng{skill.conversionSection ? "; sau đó được đối chiếu với thang quy đổi phía trên." : "."}
+                          </p>
+                        )}
+
+                        {parts.length > 0 && (
+                          <div className="mt-3 space-y-2 border-l-2 border-primary/20 pl-3">
+                            {parts.map((part, partIndex) => (
+                              <div
+                                key={part.id}
+                                className="grid items-end gap-2 rounded-md bg-muted/30 p-2 sm:grid-cols-[52px_minmax(0,1fr)_150px_36px]"
+                              >
+                                <div className="pb-2 text-xs font-semibold text-muted-foreground">
+                                  {skill.skillIndex + 1}.{partIndex + 1}
+                                </div>
+                                <div className="space-y-1">
+                                  <Label htmlFor={`score-part-name-${part.id}`}>Tên part</Label>
+                                  <Input
+                                    id={`score-part-name-${part.id}`}
+                                    value={part.name}
+                                    onChange={(event) => updatePart(skill.id, part.id, { name: event.target.value })}
+                                    maxLength={120}
+                                    required
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label htmlFor={`score-part-max-${part.id}`}>Điểm thô tối đa</Label>
+                                  <Input
+                                    id={`score-part-max-${part.id}`}
+                                    type="number"
+                                    min="0"
+                                    max={Math.max(0, skill.rawMaxScore - (partMaximumTotal - part.rawMaxScore))}
+                                    step="any"
+                                    value={part.rawMaxScore}
+                                    onChange={(event) => {
+                                      const remainingForPart = Math.max(
+                                        0,
+                                        skill.rawMaxScore - (partMaximumTotal - part.rawMaxScore),
+                                      );
+                                      updatePart(skill.id, part.id, {
+                                        rawMaxScore: Math.min(numericValue(event.target.value), remainingForPart),
+                                      });
+                                    }}
+                                    required
+                                  />
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label={`Xóa part ${part.name}`}
+                                  onClick={() => removePart(skill.id, part.id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+            <div className="min-w-0 space-y-4">
+            <ScoreSheetTemplateGradingThresholds
+              gradeBands={draft.gradeBands ?? []}
+              passThreshold={draft.passThreshold ?? DEFAULT_PASS_THRESHOLD}
+              usesConvertedScore={Boolean(selectedConversion)}
+              onGradeBandsChange={(gradeBands) => setDraft((current) => ({
+                ...current,
+                gradeBands,
+              }))}
+              onPassThresholdChange={(passThreshold) => setDraft((current) => ({
+                ...current,
+                passThreshold,
+              }))}
+            />
+
+              <section className="space-y-3 rounded-lg border bg-white p-4">
+                <div>
+                  <h3 className="font-semibold">Chi tiết tiêu chí đánh giá</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Các nhóm và nội dung đã thiết lập cho những tiêu chí được chọn ở trên.
+                  </p>
+                </div>
+
+                {draft.evaluationCriteriaIds.length === 0 ? (
+                  <p className="rounded-md bg-muted/30 p-3 text-sm text-muted-foreground">
+                    Chưa chọn tiêu chí đánh giá. Chọn tiêu chí ở phía trên để xem chi tiết tại đây.
+                  </p>
+                ) : evaluationCriteriaQuery.isLoading ? (
+                  <p className="text-sm text-muted-foreground">Đang tải nội dung tiêu chí...</p>
+                ) : evaluationCriteriaQuery.isError ? (
+                  <p className="text-sm text-destructive" role="alert">
+                    Không thể tải nội dung tiêu chí đánh giá.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {selectedEvaluationCriteria.map(({ id, criterion }) => {
+                      if (!criterion) {
+                        return (
+                          <div key={id} className="rounded-md border p-3 text-sm text-muted-foreground">
+                            Không tìm thấy tiêu chí đã chọn.
+                          </div>
+                        );
+                      }
+
+                      const subCriteria = criterion.subCriteria ?? [];
+                      const headings = subCriteria.filter((item) => item.itemType === "heading");
+                      const headingIds = new Set(headings.map((heading) => heading.id));
+                      const standaloneCriteria = subCriteria.filter((item) =>
+                        item.itemType !== "heading" &&
+                        (!item.parentId || !headingIds.has(item.parentId)));
+                      const criterionCount = subCriteria.filter((item) => item.itemType !== "heading").length;
+                      const renderCriterion = (item: EvaluationSubCriterion) => (
+                        <li
+                          key={item.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-background px-3 py-2 text-sm"
+                        >
+                          <span>{item.name}</span>
+                          <Badge variant="outline">
+                            {item.inputType === "checkbox" ? "Checkbox đạt/chưa đạt" : "Nhập nhận xét"}
+                          </Badge>
+                        </li>
+                      );
+
+                      return (
+                        <div key={id} className="rounded-md border bg-background p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <h4 className="font-medium">{criterion.name}</h4>
+                            <Badge variant="outline">{criterionCount} tiêu chí</Badge>
+                          </div>
+
+                          {subCriteria.length === 0 ? (
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              Chưa thiết lập nội dung cho tiêu chí này.
+                            </p>
+                          ) : (
+                            <div className="mt-3 space-y-2">
+                              {headings.map((heading) => {
+                                const children = subCriteria.filter((item) =>
+                                  item.itemType !== "heading" && item.parentId === heading.id);
+                                return (
+                                  <div key={heading.id} className="rounded-md bg-muted/40 p-3">
+                                    <div className="mb-2 flex items-center gap-2">
+                                      <span className="font-medium">{heading.name}</span>
+                                      <Badge variant="secondary">Nhóm</Badge>
+                                    </div>
+                                    {children.length > 0 ? (
+                                      <ul className="space-y-1.5">
+                                        {children.map(renderCriterion)}
+                                      </ul>
+                                    ) : (
+                                      <p className="text-sm text-muted-foreground">
+                                        Nhóm chưa có tiêu chí con.
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                              {standaloneCriteria.length > 0 && (
+                                <ul className="space-y-1.5">
+                                  {standaloneCriteria.map(renderCriterion)}
+                                </ul>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            </div>
+            </div>
+
+              {formError && <p className="text-sm text-destructive" role="alert">{formError}</p>}
+            </div>
+            <DialogFooter className="shrink-0 border-t bg-white px-5 py-3 sm:px-6">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+                Hủy
+              </Button>
+              <Button type="submit" disabled={saving || hasInvalidSkillMaximums}>
+                {saving ? "Đang lưu..." : "Lưu bảng điểm mẫu"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={pendingConversionTemplateId !== undefined}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setPendingConversionTemplateId(undefined);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Đổi bảng quy đổi?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Nếu bỏ liên kết, kỹ năng và part hiện tại sẽ được giữ lại để chỉnh thủ công. Nếu chuyển sang bảng khác,
+              kỹ năng được tạo theo bảng mới; part chỉ được giữ cho kỹ năng trùng section hoặc trùng tên.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Giữ nguyên</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingConversionTemplateId !== undefined) {
+                  applyConversionTemplate(pendingConversionTemplateId);
+                }
+                setPendingConversionTemplateId(undefined);
+              }}
+            >
+              Đổi bảng quy đổi
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}

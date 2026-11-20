@@ -1,0 +1,614 @@
+import { useState, useEffect } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+import { Star } from "lucide-react";
+import { RichEditor } from "@/components/ui/rich-editor";
+import { useLanguage } from "@/hooks/use-language";
+import { useSessionReviewPublicationPolicy } from "@/hooks/use-session-review-publication-policy";
+import {
+  formatEvaluationExclusionViolation,
+  getEvaluationCheckboxGroupStates,
+  getEvaluationExclusionViolation,
+} from "@shared/evaluation-checkbox-limits";
+
+interface SubCriteriaItem {
+  id: string;
+  name: string;
+  criteriaId: string;
+  parentId?: string | null;
+  itemType?: "heading" | "criterion";
+  inputType?: "text" | "checkbox";
+  exclusionCode?: string | null;
+  minChecked?: number | null;
+  maxChecked?: number | null;
+}
+
+interface CriteriaItem {
+  id: string;
+  name: string;
+  subCriteria: SubCriteriaItem[];
+}
+
+interface TeacherItem {
+  id: string;
+  fullName: string;
+}
+
+interface ReviewDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  studentSessionIds: string[];
+  studentNames: string[];
+  criteria: CriteriaItem[];
+  teachers: TeacherItem[];
+  existingReviewData?: Record<string, { teacherName: string; items: { subCriteriaId?: string; subCriteriaName?: string; criteriaId: string; criteriaName: string; groupName?: string; comment: string; inputType?: "text" | "checkbox"; checked?: boolean }[]; criteriaRatings?: Record<string, number> }> | null;
+  existingPublished?: boolean;
+  classSessionId: string;
+  freeReview?: {
+    classId: string;
+    registrationId: string;
+  };
+  onSaved?: (reviewData: Record<string, any>, published: boolean) => void;
+}
+
+type ReviewMap = Record<string, Record<string, string>>;
+type RatingMap = Record<string, Record<string, number>>;
+type CheckedMap = Record<string, Record<string, boolean>>;
+
+function getEvaluableSubCriteria(criteria: CriteriaItem): SubCriteriaItem[] {
+  return (criteria.subCriteria || []).filter((sc) => sc.itemType !== "heading");
+}
+
+function buildEmptyComments(criteria: CriteriaItem[], teachers: TeacherItem[]): ReviewMap {
+  const map: ReviewMap = {};
+  teachers.forEach((t) => {
+    map[t.id] = {};
+    criteria.forEach((c) => {
+      const subCriteria = getEvaluableSubCriteria(c);
+      if (subCriteria.length > 0) {
+        subCriteria.forEach((sc) => { map[t.id][sc.id] = ""; });
+      } else {
+        map[t.id][c.id] = "";
+      }
+    });
+  });
+  return map;
+}
+
+function buildEmptyRatings(criteria: CriteriaItem[], teachers: TeacherItem[]): RatingMap {
+  const map: RatingMap = {};
+  teachers.forEach((t) => {
+    map[t.id] = {};
+    criteria.forEach((c) => { map[t.id][c.id] = 0; });
+  });
+  return map;
+}
+
+function buildEmptyChecked(criteria: CriteriaItem[], teachers: TeacherItem[]): CheckedMap {
+  const map: CheckedMap = {};
+  teachers.forEach((t) => {
+    map[t.id] = {};
+    criteria.forEach((c) => {
+      getEvaluableSubCriteria(c).forEach((sc) => {
+        if (sc.inputType === "checkbox") map[t.id][sc.id] = false;
+      });
+    });
+  });
+  return map;
+}
+
+function StarRatingInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [hovered, setHovered] = useState(0);
+  return (
+    <div className="flex gap-0.5">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          onClick={() => onChange(star === value ? 0 : star)}
+          onMouseEnter={() => setHovered(star)}
+          onMouseLeave={() => setHovered(0)}
+          className="p-0.5 transition-transform hover:scale-110 focus:outline-none"
+        >
+          <Star
+            className={cn(
+              "h-4 w-4 transition-colors",
+              (hovered ? star <= hovered : star <= value)
+                ? "text-yellow-400 fill-yellow-400"
+                : "text-muted-foreground/30 hover:text-yellow-300"
+            )}
+          />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function ReviewDialog({
+  open,
+  onOpenChange,
+  studentSessionIds,
+  studentNames,
+  criteria,
+  teachers,
+  existingReviewData,
+  existingPublished,
+  classSessionId,
+  freeReview,
+  onSaved,
+}: ReviewDialogProps) {
+  const { toast } = useToast();
+  const { t } = useLanguage();
+  const publicationPolicy = useSessionReviewPublicationPolicy(open);
+  const isBulk = studentSessionIds.length > 1;
+
+  const [comments, setComments] = useState<ReviewMap>({});
+  const [ratings, setRatings] = useState<RatingMap>({});
+  const [checked, setChecked] = useState<CheckedMap>({});
+  const [published, setPublished] = useState(false);
+  const [activeTeacher, setActiveTeacher] = useState<string>("");
+
+  // Parents may derive these props inline on every render. Compare their content,
+  // not their array/object identities, so unrelated rerenders do not discard edits.
+  const criteriaKey = JSON.stringify(criteria);
+  const teachersKey = JSON.stringify(teachers);
+  const existingReviewKey = JSON.stringify(existingReviewData);
+  const studentSessionIdsKey = JSON.stringify(studentSessionIds);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!isBulk && existingReviewData && Object.keys(existingReviewData).length > 0) {
+      const map: ReviewMap = {};
+      const rMap: RatingMap = {};
+      const checkedMap: CheckedMap = {};
+      teachers.forEach((t) => {
+        map[t.id] = {};
+        rMap[t.id] = {};
+        checkedMap[t.id] = {};
+        const teacherData = existingReviewData[t.id];
+        criteria.forEach((c) => {
+          // Primary: criteriaRatings[criteriaId] (format chuẩn của web)
+          // Fallback: items[].score (format mobile — score nằm trong mỗi item của criteria)
+          const fallbackScore =
+            (teacherData?.items?.find((i: any) => i.criteriaId === c.id) as any)?.score ?? 0;
+          rMap[t.id][c.id] = teacherData?.criteriaRatings?.[c.id] ?? fallbackScore;
+            const subCriteria = getEvaluableSubCriteria(c);
+            if (subCriteria.length > 0) {
+              subCriteria.forEach((sc) => {
+              const found = teacherData?.items?.find((i) => i.subCriteriaId === sc.id);
+              map[t.id][sc.id] = found?.comment || "";
+              if (sc.inputType === "checkbox") checkedMap[t.id][sc.id] = found?.checked === true;
+            });
+          } else {
+            const found = teacherData?.items?.find((i) => i.criteriaId === c.id && !i.subCriteriaId);
+            map[t.id][c.id] = found?.comment || "";
+          }
+        });
+      });
+      setComments(map);
+      setRatings(rMap);
+      setChecked(checkedMap);
+      setPublished(existingPublished ?? false);
+    } else {
+      setComments(buildEmptyComments(criteria, teachers));
+      setRatings(buildEmptyRatings(criteria, teachers));
+      setChecked(buildEmptyChecked(criteria, teachers));
+       setPublished(publicationPolicy.data?.defaultPublished ?? false);
+    }
+    if (teachers.length > 0) setActiveTeacher(teachers[0].id);
+   }, [open, existingReviewKey, existingPublished, criteriaKey, teachersKey, isBulk, studentSessionIdsKey, publicationPolicy.data?.defaultPublished]);
+
+  const buildReviewData = () => {
+    const reviewData: Record<string, { teacherName: string; items: any[]; criteriaRatings: Record<string, number> }> = {};
+    teachers.forEach((t) => {
+      const items: any[] = [];
+      criteria.forEach((c) => {
+        const subCriteria = getEvaluableSubCriteria(c);
+        if (subCriteria.length > 0) {
+          subCriteria.forEach((sc) => {
+            const group = c.subCriteria.find((candidate) => candidate.id === sc.parentId && candidate.itemType === "heading");
+            items.push({
+              criteriaId: c.id,
+              criteriaName: c.name,
+              subCriteriaId: sc.id,
+              subCriteriaName: sc.name,
+              ...(group ? { groupName: group.name } : {}),
+              inputType: sc.inputType === "checkbox" ? "checkbox" : "text",
+              comment: comments[t.id]?.[sc.id] || "",
+              ...(sc.inputType === "checkbox" ? { checked: checked[t.id]?.[sc.id] === true } : {}),
+            });
+          });
+        } else {
+          items.push({
+            criteriaId: c.id,
+            criteriaName: c.name,
+            comment: comments[t.id]?.[c.id] || "",
+          });
+        }
+      });
+      const criteriaRatings: Record<string, number> = {};
+      criteria.forEach((c) => {
+        const r = ratings[t.id]?.[c.id] ?? 0;
+        if (r > 0) criteriaRatings[c.id] = r;
+      });
+      reviewData[t.id] = { teacherName: t.fullName, items, criteriaRatings };
+    });
+    return reviewData;
+  };
+
+  const reviewMutation = useMutation({
+    mutationFn: async () => {
+      const reviewData = buildReviewData();
+      let savedPublished = published;
+      if (freeReview) {
+        const response = await apiRequest("POST", `/api/classes/${freeReview.classId}/free-schedule/review`, {
+          registrationId: freeReview.registrationId,
+          reviewData,
+          published,
+        });
+        const result = await response.json();
+        savedPublished = result.published ?? published;
+      } else {
+        const response = await apiRequest("POST", "/api/student-sessions/review", {
+          studentSessionIds,
+          reviewData,
+          published,
+        });
+        const result = await response.json();
+        savedPublished = result.published ?? published;
+      }
+      return { reviewData, published: savedPublished };
+    },
+    onSuccess: ({ reviewData, published: savedPublished }) => {
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey[0] as string;
+          return typeof key === "string" && (
+            key.includes("/student-sessions") ||
+            key.includes("/star-rating") ||
+            key === "/api/my-space/calendar/staff" ||
+            key === "/api/my-space/calendar/staff/session" ||
+            key === "/api/schedule" ||
+            (freeReview ? key.includes("/free-schedule") : false)
+          );
+        },
+      });
+      onSaved?.(reviewData, savedPublished);
+      toast({
+        title: t("mySpace.calendar.reviewSaved"),
+        description: savedPublished
+          ? t("mySpace.calendar.reviewPublished")
+          : t("mySpace.calendar.reviewSavedInternal"),
+      });
+      onOpenChange(false);
+    },
+    onError: (error) => {
+      toast({
+        title: t("mySpace.calendar.error"),
+        description: error instanceof Error ? error.message : t("mySpace.calendar.saveReviewFailed"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSaveReview = () => {
+    const reviewData = buildReviewData();
+    const exclusionIssue = getEvaluationExclusionViolation(
+      reviewData,
+      criteria.flatMap((criterion) => criterion.subCriteria ?? []),
+    );
+    if (exclusionIssue) {
+      setActiveTeacher(exclusionIssue.teacherId);
+      toast({
+        title: t("mySpace.calendar.error"),
+        description: formatEvaluationExclusionViolation(exclusionIssue),
+        variant: "destructive",
+      });
+      return;
+    }
+    const issue = getEvaluationCheckboxGroupStates(
+      reviewData,
+      criteria.flatMap((criterion) => criterion.subCriteria ?? []),
+    ).find((state) => !state.isValid);
+    if (issue) {
+      setActiveTeacher(issue.teacherId);
+      const requirement = issue.minChecked != null && issue.maxChecked != null
+        ? `${t("mySpace.calendar.checkboxGroupRangeError")} ${issue.minChecked}–${issue.maxChecked}`
+        : issue.minChecked != null
+          ? `${t("mySpace.calendar.checkboxGroupMinimumError")} ${issue.minChecked}`
+          : `${t("mySpace.calendar.checkboxGroupMaximumError")} ${issue.maxChecked}`;
+      toast({
+        title: t("mySpace.calendar.error"),
+        description: `${issue.groupName}: ${requirement}. ${t("mySpace.calendar.checkboxSelected")}: ${issue.selectedCount}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    reviewMutation.mutate();
+  };
+
+  const title = isBulk
+    ? `${t("mySpace.calendar.bulkReviewTitle")} (${studentSessionIds.length} ${t("mySpace.calendar.student").toLowerCase()})`
+    : `${t("mySpace.calendar.reviewTitle")}: ${studentNames[0] || t("mySpace.calendar.student")}`;
+
+  const hasContent = criteria.length > 0 && teachers.length > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Star className="h-4 w-4 text-yellow-500 fill-yellow-400" />
+            {title}
+          </DialogTitle>
+          {isBulk && (
+            <p className="text-xs text-muted-foreground mt-1">
+              {t("mySpace.calendar.bulkReviewNotice")}
+            </p>
+          )}
+        </DialogHeader>
+
+        {!hasContent ? (
+          <div className="py-6 text-center text-sm text-muted-foreground">
+            {criteria.length === 0
+              ? t("mySpace.calendar.noEvaluationCriteria")
+              : t("mySpace.calendar.noTeachers")}
+          </div>
+        ) : teachers.length === 1 ? (
+          <CriteriaForm
+            teacherId={teachers[0].id}
+            criteria={criteria}
+            comments={comments}
+            setComments={setComments}
+            ratings={ratings}
+            setRatings={setRatings}
+             checked={checked}
+             setChecked={setChecked}
+          />
+        ) : (
+          <Tabs value={activeTeacher} onValueChange={setActiveTeacher}>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {teachers.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setActiveTeacher(t.id)}
+                  className={cn(
+                    "px-3 py-1 rounded-md border text-xs font-medium transition-all",
+                    activeTeacher === t.id
+                      ? "bg-primary border-primary text-primary-foreground"
+                      : "bg-background border-border text-foreground hover:bg-muted/50"
+                  )}
+                >
+                  {t.fullName}
+                </button>
+              ))}
+            </div>
+            {teachers.map((t) => (
+              <TabsContent key={t.id} value={t.id}>
+                <CriteriaForm
+                  teacherId={t.id}
+                  criteria={criteria}
+                  comments={comments}
+                  setComments={setComments}
+                  ratings={ratings}
+                  setRatings={setRatings}
+                   checked={checked}
+                   setChecked={setChecked}
+                />
+              </TabsContent>
+            ))}
+          </Tabs>
+        )}
+
+        {hasContent && (
+          <div className="flex items-center justify-between py-2 border-t mt-2">
+            <div className="space-y-0.5">
+              <Label htmlFor="publish-switch" className="text-sm font-medium cursor-pointer">
+                {t("mySpace.calendar.publish")}
+              </Label>
+              <p className="text-[11px] text-muted-foreground">
+                {published
+                  ? t("mySpace.calendar.publishHint")
+                  : t("mySpace.calendar.internalReviewHint")}
+              </p>
+            </div>
+            <Switch
+              id="publish-switch"
+              checked={published}
+              onCheckedChange={setPublished}
+              disabled={publicationPolicy.isLoading || publicationPolicy.isError || !publicationPolicy.data?.canToggle}
+              data-testid="switch-publish-review"
+            />
+          </div>
+        )}
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {t("mySpace.calendar.cancel")}
+          </Button>
+          {hasContent && (
+            <Button
+              onClick={handleSaveReview}
+              disabled={reviewMutation.isPending}
+              data-testid="button-save-review"
+            >
+              {reviewMutation.isPending ? t("mySpace.calendar.loading") : published ? t("mySpace.calendar.saveAndPublish") : t("mySpace.calendar.save")}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CriteriaForm({
+  teacherId,
+  criteria,
+  comments,
+  setComments,
+  ratings,
+  setRatings,
+  checked,
+  setChecked,
+}: {
+  teacherId: string;
+  criteria: CriteriaItem[];
+  comments: ReviewMap;
+  setComments: (fn: (prev: ReviewMap) => ReviewMap) => void;
+  ratings: RatingMap;
+  setRatings: (fn: (prev: RatingMap) => RatingMap) => void;
+  checked: CheckedMap;
+  setChecked: (fn: (prev: CheckedMap) => CheckedMap) => void;
+}) {
+  const { t } = useLanguage();
+  const renderSubCriterion = (sc: SubCriteriaItem, disableNewCheckbox = false) => {
+    const isChecked = checked[teacherId]?.[sc.id] === true;
+    const code = sc.exclusionCode?.trim();
+    const blockedByCode = !!code && criteria.some((criterion) =>
+      criterion.subCriteria.some((other) =>
+        other.id !== sc.id
+        && other.inputType === "checkbox"
+        && other.exclusionCode?.trim() === code
+        && checked[teacherId]?.[other.id] === true,
+      ),
+    );
+    const isDisabled = sc.inputType === "checkbox" && !isChecked && (disableNewCheckbox || blockedByCode);
+    return (
+    <div key={sc.id} className="space-y-1">
+      {sc.inputType === "checkbox" ? (
+        <label className={cn(
+          "flex items-center gap-2 rounded-md border px-3 py-2",
+          isDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-muted/40",
+        )}>
+          <Checkbox
+            checked={isChecked}
+            disabled={isDisabled}
+            onCheckedChange={(value) =>
+              setChecked((prev) => ({
+                ...prev,
+                [teacherId]: { ...prev[teacherId], [sc.id]: value === true },
+              }))
+            }
+          />
+          <span className="text-xs font-medium text-foreground">{sc.name}</span>
+          <span className="ml-auto text-[11px] text-muted-foreground">{t("mySpace.calendar.passed")}</span>
+        </label>
+      ) : (
+        <>
+          <Label className="text-xs text-orange-500 dark:text-orange-400 font-medium">{sc.name}</Label>
+          <RichEditor
+            value={comments[teacherId]?.[sc.id] || ""}
+            onChange={(val) =>
+              setComments((prev) => ({
+                ...prev,
+                [teacherId]: { ...prev[teacherId], [sc.id]: val },
+              }))
+            }
+            placeholder={`${t("mySpace.calendar.reviewPlaceholder")} ${sc.name}...`}
+          />
+        </>
+      )}
+    </div>
+    );
+  };
+
+  return (
+    <div className="space-y-4 py-1">
+      {criteria.map((c) => (
+        <div key={c.id} className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-foreground">{c.name}</p>
+            <StarRatingInput
+              value={ratings[teacherId]?.[c.id] ?? 0}
+              onChange={(v) =>
+                setRatings((prev) => ({
+                  ...prev,
+                  [teacherId]: { ...prev[teacherId], [c.id]: v },
+                }))
+              }
+            />
+          </div>
+          {c.subCriteria && c.subCriteria.length > 0 ? (
+            <div className="space-y-2 pl-3 border-l-2 border-muted">
+              {c.subCriteria
+                .filter((sc) => sc.itemType === "heading")
+                .map((heading) => {
+                  const children = c.subCriteria.filter((sc) => sc.parentId === heading.id && sc.itemType !== "heading");
+                  if (children.length === 0) return null;
+                  const checkboxChildren = children.filter((sc) => sc.inputType === "checkbox");
+                  const selectedCount = checkboxChildren
+                    .filter((sc) => checked[teacherId]?.[sc.id] === true).length;
+                  const minChecked = heading.minChecked ?? null;
+                  const maxChecked = heading.maxChecked ?? null;
+                  const hasLimits = minChecked != null || maxChecked != null;
+                  const belowMinimum = minChecked != null && selectedCount < minChecked;
+                  const aboveMaximum = maxChecked != null && selectedCount > maxChecked;
+                  const atMaximum = maxChecked != null && selectedCount >= maxChecked;
+                  return (
+                    <div key={heading.id} className="space-y-2">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{heading.name}</p>
+                        {hasLimits && checkboxChildren.length > 0 && (
+                          <div className="mt-1 text-[11px] text-muted-foreground">
+                            <span>
+                              {t("mySpace.calendar.checkboxSelected")}: {selectedCount}
+                              {minChecked != null && <> · {t("mySpace.calendar.checkboxMinimum")}: {minChecked}</>}
+                              {maxChecked != null && <> · {t("mySpace.calendar.checkboxMaximum")}: {maxChecked}</>}
+                            </span>
+                            {belowMinimum && (
+                              <p role="alert" className="font-medium text-destructive">
+                                {t("mySpace.calendar.checkboxGroupMinimumError")} {minChecked}.
+                              </p>
+                            )}
+                            {aboveMaximum && (
+                              <p role="alert" className="font-medium text-destructive">
+                                {t("mySpace.calendar.checkboxGroupMaximumError")} {maxChecked}.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-2 pl-3 border-l border-muted">
+                        {children.map((sc) => renderSubCriterion(
+                          sc,
+                          sc.inputType === "checkbox" && atMaximum,
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              {c.subCriteria
+                .filter((sc) => sc.itemType !== "heading" && !sc.parentId)
+                .map((sc) => renderSubCriterion(sc))}
+            </div>
+          ) : (
+            <RichEditor
+              value={comments[teacherId]?.[c.id] || ""}
+              onChange={(val) =>
+                setComments((prev) => ({
+                  ...prev,
+                  [teacherId]: { ...prev[teacherId], [c.id]: val },
+                }))
+              }
+              placeholder={`${t("mySpace.calendar.reviewPlaceholder")} ${c.name}...`}
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}

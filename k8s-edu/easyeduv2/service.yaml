@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: easyeduv2
+  namespace: production
+spec:
+  selector:
+    app: easyeduv2
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 3000
+    - name: https
+      port: 443
+      protocol: TCP
+      targetPort: 3000
+  type: ClusterIP

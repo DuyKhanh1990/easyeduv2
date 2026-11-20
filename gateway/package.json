@@ -1,0 +1,31 @@
+{
+  "name": "zalo-gateway",
+  "version": "1.0.0",
+  "description": "Zalo OA Integration Router — OAuth callback + webhook forwarding",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "migrate": "tsx migrate.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.39.3",
+    "express": "^5.2.1",
+    "http-proxy-middleware": "^3.0.5",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "@types/pg": "^8.11.10",
+    "drizzle-kit": "^0.31.8",
+    "tsx": "^4.22.1",
+    "typescript": "^5.6.3"
+  }
+}

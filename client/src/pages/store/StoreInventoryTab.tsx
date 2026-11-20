@@ -1,0 +1,775 @@
+import { useState, useEffect, useRef } from "react";
+import type { ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Clock, X, FileDown, Loader2, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+import { StoreDateRangePicker, type DateRange } from "./StoreDateRangePicker";
+import { exportTonKho, type InventoryRow as ExportInventoryRow } from "./storeExportUtils";
+import { calculateStoreInventoryTotals } from "./storeInventorySummary";
+
+type InventoryRow = {
+  productId: string;
+  code: string;
+  name: string;
+  warehouseId: string;
+  warehouseName: string;
+  totalImport: number;
+  totalExport: number;
+  actualStock: number;
+  reservedQty: number;
+  availableQty: number;
+  status: "ok" | "low" | "out";
+  updatedAt: string | null;
+};
+
+type HistoryRow = {
+  time: string;
+  receipt_code: string;
+  type: string;
+  quantity_delta: number;
+  status: string;
+  description: string | null;
+  created_by: string | null;
+};
+
+type InventoryHistoryResponse = {
+  history: HistoryRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  creators: string[];
+  summary: {
+    import_qty: number;
+    export_qty: number;
+    transfer_in_qty: number;
+    transfer_out_qty: number;
+    cancel_export_qty: number;
+    cancel_import_qty: number;
+    adjustment_in_qty: number;
+    adjustment_out_qty: number;
+  };
+};
+
+type Warehouse = { id: string; name: string };
+
+type DetailPopupProps = {
+  row: InventoryRow;
+  onClose: () => void;
+};
+
+function fmtDateTime(dateStr: string | null) {
+  if (!dateStr) return "N/A";
+  const d = new Date(dateStr);
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function statusLabel(s: string) {
+  if (s === "completed") return "Hoàn thành";
+  if (s === "draft") return "Nháp";
+  if (s === "cancelled") return "Đã hủy";
+  return s;
+}
+
+function statusBadgeClass(s: string) {
+  if (s === "completed") return "bg-emerald-100 text-emerald-700 border-emerald-200";
+  if (s === "draft") return "bg-amber-100 text-amber-700 border-amber-200";
+  if (s === "cancelled") return "bg-red-100 text-red-700 border-red-200";
+  return "bg-gray-100 text-gray-600 border-gray-200";
+}
+
+function txTypeLabel(type: string) {
+  switch (type) {
+    case "import": return "Nhập kho";
+    case "export": return "Xuất kho";
+    case "edit_import": return "Sửa nhập kho";
+    case "edit_export": return "Sửa xuất kho";
+    case "cancel_import": return "Hủy nhập kho";
+    case "cancel_export": return "Hủy xuất kho";
+    case "transfer_in": return "Chuyển kho vào";
+    case "transfer_out": return "Chuyển kho ra";
+    default: return type;
+  }
+}
+
+const HISTORY_TYPE_OPTIONS = [
+  { value: "import", label: "Nhập kho" },
+  { value: "export", label: "Xuất kho" },
+  { value: "edit_import", label: "Sửa nhập kho" },
+  { value: "edit_export", label: "Sửa xuất kho" },
+  { value: "cancel_import", label: "Hủy nhập kho" },
+  { value: "cancel_export", label: "Hủy xuất kho" },
+  { value: "transfer_in", label: "Chuyển kho vào" },
+  { value: "transfer_out", label: "Chuyển kho ra" },
+];
+
+function txTypeBadgeClass(type: string) {
+  switch (type) {
+    case "import": return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    case "export": return "bg-orange-50 text-orange-700 border-orange-200";
+    case "edit_import": return "bg-blue-50 text-blue-700 border-blue-200";
+    case "edit_export": return "bg-blue-50 text-blue-700 border-blue-200";
+    case "cancel_import": return "bg-red-50 text-red-700 border-red-200";
+    case "cancel_export": return "bg-red-50 text-red-700 border-red-200";
+    case "transfer_in": return "bg-indigo-50 text-indigo-700 border-indigo-200";
+    case "transfer_out": return "bg-indigo-50 text-indigo-700 border-indigo-200";
+    default: return "bg-gray-100 text-gray-600 border-gray-200";
+  }
+}
+
+function formatSigned(value: number) {
+  return value > 0 ? `+${value}` : String(value);
+}
+
+function formatDateParam(date?: Date) {
+  if (!date) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function DetailPopup({ row, onClose }: DetailPopupProps) {
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [creatorFilter, setCreatorFilter] = useState("all");
+  const [historyDateRange, setHistoryDateRange] = useState<DateRange>({});
+  const dateFrom = formatDateParam(historyDateRange.from);
+  const dateTo = formatDateParam(historyDateRange.to);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, typeFilter, creatorFilter, dateFrom, dateTo]);
+
+  const { data, isLoading } = useQuery<InventoryHistoryResponse>({
+    queryKey: [
+      "/api/store/inventory", row.productId, "history", row.warehouseId,
+      page, pageSize, search, typeFilter, creatorFilter, dateFrom, dateTo,
+    ],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        warehouseId: row.warehouseId,
+        page: String(page),
+        pageSize: String(pageSize),
+      });
+      if (search) params.set("q", search);
+      if (typeFilter !== "all") params.set("type", typeFilter);
+      if (creatorFilter !== "all") params.set("createdBy", creatorFilter);
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+      return apiRequest("GET", `/api/store/inventory/${row.productId}/history?${params.toString()}`)
+        .then(r => r.json());
+    },
+    staleTime: 15000,
+  });
+  const history = data?.history ?? [];
+  const creators = data?.creators ?? [];
+  const totalHistory = Number(data?.total ?? 0);
+  const totalPages = Math.max(1, Math.ceil(totalHistory / pageSize));
+  const firstVisibleRow = totalHistory === 0 ? 0 : (page - 1) * pageSize + 1;
+  const lastVisibleRow = Math.min(page * pageSize, totalHistory);
+  const hasHistoryFilters = Boolean(
+    searchInput.trim() || typeFilter !== "all" || creatorFilter !== "all" || dateFrom || dateTo
+  );
+  const summary = data?.summary;
+  const importQty = Number(summary?.import_qty ?? 0);
+  const exportQty = Number(summary?.export_qty ?? 0);
+  const transferInQty = Number(summary?.transfer_in_qty ?? 0);
+  const transferOutQty = Number(summary?.transfer_out_qty ?? 0);
+  const cancelExportQty = Number(summary?.cancel_export_qty ?? 0);
+  const cancelImportQty = Number(summary?.cancel_import_qty ?? 0);
+  const adjustmentInQty = Number(summary?.adjustment_in_qty ?? 0);
+  const adjustmentOutQty = Number(summary?.adjustment_out_qty ?? 0);
+  const adjustmentInImportQty = Number(summary?.adjustment_in_import_qty ?? 0);
+  const adjustmentInExportQty = Number(summary?.adjustment_in_export_qty ?? 0);
+  const adjustmentOutImportQty = Number(summary?.adjustment_out_import_qty ?? 0);
+  const adjustmentOutExportQty = Number(summary?.adjustment_out_export_qty ?? 0);
+  const transferNet = transferInQty + transferOutQty;
+  const { totalImportQty, totalExportQty } = calculateStoreInventoryTotals(summary ?? {});
+
+  useEffect(() => {
+    if (data && page > totalPages) setPage(totalPages);
+  }, [data, page, totalPages]);
+
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  return (
+    <div
+      ref={overlayRef}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={e => { if (e.target === overlayRef.current) onClose(); }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-[99vw] h-[92vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center gap-2 px-6 py-4 border-b border-border">
+          <Clock className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+          <h2 className="font-semibold text-base flex-1 truncate">
+            Chi tiết tồn kho: {row.name}{" "}
+            <span className="text-muted-foreground font-normal">({row.code})</span>
+          </h2>
+          <button
+            onClick={onClose}
+            className="rounded-full p-1 hover:bg-muted transition-colors text-muted-foreground"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Stat cards */}
+        <div className="px-6 pt-3 pb-2 shrink-0 overflow-x-auto">
+          <div className="grid grid-cols-10 min-w-[900px] gap-1">
+          <StatCard label="NHẬP TỔNG" title="Nhập kho + chuyển vào + điều chỉnh tăng − hủy nhập kho" value={formatSigned(totalImportQty)} colorClass="bg-emerald-50 text-emerald-700 border-emerald-100" />
+          <StatCard label="XUẤT TỔNG" title="Xuất kho + chuyển ra + điều chỉnh giảm − hoàn hủy phiếu xuất" value={formatSigned(totalExportQty)} colorClass="bg-gray-50 text-gray-700 border-gray-100" />
+          <StatCard
+            label="CHUYỂN KHO"
+            value={formatSigned(transferNet)}
+            title="Chi tiết chuyển vào/ra; đã tính trong Nhập tổng và Xuất tổng"
+            detail={
+              <span className="flex w-full justify-center gap-2 whitespace-nowrap text-[10px] font-medium">
+                <span>Vào <span className="tabular-nums">{formatSigned(transferInQty)}</span></span>
+                <span>Ra <span className="tabular-nums">{formatSigned(transferOutQty)}</span></span>
+              </span>
+            }
+            colorClass="bg-indigo-50 text-indigo-700 border-indigo-100"
+          />
+          <StatCard label="HOÀN HỦY" title="Hủy phiếu xuất — hoàn hàng vào kho; đã trừ khỏi Xuất tổng" value={formatSigned(cancelExportQty)} colorClass="bg-cyan-50 text-cyan-700 border-cyan-100" />
+          <StatCard label="HỦY NHẬP KHO" title="Hủy phiếu nhập — trừ hàng khỏi kho; đã trừ khỏi Nhập tổng" value={formatSigned(cancelImportQty)} colorClass="bg-orange-50 text-orange-700 border-orange-100" />
+          <StatCard
+            label="ĐC TĂNG"
+            title="Điều chỉnh làm tăng tồn từ phiếu nhập và phiếu xuất; đã tính trong Nhập tổng"
+            value={formatSigned(adjustmentInQty)}
+            detail={
+              <span className="flex flex-col items-center text-[9px] leading-tight font-medium whitespace-nowrap">
+                <span>Nhập: <span className="tabular-nums">{formatSigned(adjustmentInImportQty)}</span></span>
+                <span>Xuất: <span className="tabular-nums">{formatSigned(adjustmentInExportQty)}</span></span>
+              </span>
+            }
+            colorClass="bg-teal-50 text-teal-700 border-teal-100"
+          />
+          <StatCard
+            label="ĐC GIẢM"
+            title="Điều chỉnh làm giảm tồn từ phiếu nhập và phiếu xuất; đã tính trong Xuất tổng"
+            value={formatSigned(adjustmentOutQty)}
+            detail={
+              <span className="flex flex-col items-center text-[9px] leading-tight font-medium whitespace-nowrap">
+                <span>Nhập: <span className="tabular-nums">{formatSigned(adjustmentOutImportQty)}</span></span>
+                <span>Xuất: <span className="tabular-nums">{formatSigned(adjustmentOutExportQty)}</span></span>
+              </span>
+            }
+            colorClass="bg-rose-50 text-rose-700 border-rose-100"
+          />
+          <StatCard label="TỒN KHO" value={row.actualStock} colorClass="bg-blue-50 text-blue-700 border-blue-100" />
+          <StatCard label="GIỮ CHỖ" value={row.reservedQty} colorClass="bg-amber-50 text-amber-600 border-amber-100" />
+          <StatCard label="KHẢ DỤNG" value={row.availableQty} colorClass="bg-indigo-50 text-indigo-700 border-indigo-100" />
+          </div>
+        </div>
+
+        {/* History */}
+        <div className="flex-1 min-h-0 flex flex-col px-6 pb-4">
+          <p className="text-xs font-bold tracking-wide text-muted-foreground uppercase mb-3 mt-2 shrink-0">
+            Lịch sử biến động kho
+          </p>
+
+          <div className="mb-3 shrink-0 overflow-x-auto">
+            <div className="flex min-w-[950px] items-center gap-2">
+              <div className="relative w-[290px] shrink-0">
+                <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={searchInput}
+                  onChange={event => setSearchInput(event.target.value)}
+                  placeholder="Tìm trong toàn bộ thông tin lịch sử..."
+                  aria-label="Tìm kiếm lịch sử biến động kho"
+                  className="h-9 pl-8 text-xs"
+                  maxLength={200}
+                />
+              </div>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="h-9 w-[150px] shrink-0 text-xs" aria-label="Lọc theo loại biến động">
+                  <SelectValue placeholder="Tất cả loại" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tất cả loại</SelectItem>
+                  {HISTORY_TYPE_OPTIONS.map(option => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={creatorFilter} onValueChange={setCreatorFilter}>
+                <SelectTrigger className="h-9 w-[170px] shrink-0 text-xs" aria-label="Lọc theo người tạo">
+                  <SelectValue placeholder="Tất cả người tạo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tất cả người tạo</SelectItem>
+                  {creators.map(creator => (
+                    <SelectItem key={creator} value={creator}>{creator}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <StoreDateRangePicker
+                value={historyDateRange}
+                onChange={setHistoryDateRange}
+                placeholder="Chọn thời gian"
+                className="shrink-0"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 shrink-0 text-xs"
+                onClick={() => {
+                  setSearchInput("");
+                  setSearch("");
+                  setTypeFilter("all");
+                  setCreatorFilter("all");
+                  setHistoryDateRange({});
+                  setPage(1);
+                }}
+                disabled={!hasHistoryFilters}
+              >
+                Xóa bộ lọc
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-auto">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-sm">
+            <thead>
+              <tr className="text-xs text-muted-foreground font-medium">
+                <th className="text-left pb-2 font-medium">Thời gian</th>
+                <th className="text-left pb-2 font-medium">Mã phiếu</th>
+                <th className="text-left pb-2 font-medium">Loại</th>
+                <th className="text-right pb-2 font-medium">Số lượng</th>
+                <th className="text-left pb-2 pl-3 font-medium">Trạng thái</th>
+                <th className="text-left pb-2 pl-3 font-medium">Mô tả</th>
+                <th className="text-left pb-2 pl-3 font-medium">Người tạo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="py-6 text-center text-muted-foreground text-sm">
+                    Đang tải...
+                  </td>
+                </tr>
+              ) : history.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-muted-foreground text-sm">
+                    {hasHistoryFilters ? "Không tìm thấy lịch sử phù hợp bộ lọc" : "Chưa có lịch sử giao dịch"}
+                  </td>
+                </tr>
+              ) : (
+                history.map((h, i) => {
+                  const delta = h.quantity_delta ?? 0;
+                  const isPositive = delta > 0;
+                  return (
+                    <tr key={i} className="border-t border-border/50">
+                      <td className="py-2 text-xs text-muted-foreground whitespace-nowrap">{fmtDateTime(h.time)}</td>
+                      <td className="py-2 font-mono text-xs font-medium">{h.receipt_code}</td>
+                      <td className="py-2 whitespace-nowrap">
+                        <span className={cn(
+                          "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border",
+                          txTypeBadgeClass(h.type)
+                        )}>
+                          {txTypeLabel(h.type)}
+                        </span>
+                      </td>
+                      <td className="py-2 text-right font-medium tabular-nums">
+                        <span className={isPositive ? "text-emerald-600" : "text-red-600"}>
+                          {isPositive ? "+" : ""}{delta}
+                        </span>
+                      </td>
+                      <td className="py-2 pl-3">
+                        <span className={cn(
+                          "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border",
+                          statusBadgeClass(h.status)
+                        )}>
+                          {statusLabel(h.status)}
+                        </span>
+                      </td>
+                      <td className="py-2 pl-3 text-xs text-muted-foreground max-w-[160px] truncate" title={h.description || ""}>
+                        {h.description || "—"}
+                      </td>
+                      <td className="py-2 pl-3 text-xs text-muted-foreground whitespace-nowrap">{h.created_by || "—"}</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+          </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-3 mt-3">
+            <span className="text-xs text-muted-foreground">
+              {totalHistory === 0
+                ? "0 dòng lịch sử"
+                : `Hiển thị ${firstVisibleRow}–${lastVisibleRow} / ${totalHistory} dòng`}
+            </span>
+            <div className="flex items-center gap-2">
+              <Select
+                value={String(pageSize)}
+                onValueChange={(value) => {
+                  setPageSize(Number(value));
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="h-8 w-[130px] text-xs" aria-label="Số dòng mỗi trang">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="50">50 dòng/trang</SelectItem>
+                  <SelectItem value="100">100 dòng/trang</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={page <= 1 || isLoading}
+                aria-label="Trang trước"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="min-w-[52px] text-center text-xs tabular-nums">
+                {page} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                disabled={page >= totalPages || isLoading}
+                aria-label="Trang sau"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, title, value, detail, colorClass }: { label: string; title?: string; value: number | string; detail?: ReactNode; colorClass: string }) {
+  return (
+    <div title={title ?? label} className={cn("rounded-lg border px-1.5 py-2 flex flex-col items-center gap-0.5 min-w-0", colorClass)}>
+      <span className="text-[8px] font-bold tracking-tight uppercase opacity-70 whitespace-nowrap">{label}</span>
+      <span className="text-lg font-bold tabular-nums">{value}</span>
+      {detail}
+    </div>
+  );
+}
+
+const STATUS_OPTIONS = [
+  { value: "all", label: "Tất cả trạng thái" },
+  { value: "ok", label: "Còn hàng" },
+  { value: "low", label: "Sắp hết" },
+  { value: "out", label: "Hết hàng" },
+];
+
+const PAGE_SIZE_OPTIONS = [20, 30, 50, 100];
+
+export function StoreInventoryTab() {
+  const { toast } = useToast();
+  const [search, setSearch] = useState("");
+  const [warehouseFilter, setWarehouseFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [dateRange, setDateRange] = useState<DateRange>({});
+  const [pageSize, setPageSize] = useState(20);
+  const [page, setPage] = useState(1);
+  const [detailRow, setDetailRow] = useState<InventoryRow | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const { data: warehouses = [] } = useQuery<Warehouse[]>({
+    queryKey: ["/api/store/warehouses"],
+    queryFn: () => apiRequest("GET", "/api/store/warehouses").then(r => r.json()),
+    staleTime: 60000,
+  });
+
+  const params = new URLSearchParams();
+  if (search.trim()) params.set("q", search.trim());
+  if (warehouseFilter !== "all") params.set("warehouseId", warehouseFilter);
+  if (statusFilter !== "all") params.set("status", statusFilter);
+  if (dateRange.from) params.set("dateFrom", dateRange.from.toISOString().slice(0, 10));
+  if (dateRange.to) params.set("dateTo", dateRange.to.toISOString().slice(0, 10));
+  params.set("page", String(page));
+  params.set("pageSize", String(pageSize));
+
+  const { data: resp, isLoading, refetch } = useQuery<{ data: InventoryRow[]; total: number }>({
+    queryKey: ["/api/store/inventory", search, warehouseFilter, statusFilter, dateRange, page, pageSize],
+    queryFn: () =>
+      apiRequest("GET", `/api/store/inventory?${params.toString()}`).then(r => r.json()),
+    staleTime: 15000,
+    refetchInterval: 30000,
+    retry: 2,
+    retryDelay: 1500,
+  });
+
+  const paged = resp?.data ?? [];
+  const total = resp?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  useEffect(() => { setPage(1); }, [search, warehouseFilter, statusFilter, dateRange]);
+  useEffect(() => {
+    if (!isLoading && page > totalPages) setPage(totalPages);
+  }, [isLoading, page, totalPages]);
+
+  function handlePageSize(n: number) { setPageSize(n); setPage(1); }
+
+  function inventoryStatusBadge(status: string) {
+    if (status === "ok") return <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border bg-emerald-100 text-emerald-700 border-emerald-200">Còn hàng</span>;
+    if (status === "low") return <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border bg-amber-100 text-amber-700 border-amber-200">Sắp hết</span>;
+    return <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border bg-red-100 text-red-700 border-red-200">Hết hàng</span>;
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header + Filters */}
+      <div className="px-5 pt-3 pb-3 shrink-0 border-b border-border">
+        <div className="flex flex-wrap gap-2">
+          <div className="relative flex-1 min-w-[200px]">
+            <Input
+              placeholder="Mã hoặc tên sản phẩm..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-9 h-9 text-sm"
+            />
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="8" strokeWidth="2" />
+              <path d="M21 21l-4.35-4.35" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </div>
+
+          <StoreDateRangePicker value={dateRange} onChange={r => { setDateRange(r); setPage(1); }} placeholder="Lọc theo ngày cập nhật" />
+
+          <Select value={warehouseFilter} onValueChange={v => { setWarehouseFilter(v); setPage(1); }}>
+            <SelectTrigger className="h-9 text-sm w-[160px]">
+              <SelectValue placeholder="Tất cả kho" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tất cả kho</SelectItem>
+              {warehouses.map(w => (
+                <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1); }}>
+            <SelectTrigger className="h-9 text-sm w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.map(o => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={String(pageSize)} onValueChange={v => handlePageSize(Number(v))}>
+            <SelectTrigger className="h-9 text-sm w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PAGE_SIZE_OPTIONS.map(n => (
+                <SelectItem key={n} value={String(n)}>{n} dòng / trang</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-1.5 h-9 text-xs"
+              onClick={async () => {
+                setIsExporting(true);
+                try {
+                  await exportTonKho(async () => {
+                    const exportParams = new URLSearchParams(params);
+                    exportParams.set("pageSize", "100");
+                    const allRows: ExportInventoryRow[] = [];
+                    let totalToFetch: number | null = null;
+                    let exportPage = 1;
+
+                    while (totalToFetch === null || allRows.length < totalToFetch) {
+                      exportParams.set("page", String(exportPage));
+                      const response = await apiRequest(
+                        "GET",
+                        `/api/store/inventory?${exportParams.toString()}`,
+                      );
+                      const result = await response.json() as {
+                        data?: ExportInventoryRow[];
+                        total?: number;
+                      };
+                      const batch = result.data ?? [];
+                      if (exportPage === 1) totalToFetch = result.total ?? batch.length;
+                      if (batch.length === 0) break;
+                      allRows.push(...batch);
+                      exportPage += 1;
+                    }
+
+                    return allRows;
+                  }, toast);
+                } finally {
+                  setIsExporting(false);
+                }
+              }}
+              disabled={isLoading || isExporting || total === 0}
+            >
+              {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+              {isExporting ? "Đang tải..." : "Tải xuống"}
+            </Button>
+            <button
+              onClick={() => refetch()}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border rounded-md px-2.5 h-9 hover:bg-muted/50 transition-colors"
+            >
+              <Clock className="w-3.5 h-3.5" /> Làm mới
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Table - scrollable area */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-muted/40 border-b border-border text-xs text-muted-foreground font-medium">
+              <th className="text-left px-4 py-3">Mã SP</th>
+              <th className="text-left px-4 py-3">Tên sản phẩm</th>
+              <th className="text-left px-4 py-3">Kho</th>
+              <th className="text-right px-4 py-3">Tổng nhập</th>
+              <th className="text-right px-4 py-3">Đã xuất</th>
+              <th className="text-right px-4 py-3">Tồn thực tế</th>
+              <th className="text-right px-4 py-3">Đã giữ chỗ</th>
+              <th className="text-right px-4 py-3">Khả dụng</th>
+              <th className="text-center px-4 py-3">Trạng thái</th>
+              <th className="text-right px-4 py-3">Cập nhật</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr>
+                <td colSpan={10} className="py-16 text-center text-muted-foreground">
+                  Đang tải dữ liệu...
+                </td>
+              </tr>
+            ) : paged.length === 0 ? (
+              <tr>
+                <td colSpan={10} className="py-16 text-center text-muted-foreground">
+                  Không có dữ liệu tồn kho
+                </td>
+              </tr>
+            ) : (
+              paged.map((row, i) => (
+                <tr
+                  key={`${row.productId}-${row.warehouseId}`}
+                  className={cn("border-b border-border/60 hover:bg-muted/20 transition-colors", i % 2 === 0 ? "" : "bg-muted/10")}
+                >
+                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{row.code}</td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => setDetailRow(row)}
+                      className="font-medium text-foreground hover:text-primary hover:underline text-left transition-colors"
+                    >
+                      {row.name}
+                    </button>
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">{row.warehouseName}</td>
+                  <td className="px-4 py-3 text-right tabular-nums font-medium text-emerald-600">{row.totalImport}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{row.totalExport}</td>
+                  <td className="px-4 py-3 text-right tabular-nums font-bold">{row.actualStock}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-amber-500">{row.reservedQty}</td>
+                  <td className="px-4 py-3 text-right tabular-nums font-semibold text-blue-600">{row.availableQty}</td>
+                  <td className="px-4 py-3 text-center">{inventoryStatusBadge(row.status)}</td>
+                  <td className="px-4 py-3 text-right text-xs text-muted-foreground whitespace-nowrap">
+                    {fmtDateTime(row.updatedAt)}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      </div>
+
+      {/* Footer / Pagination */}
+      <div className="px-5 py-3 shrink-0 border-t border-border">
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span className="text-xs">
+            Hiển thị {total === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} / {total} sản phẩm
+          </span>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage(p => p - 1)}
+                className="px-3 py-1.5 rounded-lg border border-border text-xs font-medium disabled:opacity-40 hover:bg-muted/50 transition-colors"
+              >
+                ← Trước
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(n => n === 1 || n === totalPages || Math.abs(n - page) <= 1)
+                .reduce<(number | "…")[]>((acc, n, i, arr) => {
+                  if (i > 0 && arr[i - 1] !== n - 1) acc.push("…");
+                  acc.push(n);
+                  return acc;
+                }, [])
+                .map((item, i) =>
+                  item === "…" ? (
+                    <span key={`ellipsis-${i}`} className="px-2 py-1.5 text-xs">…</span>
+                  ) : (
+                    <button
+                      key={item}
+                      onClick={() => setPage(item as number)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors",
+                        page === item
+                          ? "bg-primary border-primary text-primary-foreground"
+                          : "border-border hover:bg-muted/50"
+                      )}
+                    >
+                      {item}
+                    </button>
+                  )
+                )
+              }
+              <button
+                disabled={page >= totalPages}
+                onClick={() => setPage(p => p + 1)}
+                className="px-3 py-1.5 rounded-lg border border-border text-xs font-medium disabled:opacity-40 hover:bg-muted/50 transition-colors"
+              >
+                Tiếp →
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Detail popup */}
+      {detailRow && (
+        <DetailPopup row={detailRow} onClose={() => setDetailRow(null)} />
+      )}
+    </div>
+  );
+}

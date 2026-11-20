@@ -1,0 +1,423 @@
+import { useState, useEffect, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Copy, CheckCircle2, Building2, CreditCard, User, QrCode, Landmark } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/hooks/use-language";
+import { type InvoiceRow, STATUS_CONFIG, isInvoicePaidLike, parseNum, fmtMoney, fmtDate } from "@/types/invoice-types";
+
+interface InvoiceQRDialogProps {
+  invoice: InvoiceRow | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+type Tab = "standard" | "bidv";
+
+interface BidvVaInfo {
+  vaCode: string;
+  isNew: boolean;
+  isEnabled: boolean;
+  receiveAccount: string | null;
+  accountName: string | null;
+}
+
+interface BidvQrStatus {
+  isQrEnabled: boolean;
+}
+
+import { getBankCode, sanitizeForBank, sanitizeForBankPreservingCase } from "./qr-utils";
+
+function invoiceStatusLabel(status: string, t: (key: string) => string): string {
+  const keys: Record<string, string> = {
+    paid: "finance.paidStatus",
+    confirmed: "finance.tab.confirmed",
+    unpaid: "finance.unpaidStatus",
+    debt: "finance.tab.debt",
+    partial: "finance.partialPayment",
+    cancelled: "finance.statusCancelled",
+  };
+  return t(keys[status] ?? "finance.unpaidStatus");
+}
+
+export function InvoiceQRDialog({ invoice, open, onOpenChange }: InvoiceQRDialogProps) {
+  const { toast } = useToast();
+  const { t } = useLanguage();
+  const [copied, setCopied] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [tab, setTab] = useState<Tab>("standard");
+
+  const { data: locationsData } = useQuery<any[]>({ queryKey: ["/api/locations"] });
+
+  const location = locationsData?.find(
+    (l) => l.name === invoice?.branch || (locationsData?.length === 1)
+  ) ?? locationsData?.[0];
+
+  const grandTotal = parseNum(invoice?.grandTotal);
+  const remainingAmount = parseNum(invoice?.remainingAmount);
+  const payAmount = remainingAmount > 0 ? remainingAmount : grandTotal;
+  const status = invoice ? (STATUS_CONFIG[invoice.status] ?? STATUS_CONFIG.unpaid) : null;
+
+  const mainLocation = locationsData?.find((l) => l.isMain) ?? locationsData?.[0];
+  const effectiveLoc = location ?? mainLocation;
+  const invoiceLocationId = invoice?.locationId || undefined;
+  const effectiveLocationId = invoiceLocationId || effectiveLoc?.id;
+
+  const { data: bidvQrStatus } = useQuery<BidvQrStatus>({
+    queryKey: ["/api/bidv/location-qr-status", effectiveLocationId],
+    queryFn: async () => {
+      const res = await fetch(`/api/bidv/location-qr-status?locationId=${effectiveLocationId}`);
+      if (!res.ok) throw new Error(t("finance.bidvConfigNotReady"));
+      return res.json();
+    },
+    enabled: !!effectiveLocationId && open,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  // Giữ hành vi hiện tại trong lúc tải hoặc khi cơ sở chưa có cấu hình.
+  const isBidvQrEnabled = bidvQrStatus?.isQrEnabled ?? true;
+
+  const parseBanks = (loc: any) => {
+    if (!loc) return [];
+    try { return loc.bankAccounts ? JSON.parse(loc.bankAccounts) : []; } catch { return []; }
+  };
+
+  const banks = parseBanks(effectiveLoc);
+  const primaryBank = banks[0] ?? null;
+  const bankName = primaryBank?.bankName || "—";
+  const bankAccount = primaryBank?.bankAccount || "—";
+  const accountHolder = primaryBank?.accountHolder || "—";
+
+  // Nội dung CK thường: ghi tên + mã học viên trước để nhận diện người chuyển.
+  // Chỉ cho phép chữ ASCII, số và dấu cách trong nội dung gửi ngân hàng.
+  const invoiceAny = invoice as any;
+  const customerIdentity = sanitizeForBankPreservingCase(
+    [invoice?.name?.trim(), invoice?.studentCode?.trim()].filter(Boolean).join(" "),
+  );
+  const invoiceDescription = invoice?.description?.trim()
+    ? invoice.description.trim()
+    : invoiceAny?.note?.trim()
+      ? invoiceAny.note.trim()
+      : "";
+  const safeInvoiceDescription = invoiceDescription
+    ? sanitizeForBank(invoiceDescription).replace(/[_-]/g, " ").replace(/\s+/g, " ").trim()
+    : [
+        "chuyen khoan tien hoa don",
+        sanitizeForBankPreservingCase(invoice?.code ?? ""),
+      ].filter(Boolean).join(" ");
+  const transferContent = [customerIdentity, safeInvoiceDescription]
+    .filter(Boolean)
+    .join(" ")
+    .slice(0, 160)
+    .trimEnd();
+  const qrAddInfo = transferContent;
+
+  const resolvedBankCode = getBankCode(bankName);
+  const vietQrUrl = location?.paymentQrUrl
+    ? location.paymentQrUrl
+    : `https://img.vietqr.io/image/${resolvedBankCode}-${bankAccount}-compact2.png?amount=${Math.round(grandTotal)}&addInfo=${encodeURIComponent(qrAddInfo)}&accountName=${encodeURIComponent(accountHolder)}`;
+
+  // BIDV Virtual Account
+  // Với đợt con (scheduleId có), query bằng scheduleId để lấy đúng VA — giống ScheduleQRDialog
+  const invoiceScheduleId = (invoice as any)?.scheduleId as string | undefined;
+  const bidvQueryParam = invoiceScheduleId
+    ? `scheduleId=${invoiceScheduleId}`
+    : `invoiceId=${invoice?.id}`;
+  const { data: bidvVa, isLoading: bidvLoading } = useQuery<BidvVaInfo>({
+    queryKey: ["/api/bidv/virtual-account", invoiceScheduleId ?? invoice?.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/bidv/virtual-account?${bidvQueryParam}`);
+      if (!res.ok) throw new Error(t("finance.bidvConfigNotReady"));
+      return res.json();
+    },
+    enabled: !!(invoiceScheduleId ?? invoice?.id) && open && tab === "bidv" && isBidvQrEnabled,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
+  // QR dùng vaCode làm account number trong URL — app ngân hàng sẽ hiển thị TK định danh (ví dụ: V3EE2000128)
+  // receiveAccount (TK chuyên thu) là nội bộ BIDV, không cần encode vào QR
+  const bidvContentPrefix = bidvVa?.vaCode ?? "";
+  const bidvContentLabel = "thanh toan hoa don";
+  const bidvContentBase = [bidvContentPrefix, bidvContentLabel]
+    .filter(Boolean)
+    .join(" ");
+  const bidvInvoiceCodeMaxLength = Math.max(
+    0,
+    50 - bidvContentBase.length - 1,
+  );
+  const bidvInvoiceCode = sanitizeForBank(
+    invoice?.code ?? "",
+    bidvInvoiceCodeMaxLength,
+  ).replace(/[^a-zA-Z0-9]/g, "");
+  const bidvAddInfo = [bidvContentBase, bidvInvoiceCode]
+    .filter(Boolean)
+    .join(" ")
+    .slice(0, 50);
+  const bidvQrUrl = bidvVa?.vaCode
+    ? `https://img.vietqr.io/image/BIDV-${bidvVa.vaCode}-compact2.png?amount=${Math.round(payAmount)}&addInfo=${encodeURIComponent(bidvAddInfo)}&accountName=${encodeURIComponent(bidvVa.accountName || "BIDV")}`
+    : null;
+
+  const handleCopy = useCallback((text: string, label: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      toast({ title: t("finance.copied"), description: `${label}: ${text}` });
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [t, toast]);
+
+  useEffect(() => {
+    if (!open) { setTab("standard"); return; }
+    const interval = setInterval(() => setRefreshKey((k) => k + 1), 12000);
+    return () => clearInterval(interval);
+  }, [open]);
+
+  useEffect(() => {
+    if (!isBidvQrEnabled && tab === "bidv") setTab("standard");
+  }, [isBidvQrEnabled, tab]);
+
+  if (!invoice) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl w-full p-0 overflow-hidden">
+        <DialogHeader className="px-6 pt-5 pb-0">
+          <DialogTitle className="text-lg font-bold flex items-center gap-2">
+            <CreditCard className="h-5 w-5 text-purple-600" />
+            {t("finance.invoicePaymentTitle")}
+          </DialogTitle>
+          {/* Tab selector */}
+          <div className="flex gap-1 mt-3 border-b border-border">
+            <button
+              onClick={() => setTab("standard")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                tab === "standard"
+                  ? "border-purple-600 text-purple-600"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t("finance.qrStandardTransfer")}
+            </button>
+            {isBidvQrEnabled && (
+              <button
+                onClick={() => setTab("bidv")}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+                  tab === "bidv"
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Landmark className="h-3.5 w-3.5" />
+                {t("finance.qrBidvAutomatic")}
+              </button>
+            )}
+          </div>
+        </DialogHeader>
+
+        {tab === "standard" && (
+          <div className="flex flex-col md:flex-row gap-0 min-h-[420px]">
+            {/* LEFT: Payment info */}
+            <div className="flex-[3] px-6 py-5 space-y-4 border-r border-border">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 text-sm">
+                  <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <span className="text-muted-foreground">{t("finance.student")}:</span>
+                  <span className="font-semibold">{invoice.name || "—"}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <CreditCard className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <span className="text-muted-foreground">{t("finance.invoiceCode")}:</span>
+                  <span className="font-semibold text-primary">{invoice.code}</span>
+                </div>
+              </div>
+              <div className="h-px bg-border" />
+              <div className="space-y-2">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-muted-foreground text-sm">{t("finance.amount")}:</span>
+                  <span className="text-xl font-bold text-red-600" data-testid="text-qr-amount">{fmtMoney(grandTotal)}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-muted-foreground">{t("finance.dueDate")}:</span>
+                  <span className="font-medium">{fmtDate(invoice.dueDate)}</span>
+                </div>
+              </div>
+              <div className="h-px bg-border" />
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 text-sm">
+                  <Building2 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <span className="text-muted-foreground">{t("finance.bank")}:</span>
+                  <span className="font-semibold">{bankName}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-muted-foreground pl-6">{t("finance.bankAccount")}:</span>
+                  <span className="font-semibold font-mono">{bankAccount}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-muted-foreground pl-6">{t("finance.accountHolder")}:</span>
+                  <span className="font-semibold uppercase">{accountHolder}</span>
+                </div>
+              </div>
+              <div className="h-px bg-border" />
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">{t("finance.transferContent")}:</p>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 bg-muted px-3 py-2 rounded-md font-bold font-mono text-sm tracking-wide select-all" data-testid="text-transfer-content">
+                    {transferContent}
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => handleCopy(transferContent, t("finance.content"))} className="h-9 gap-1.5 shrink-0" data-testid="button-copy-content">
+                    {copied ? <><CheckCircle2 className="h-4 w-4 text-green-600" /> {t("finance.copied")}</> : <><Copy className="h-4 w-4" /> {t("finance.copy")}</>}
+                  </Button>
+                </div>
+              </div>
+              <div className="h-px bg-border" />
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">{t("finance.status")}:</span>
+                {status && (
+                  <Badge className={`text-xs font-medium ${status.className}`} data-testid="badge-qr-status">
+                    {invoice.status === "unpaid" ? "⏳ " : isInvoicePaidLike(invoice.status) ? "✅ " : ""}
+                    {invoiceStatusLabel(invoice.status, t)}
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            {/* RIGHT: QR */}
+            <div className="flex-[2] flex flex-col items-center justify-center gap-4 px-6 py-8 bg-muted/20">
+              <div className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground mb-1">
+                <QrCode className="h-4 w-4" />
+                {t("finance.qrScanToPay")}
+              </div>
+              <div className="border border-border bg-white rounded-xl p-3 shadow-sm" data-testid="qr-code-container">
+                <img key={refreshKey} src={vietQrUrl} alt={t("finance.paymentQrAlt")} className="w-56 h-56 object-contain rounded"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+              </div>
+              <p className="text-xs text-center text-muted-foreground">{t("finance.qrBankAppHint")}</p>
+              <div className="space-y-1 text-xs text-center">
+                <p className="flex items-center gap-1 text-green-600"><CheckCircle2 className="h-3.5 w-3.5" />{t("finance.qrAutoFillAmount")}</p>
+                <p className="flex items-center gap-1 text-green-600"><CheckCircle2 className="h-3.5 w-3.5" />{t("finance.qrAutoFillContent")}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "bidv" && (
+          <div className="flex flex-col md:flex-row gap-0 min-h-[420px]">
+            {/* LEFT: BIDV VA info */}
+            <div className="flex-[3] px-6 py-5 space-y-4 border-r border-border">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 text-sm">
+                  <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <span className="text-muted-foreground">{t("finance.studentLabel")}:</span>
+                  <span className="font-semibold">{invoice.name || "—"}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <CreditCard className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <span className="text-muted-foreground">{t("finance.invoiceCode")}:</span>
+                  <span className="font-semibold text-primary">{invoice.code}</span>
+                </div>
+              </div>
+
+              <div className="h-px bg-border" />
+
+              <div className="space-y-2">
+                <div className="flex items-baseline gap-2">
+                   <span className="text-muted-foreground text-sm">{t("finance.amount")}:</span>
+                  <span className="text-xl font-bold text-red-600">{fmtMoney(payAmount)}</span>
+                </div>
+              </div>
+
+              <div className="h-px bg-border" />
+
+              {/* BIDV bank info */}
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 text-sm">
+                  <Landmark className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                   <span className="text-muted-foreground">{t("finance.bank")}:</span>
+                  <span className="font-semibold text-blue-700">BIDV</span>
+                </div>
+                {bidvVa?.vaCode && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground pl-6">{t("finance.virtualAccount")}:</span>
+                    <span className="font-semibold font-mono text-blue-700">{bidvVa.vaCode}</span>
+                  </div>
+                )}
+                {bidvVa?.accountName && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground pl-6">{t("finance.recipient")}:</span>
+                    <span className="font-semibold uppercase tracking-wide">{bidvVa.accountName}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="h-px bg-border" />
+
+              <div className="flex items-center gap-2 text-sm">
+                 <span className="text-muted-foreground">{t("finance.status")}:</span>
+                {status && (
+                  <Badge className={`text-xs font-medium ${status.className}`}>
+                    {invoice.status === "unpaid" ? "⏳ " : isInvoicePaidLike(invoice.status) ? "✅ " : ""}
+                    {invoiceStatusLabel(invoice.status, t)}
+                  </Badge>
+                )}
+                {bidvVa?.isEnabled === false && (
+                  <Badge variant="outline" className="text-xs text-amber-600 border-amber-400 ml-2">
+                     {t("finance.bidvNotEnabled")}
+                  </Badge>
+                )}
+              </div>
+
+              {invoice.description && (
+                <>
+                  <div className="h-px bg-border" />
+                  <div className="space-y-1">
+                     <p className="text-sm text-muted-foreground">{t("finance.qrDescription")}</p>
+                    <p className="text-sm text-foreground whitespace-pre-wrap">{invoice.description}</p>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* RIGHT: BIDV QR */}
+            <div className="flex-[2] flex flex-col items-center justify-center gap-4 px-6 py-8 bg-blue-50/30">
+              <div className="flex items-center gap-1.5 text-sm font-semibold text-blue-700 mb-1">
+                <QrCode className="h-4 w-4" />
+                 {t("finance.bidvQrAlt")} — {t("finance.qrScanToPay")}
+              </div>
+
+              <div className="border border-blue-200 bg-white rounded-xl p-3 shadow-sm">
+                {bidvLoading ? (
+                  <div className="w-56 h-56 bg-muted animate-pulse rounded" />
+                ) : bidvQrUrl ? (
+                  <img
+                    key={`bidv-${refreshKey}`}
+                    src={bidvQrUrl}
+                     alt={t("finance.bidvQrAlt")}
+                    className="w-56 h-56 object-contain rounded"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                ) : (
+                  <div className="w-56 h-56 flex items-center justify-center text-center text-sm text-muted-foreground p-4">
+                    {bidvVa === undefined && !bidvLoading
+                       ? t("finance.bidvConfigNotReady")
+                       : t("finance.cannotCreateQr")}
+                  </div>
+                )}
+              </div>
+
+              <p className="text-xs text-center text-muted-foreground">
+                  {t("finance.bidvScanHint")}
+              </p>
+              {bidvVa?.vaCode && (
+                <div className="space-y-1 text-xs text-center">
+                   <p className="flex items-center gap-1 text-green-600"><CheckCircle2 className="h-3.5 w-3.5" />{t("finance.autoConfirmPayment")}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}

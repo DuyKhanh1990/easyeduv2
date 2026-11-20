@@ -1,0 +1,160 @@
+import { useEffect, useState } from "react";
+import type { FinancePromotion } from "@shared/schema";
+import { useLanguage } from "@/hooks/use-language";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+
+export type FinancePromotionType = "promotion" | "surcharge";
+
+type PromotionForm = {
+  code: string;
+  name: string;
+  valueAmount: string;
+  valueType: "percent" | "vnd";
+  quantity: string;
+  fromDate: string;
+  toDate: string;
+};
+
+export type FinancePromotionDialogProps = {
+  open: boolean;
+  onClose: () => void;
+  onSave: (item: {
+    code: string;
+    name: string;
+    valueAmount: string | null;
+    valueType: "percent" | "vnd";
+    quantity: number | null;
+    fromDate: string | null;
+    toDate: string | null;
+  }) => void;
+  initial?: Partial<FinancePromotion>;
+  title: string;
+  isSaving?: boolean;
+  contentClassName?: string;
+  overlayClassName?: string;
+};
+
+function getInitialForm(initial?: Partial<FinancePromotion>): PromotionForm {
+  return {
+    code: initial?.code ?? "",
+    name: initial?.name ?? "",
+    valueAmount: initial?.valueAmount ?? "",
+    valueType: (initial?.valueType ?? "percent") as "percent" | "vnd",
+    quantity: initial?.quantity ? String(initial.quantity) : "",
+    fromDate: initial?.fromDate ?? "",
+    toDate: initial?.toDate ?? "",
+  };
+}
+
+export function FinancePromotionDialog({
+  open, onClose, onSave, initial, title, isSaving = false, contentClassName, overlayClassName,
+}: FinancePromotionDialogProps) {
+  const { t } = useLanguage();
+  const [form, setForm] = useState<PromotionForm>(() => getInitialForm(initial));
+
+  useEffect(() => {
+    if (open) setForm(getInitialForm(initial));
+  }, [open, initial]);
+
+  const handleSave = () => {
+    if (!form.code.trim() || !form.name.trim()) return;
+    onSave({
+      code: form.code.trim(),
+      name: form.name.trim(),
+      valueAmount: form.valueAmount || null,
+      valueType: form.valueType,
+      quantity: form.quantity ? parseInt(form.quantity, 10) : null,
+      fromDate: form.fromDate || null,
+      toDate: form.toDate || null,
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={value => { if (!value && !isSaving) onClose(); }}>
+      <DialogContent className={`max-w-md ${contentClassName || ""}`} overlayClassName={overlayClassName}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">{t("financeConfig.code")} <span className="text-red-500">*</span></label>
+              <Input
+                placeholder={t("financeConfig.codePlaceholder")}
+                value={form.code}
+                onChange={e => setForm(current => ({ ...current, code: e.target.value }))}
+                data-testid="input-promo-code"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">{t("financeConfig.name")} <span className="text-red-500">*</span></label>
+              <Input
+                placeholder={t("financeConfig.promotionNamePlaceholder")}
+                value={form.name}
+                onChange={e => setForm(current => ({ ...current, name: e.target.value }))}
+                data-testid="input-promo-name"
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">{t("financeConfig.value")}</label>
+            <div className="flex gap-2">
+              <Input
+                placeholder={t("financeConfig.valuePlaceholder")}
+                value={form.valueAmount}
+                onChange={e => setForm(current => ({ ...current, valueAmount: e.target.value }))}
+                className="flex-1"
+                data-testid="input-promo-value"
+              />
+              <Select value={form.valueType} onValueChange={value => setForm(current => ({ ...current, valueType: value as "percent" | "vnd" }))}>
+                <SelectTrigger className="w-24" data-testid="select-promo-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="percent">%</SelectItem>
+                  <SelectItem value="vnd">{t("financeConfig.currency")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">{t("financeConfig.quantity")}</label>
+            <Input
+              type="number"
+              placeholder={t("financeConfig.quantityPlaceholder")}
+              value={form.quantity}
+              onChange={e => setForm(current => ({ ...current, quantity: e.target.value }))}
+              data-testid="input-promo-quantity"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">{t("financeConfig.validityPeriod")}</label>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">{t("financeConfig.fromDate")}</label>
+                <Input type="date" value={form.fromDate} onChange={e => setForm(current => ({ ...current, fromDate: e.target.value }))} data-testid="input-promo-from" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">{t("financeConfig.toDate")}</label>
+                <Input type="date" value={form.toDate} onChange={e => setForm(current => ({ ...current, toDate: e.target.value }))} data-testid="input-promo-to" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={isSaving}>{t("financeConfig.cancel")}</Button>
+          <Button onClick={handleSave} disabled={isSaving || !form.code.trim() || !form.name.trim()} data-testid="button-save-promo">
+            {isSaving ? t("financeConfig.saving") : t("financeConfig.save")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

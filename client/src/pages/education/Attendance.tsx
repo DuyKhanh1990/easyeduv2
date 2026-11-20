@@ -1,0 +1,1667 @@
+import { useState, useMemo, useEffect } from "react";
+import { StudentNameLink } from "@/components/ui/StudentNameLink";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  ChevronDown,
+  ChevronUp,
+  Download,
+  MapPin,
+  Search,
+  X,
+  SlidersHorizontal,
+  Users,
+  Clock,
+  CheckSquare,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  MessageSquare,
+} from "lucide-react";
+import { format } from "date-fns";
+import { StoreDateRangePicker, DateRange } from "@/pages/store/StoreDateRangePicker";
+import { applyBulkAttendance } from "@/lib/attendance-bulk";
+import { apiRequest } from "@/lib/queryClient";
+import { useMyPermissions } from "@/hooks/use-my-permissions";
+import { useToast } from "@/hooks/use-toast";
+import { ReviewDialog } from "@/components/education/ReviewDialog";
+
+type AttendanceFilters = {
+  classes: string[];
+  students: string[];
+  locations: string[];
+  shift: string;
+  dateRange: DateRange;
+  studentSearch: string;
+  attendanceStatus: string[];
+};
+
+type ClassData = {
+  id: string;
+  classCode: string;
+  name: string;
+  studentCount: number;
+  locationId?: string | null;
+  locationName?: string | null;
+  location?: { id: string; name: string } | null;
+};
+
+type StudentAttendance = {
+  id: string;
+  recordType?: "regular" | "free";
+  freeRegistrationId?: string;
+  locationId?: string | null;
+  classSessionId?: string;
+  studentClassId?: string;
+  studentId: string;
+  classId: string;
+  studentCode: string;
+  studentName: string;
+  className: string;
+  dayOfWeek: string;
+  sessionDate: string;
+  shift: string;
+  sessionOrder: number;
+  totalSessions: number;
+  attendanceStatus: string;
+  attendanceNote: string;
+  reviewData?: unknown;
+  reviewPublished?: boolean;
+  evaluationCriteriaIds?: string[];
+  teacherIds?: string[];
+  teachers?: { id: string; fullName: string }[];
+  teacherName: string;
+  note: string;
+  onlineLink?: string | null;
+  learningFormat?: string;
+  onlineClickedAt?: string | null;
+  onlineEndedAt?: string | null;
+  endTime?: string | null;
+};
+
+function getDefaultAttendanceDateRange(): DateRange {
+  const now = new Date();
+  return {
+    from: now,
+    to: now,
+  };
+}
+
+const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
+  present:     { label: "Có học",        bg: "bg-emerald-50",  text: "text-emerald-700", dot: "bg-emerald-500" },
+  absent:      { label: "Nghỉ học",      bg: "bg-red-50",      text: "text-red-700",     dot: "bg-red-500" },
+  makeup_wait: { label: "Nghỉ chờ bù",  bg: "bg-orange-50",   text: "text-orange-700",  dot: "bg-orange-500" },
+  makeup_scheduled: { label: "Đã xếp bù", bg: "bg-violet-100", text: "text-violet-900", dot: "bg-violet-900" },
+  makeup_done: { label: "Đã học bù",    bg: "bg-blue-50",     text: "text-blue-700",    dot: "bg-blue-500" },
+  paused:      { label: "Bảo lưu",      bg: "bg-amber-50",    text: "text-amber-700",   dot: "bg-amber-500" },
+  pending:     { label: "Chưa điểm danh", bg: "bg-slate-50",  text: "text-slate-500",   dot: "bg-slate-400" },
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.pending;
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.bg} ${cfg.text}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+      {cfg.label}
+    </span>
+  );
+}
+
+function hasReviewContent(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  const entries = Array.isArray(raw) ? raw : Object.values(raw as Record<string, any>);
+  return entries.some((entry: any) =>
+    Object.values(entry?.criteriaRatings ?? {}).some((rating) => Number(rating) > 0)
+    || (Array.isArray(entry?.items) && entry.items.some((item: any) =>
+      !!item.comment?.trim() || (item.inputType === "checkbox" && item.checked === true),
+    )),
+  );
+}
+
+function getReviewTeacherOptions(record: StudentAttendance) {
+  if (record.teachers?.length) return record.teachers;
+  if (!record.reviewData || typeof record.reviewData !== "object" || Array.isArray(record.reviewData)) return [];
+  return Object.entries(record.reviewData as Record<string, any>).map(([id, data]) => ({
+    id,
+    fullName: data?.teacherName || "Giáo viên",
+  }));
+}
+
+function getReviewCriteriaIds(record: StudentAttendance): string[] {
+  if (record.evaluationCriteriaIds?.length) return record.evaluationCriteriaIds;
+  if (!record.reviewData || typeof record.reviewData !== "object" || Array.isArray(record.reviewData)) return [];
+  return [...new Set(Object.values(record.reviewData as Record<string, any>)
+    .flatMap((entry) => [
+      ...(Array.isArray(entry?.items) ? entry.items.map((item: any) => item.criteriaId).filter(Boolean) : []),
+      ...Object.keys(entry?.criteriaRatings ?? {}),
+    ]))];
+}
+
+function getOnlineAttendanceExportValue(record: StudentAttendance): string {
+  if ((record.learningFormat !== "online" && !record.onlineLink) || !record.onlineClickedAt) return "";
+  const formatTime = (date: Date) =>
+    date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const parts = [`↗ ${formatTime(new Date(record.onlineClickedAt))}`];
+  let endedAt: Date | null = null;
+  let isDefaultEnd = false;
+  if (record.onlineEndedAt) {
+    endedAt = new Date(record.onlineEndedAt);
+  } else if (record.endTime && record.sessionDate) {
+    const [hour, minute, second = 0] = record.endTime.split(":").map(Number);
+    const dateKey = typeof record.sessionDate === "string"
+      ? record.sessionDate.split("T")[0]
+      : new Date(record.sessionDate).toISOString().split("T")[0];
+    const [year, month, day] = dateKey.split("-").map(Number);
+    const sessionEnd = new Date(year, month - 1, day, hour, minute, second, 0);
+    if (new Date() >= sessionEnd) {
+      endedAt = sessionEnd;
+      isDefaultEnd = true;
+    }
+  }
+  if (endedAt) parts.push(`↙ ${formatTime(endedAt)}${isDefaultEnd ? " *" : ""}`);
+  return parts.join("\n");
+}
+
+export function Attendance() {
+  const { data: myPerms, isLoading: permissionsLoading } = useMyPermissions();
+  const canViewAttendance = Boolean(
+    myPerms?.isSuperAdmin
+    || myPerms?.permissions["/attendance"]?.canView
+    || myPerms?.permissions["/attendance"]?.canViewAll
+  );
+
+  if (permissionsLoading) {
+    return (
+      <DashboardLayout>
+        <div className="mx-auto mt-12 max-w-2xl rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
+          Đang kiểm tra quyền truy cập...
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!canViewAttendance) {
+    return (
+      <DashboardLayout>
+        <div className="mx-auto mt-12 max-w-2xl rounded-xl border bg-card p-8 text-center">
+          <p className="text-base font-medium text-foreground">
+            Bạn không có quyền truy cập trang này. Vui lòng liên hệ Quản lý trung tâm để được cấp thêm quyền.
+          </p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  return <AttendanceContent />;
+}
+
+function AttendanceContent() {
+  const queryClient = useQueryClient();
+  const { data: myPerms } = useMyPermissions();
+  const canAttend = !myPerms || myPerms.isSuperAdmin || !!(myPerms.permissions["/attendance"]?.canCreate);
+  const canEditStudentReviews = Boolean(
+    myPerms?.isSuperAdmin
+    || myPerms?.permissions["/classes"]?.canEdit
+    || myPerms?.permissions["/classes"]?.canDelete,
+  );
+
+  const [filters, setFilters] = useState<AttendanceFilters>({
+    classes: [],
+    students: [],
+    locations: [],
+    shift: "all",
+    dateRange: getDefaultAttendanceDateRange(),
+    studentSearch: "",
+    attendanceStatus: [],
+  });
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const [classSearch, setClassSearch] = useState("");
+  const [locationSearch, setLocationSearch] = useState("");
+  const [locationPopoverOpen, setLocationPopoverOpen] = useState(false);
+  const [shiftSearch, setShiftSearch] = useState("");
+  const [shiftPopoverOpen, setShiftPopoverOpen] = useState(false);
+
+  const [expandedClasses, setExpandedClasses] = useState<string[]>([""]);
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [isBulkAttendanceOpen, setIsBulkAttendanceOpen] = useState(false);
+  const [isBulkSaving, setIsBulkSaving] = useState(false);
+  const [reviewTarget, setReviewTarget] = useState<StudentAttendance | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [isExporting, setIsExporting] = useState(false);
+  const [activeView, setActiveView] = useState<"detail" | "overview">("detail");
+  const [overviewPage, setOverviewPage] = useState(1);
+  const [overviewPageSize, setOverviewPageSize] = useState(20);
+
+  const { toast } = useToast();
+
+  useEffect(() => {
+    setOverviewPage(1);
+  }, [filters]);
+
+  const updateAttendanceMutation = useMutation({
+    mutationFn: async (data: { record: StudentAttendance; attendanceStatus: string }) => {
+      if (data.record.recordType === "free") {
+        return apiRequest("PATCH", `/api/attendance/free/${data.record.freeRegistrationId ?? data.record.id}`, {
+          attendance_status: data.attendanceStatus,
+        });
+      }
+      return apiRequest("PATCH", `/api/student-sessions/${data.record.id}/attendance`, {
+        attendance_status: data.attendanceStatus,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/attendance"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Lỗi", description: err?.message || "Không thể cập nhật điểm danh", variant: "destructive" });
+    },
+  });
+
+  const updateNoteMutation = useMutation({
+    mutationFn: async (data: { record: StudentAttendance; attendanceNote: string }) => {
+      if (data.record.recordType === "free") {
+        return apiRequest("PATCH", `/api/attendance/free/${data.record.freeRegistrationId ?? data.record.id}`, {
+          attendance_status: data.record.attendanceStatus || "pending",
+          attendance_note: data.attendanceNote,
+        });
+      }
+      return apiRequest("POST", "/api/student-sessions/attendance", {
+        student_session_id: data.record.id,
+        attendance_note: data.attendanceNote,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/attendance"] });
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey[0] as string;
+          return typeof key === "string" && key.includes("/student-sessions");
+        },
+      });
+    },
+    onError: (err: any) => {
+      toast({ title: "Lỗi", description: err?.message || "Không thể cập nhật ghi chú", variant: "destructive" });
+    },
+  });
+
+  const { data: classesData = [], isLoading: loadingClasses } = useQuery({
+    queryKey: ["/api/classes"],
+    queryFn: async () => {
+      const response = await fetch("/api/classes");
+      const json = await response.json();
+      return Array.isArray(json) ? json : (json.classes || json.data || []);
+    },
+  });
+
+  const { data: studentsData = [], isLoading: loadingStudents } = useQuery({
+    queryKey: ["/api/students"],
+    queryFn: async () => {
+      const response = await fetch("/api/students");
+      const json = await response.json();
+      return Array.isArray(json) ? json : (json.students || json.data || []);
+    },
+  });
+
+  const { data: shiftTemplates = [], isLoading: loadingShifts } = useQuery<any[]>({
+    queryKey: ["/api/shift-templates", "class"],
+    queryFn: async () => {
+      const response = await fetch("/api/shift-templates?type=class");
+      if (!response.ok) throw new Error("Không thể tải danh sách ca học");
+      return response.json();
+    },
+  });
+  const { data: locationsData = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/locations"],
+    queryFn: async () => {
+      const response = await fetch("/api/locations");
+      if (!response.ok) throw new Error("Không thể tải danh sách cơ sở");
+      return response.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const shiftOptions = useMemo(() => {
+    const options = shiftTemplates
+      .filter((shift: any) => shift?.id && shift?.startTime && shift?.endTime)
+      .sort((a: any, b: any) =>
+        `${a.startTime}-${a.endTime}-${a.name}`.localeCompare(`${b.startTime}-${b.endTime}-${b.name}`)
+      )
+      .map((shift: any) => ({
+        label: `${shift.name} (${shift.startTime} - ${shift.endTime})`,
+        value: shift.id,
+      }));
+
+    return [{ label: "Tất cả", value: "all" }, ...options];
+  }, [shiftTemplates]);
+
+  const { data: attendanceData = [] } = useQuery({
+    queryKey: ["/api/attendance", filters],
+    staleTime: 0,
+    refetchOnMount: "always",
+    queryFn: async () => {
+      const now = new Date();
+      const params = new URLSearchParams({
+        classes: filters.classes.join(","),
+        students: filters.students.join(","),
+        shift: filters.shift,
+        dateFrom: format(filters.dateRange.from ?? now, "yyyy-MM-dd"),
+        dateTo: format(filters.dateRange.to ?? now, "yyyy-MM-dd"),
+      });
+      try {
+        const response = await fetch(`/api/attendance?${params}`);
+        const json = await response.json();
+        return Array.isArray(json) ? json : (json.data || []);
+      } catch {
+        return [];
+      }
+    },
+  });
+  const { data: overviewData, isLoading: overviewLoading, isError: overviewError } = useQuery<{
+    rows: any[];
+    total: number;
+    summary: { students: number; classes: number; sessions: number };
+    page: number;
+    pageSize: number;
+  }>({
+    queryKey: ["/api/attendance/overview", filters, overviewPage, overviewPageSize],
+    enabled: activeView === "overview",
+    queryFn: async () => {
+      const now = new Date();
+      const params = new URLSearchParams({
+        classes: filters.classes.join(","),
+        students: filters.students.join(","),
+        locations: filters.locations.join(","),
+        statuses: filters.attendanceStatus.join(","),
+        shift: filters.shift,
+        search: filters.studentSearch,
+        dateFrom: format(filters.dateRange.from ?? now, "yyyy-MM-dd"),
+        dateTo: format(filters.dateRange.to ?? filters.dateRange.from ?? now, "yyyy-MM-dd"),
+        page: String(overviewPage),
+        pageSize: String(overviewPageSize),
+      });
+      const response = await fetch(`/api/attendance/overview?${params}`);
+      if (!response.ok) throw new Error("Không thể tải tổng quan điểm danh");
+      return response.json();
+    },
+  });
+  const overviewGroups = useMemo(() => {
+    const groups = new Map<string, { studentId: string; studentCode: string; studentName: string; rows: any[] }>();
+    for (const row of overviewData?.rows ?? []) {
+      let group = groups.get(row.studentId);
+      if (!group) {
+        group = {
+          studentId: row.studentId,
+          studentCode: row.studentCode,
+          studentName: row.studentName,
+          rows: [],
+        };
+        groups.set(row.studentId, group);
+      }
+      group.rows.push(row);
+    }
+    return Array.from(groups.values());
+  }, [overviewData?.rows]);
+  const { data: allEvaluationCriteria = [] } = useQuery<any[]>({
+    queryKey: ["/api/evaluation-criteria"],
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const filteredStudents = useMemo(() => {
+    return studentsData.filter(
+      (s: any) =>
+        s.code.toLowerCase().includes(filters.studentSearch.toLowerCase()) ||
+        s.fullName.toLowerCase().includes(filters.studentSearch.toLowerCase())
+    );
+  }, [studentsData, filters.studentSearch]);
+
+  const attendanceVisibleClasses = useMemo(() => {
+    if (myPerms?.isSuperAdmin || myPerms?.permissions["/attendance"]?.canViewAll) {
+      return classesData;
+    }
+
+    const classIdsWithVisibleAttendance = new Set(
+      (attendanceData as StudentAttendance[]).map((record) => record.classId),
+    );
+    return classesData.filter((cls: any) =>
+      classIdsWithVisibleAttendance.has(cls.id) || filters.classes.includes(cls.id)
+    );
+  }, [attendanceData, classesData, filters.classes, myPerms]);
+
+  const filteredClasses = useMemo(() => {
+    const query = classSearch.trim().toLowerCase();
+    if (!query) return attendanceVisibleClasses;
+    return attendanceVisibleClasses.filter((cls: any) =>
+      `${cls.classCode ?? ""} ${cls.name ?? ""}`.toLowerCase().includes(query)
+    );
+  }, [attendanceVisibleClasses, classSearch]);
+
+  const locationOptions = useMemo(() => {
+    return locationsData
+      .filter((location) => location.id && location.name)
+      .sort((a, b) => a.name.localeCompare(b.name, "vi"));
+  }, [locationsData]);
+
+  const filteredLocationOptions = useMemo(() => {
+    const query = locationSearch.trim().toLocaleLowerCase("vi");
+    if (!query) return locationOptions;
+    return locationOptions.filter((location) => location.name.toLocaleLowerCase("vi").includes(query));
+  }, [locationOptions, locationSearch]);
+
+  const filteredShiftOptions = useMemo(() => {
+    const query = shiftSearch.trim().toLowerCase();
+    if (!query) return shiftOptions;
+    return shiftOptions.filter((shift) => shift.label.toLowerCase().includes(query));
+  }, [shiftOptions, shiftSearch]);
+
+  const filteredAttendanceRows = useMemo(() => {
+    const locationsByClass = new Map(
+      (classesData as ClassData[]).map((cls) => [
+        cls.id,
+        cls.locationId ?? cls.location?.id ?? null,
+      ]),
+    );
+    return (attendanceData as StudentAttendance[]).filter((record) => {
+      if (filters.attendanceStatus.length > 0) {
+        const status = record.attendanceStatus || "pending";
+        if (!filters.attendanceStatus.includes(status)) return false;
+      }
+      if (
+        filters.locations.length > 0
+        && !filters.locations.includes(
+          record.locationId ?? locationsByClass.get(record.classId) ?? "",
+        )
+      ) return false;
+      return true;
+    });
+  }, [attendanceData, classesData, filters.attendanceStatus, filters.locations]);
+
+  const attendanceByClass = useMemo(() => {
+    const grouped: Record<string, any> = {};
+    filteredAttendanceRows.forEach((record) => {
+      if (!grouped[record.className]) grouped[record.className] = [];
+      grouped[record.className].push(record);
+    });
+    return grouped;
+  }, [filteredAttendanceRows]);
+
+  const toggleClass = (classId: string) => {
+    setExpandedClasses((prev) =>
+      prev.includes(classId)
+        ? prev.filter((id) => id !== classId)
+        : [...prev, classId]
+    );
+  };
+
+  const selectedClassesLabels = attendanceVisibleClasses
+    .filter((c: any) => filters.classes.includes(c.id))
+    .map((c: any) => c.classCode)
+    .join(", ");
+
+  const selectedStudentsLabels = studentsData
+    .filter((s: any) => filters.students.includes(s.id))
+    .map((s: any) => `${s.code}`)
+    .join(", ");
+
+  const isLoading = loadingClasses || loadingStudents || loadingShifts;
+
+  const totalPages = Math.max(1, Math.ceil(Object.keys(attendanceByClass).length / pageSize));
+  const overviewTotalPages = Math.max(1, Math.ceil((overviewData?.total ?? 0) / overviewPageSize));
+
+  const exportOverviewExcel = async () => {
+    if (isExporting || !overviewData?.total) return;
+    setIsExporting(true);
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const now = new Date();
+      const params = new URLSearchParams({
+        classes: filters.classes.join(","),
+        students: filters.students.join(","),
+        locations: filters.locations.join(","),
+        statuses: filters.attendanceStatus.join(","),
+        shift: filters.shift,
+        search: filters.studentSearch,
+        dateFrom: format(filters.dateRange.from ?? now, "yyyy-MM-dd"),
+        dateTo: format(filters.dateRange.to ?? filters.dateRange.from ?? now, "yyyy-MM-dd"),
+        pageSize: "100",
+      });
+      let rows: any[] = [];
+      let page = 1;
+      let total = overviewData.total;
+      while ((page - 1) * 100 < total) {
+        params.set("page", String(page));
+        const response = await fetch(`/api/attendance/overview?${params}`);
+        if (!response.ok) throw new Error("Không thể tải đủ dữ liệu tổng quan để xuất Excel.");
+        const result = await response.json();
+        rows = rows.concat(result.rows ?? []);
+        total = Number(result.total ?? total);
+        page += 1;
+      }
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Tổng quan điểm danh");
+      worksheet.columns = [
+        { header: "Học viên", key: "student", width: 32 },
+        { header: "Lớp học", key: "className", width: 22 },
+        { header: "Tổng số buổi", key: "totalSessions", width: 15 },
+        { header: "Ngày bắt đầu", key: "startDate", width: 15 },
+        { header: "Ngày kết thúc", key: "endDate", width: 15 },
+        { header: "Chưa điểm danh", key: "pending", width: 17 },
+        { header: "Có học", key: "attended", width: 12 },
+        { header: "Nghỉ chờ bù", key: "makeupWait", width: 14 },
+        { header: "Nghỉ học", key: "absent", width: 16 },
+        { header: "Đã xếp bù", key: "makeupScheduled", width: 14 },
+        { header: "Bảo lưu", key: "paused", width: 12 },
+        { header: "Rate", key: "rate", width: 12 },
+      ];
+      worksheet.getRow(1).font = { bold: true };
+      worksheet.views = [{ state: "frozen", ySplit: 1 }];
+      worksheet.autoFilter = { from: "A1", to: "L1" };
+      rows.forEach((row) => worksheet.addRow({
+        student: `${row.studentCode ?? ""} - ${row.studentName ?? ""}`.trim(),
+        className: row.className,
+        totalSessions: row.totalSessions,
+        startDate: row.startDate ?? "",
+        endDate: row.endDate ?? "",
+        pending: row.pending,
+        attended: row.attended,
+        makeupWait: row.makeupWait,
+        absent: row.absent,
+        makeupScheduled: row.makeupScheduled,
+        paused: row.paused,
+        rate: Number(row.totalSessions) > 0 ? Number(row.attended) / Number(row.totalSessions) : 0,
+      }));
+      worksheet.getColumn(12).numFmt = "0.0%";
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `tong-quan-diem-danh-${format(filters.dateRange.from ?? now, "yyyyMMdd")}-${format(filters.dateRange.to ?? filters.dateRange.from ?? now, "yyyyMMdd")}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Đã tải Excel tổng quan", description: `${rows.length} dòng theo bộ lọc hiện tại.` });
+    } catch (error) {
+      toast({ title: "Không thể xuất Excel", description: error instanceof Error ? error.message : "Vui lòng thử lại.", variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  return (
+    <DashboardLayout>
+      <div className="flex flex-col h-full gap-3 p-0">
+        <div className="flex items-center gap-2">
+          <Button variant={activeView === "detail" ? "default" : "outline"} size="sm" onClick={() => setActiveView("detail")}>
+            Điểm danh
+          </Button>
+          <Button variant={activeView === "overview" ? "default" : "outline"} size="sm" onClick={() => setActiveView("overview")}>
+            Tổng quan
+          </Button>
+        </div>
+
+        {/* ── FILTER BAR ── */}
+        <div className="bg-white border border-border rounded-2xl shadow-sm flex-shrink-0">
+          <div className="flex items-center gap-2 px-3 py-2.5 flex-wrap">
+
+            {/* Status chips — multi-select */}
+            <div className="flex items-center gap-1.5 flex-1 min-w-0 flex-wrap">
+              {/* Tất cả chip */}
+              <button
+                onClick={() => setFilters(prev => ({ ...prev, attendanceStatus: [] }))}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all whitespace-nowrap ${
+                  filters.attendanceStatus.length === 0
+                    ? "bg-slate-700 text-white border-slate-700"
+                    : "bg-white text-slate-500 border-border hover:border-slate-400 hover:text-slate-700"
+                }`}
+                data-testid="chip-all"
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${filters.attendanceStatus.length === 0 ? "bg-white" : "bg-slate-400"}`} />
+                Tất cả
+              </button>
+
+              {/* Per-status chips */}
+              {Object.entries(STATUS_CONFIG).map(([val, cfg]) => {
+                const isActive = filters.attendanceStatus.includes(val);
+                return (
+                  <button
+                    key={val}
+                    onClick={() => setFilters(prev => {
+                      const next = prev.attendanceStatus.includes(val)
+                        ? prev.attendanceStatus.filter(s => s !== val)
+                        : [...prev.attendanceStatus, val];
+                      return { ...prev, attendanceStatus: next };
+                    })}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all whitespace-nowrap ${
+                      isActive
+                        ? val === "pending"
+                          ? "bg-slate-300 text-slate-800 border-slate-500"
+                          : `${cfg.bg} ${cfg.text} border-current`
+                        : "bg-white text-slate-500 border-border hover:border-current hover:bg-muted/30"
+                    }`}
+                    data-testid={`chip-${val}`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                    {cfg.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Right side controls */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Clear filters */}
+              {(filters.locations.length > 0 || filters.classes.length > 0 || filters.students.length > 0 || filters.shift !== "all" || filters.attendanceStatus.length > 0) && (
+                <button
+                  onClick={() => {
+                    setFilters({ classes: [], students: [], locations: [], shift: "all", dateRange: getDefaultAttendanceDateRange(), studentSearch: "", attendanceStatus: [] });
+                    setCurrentPage(1);
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                  data-testid="button-clear-filters"
+                >
+                  <X className="h-3 w-3" /> Xoá lọc
+                </button>
+              )}
+
+              {/* Quick date filter */}
+              <StoreDateRangePicker
+                value={filters.dateRange}
+                onChange={(range) => setFilters(prev => ({ ...prev, dateRange: range }))}
+                className="h-8 text-xs"
+              />
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5 border-border/70"
+                style={{ display: activeView === "detail" ? "inline-flex" : "none" }}
+                onClick={async () => {
+                  if (filteredAttendanceRows.length === 0 || isExporting) return;
+                  setIsExporting(true);
+                  try {
+                    const ExcelJS = (await import("exceljs")).default;
+                    const workbook = new ExcelJS.Workbook();
+                    const worksheet = workbook.addWorksheet("Điểm danh");
+                    worksheet.columns = [
+                      { header: "Lớp học", key: "className", width: 18 },
+                      { header: "Tên học viên", key: "student", width: 30 },
+                      { header: "Thứ / Ngày", key: "date", width: 20 },
+                      { header: "Ca học", key: "shift", width: 19 },
+                      { header: "Số buổi", key: "sessions", width: 12 },
+                      { header: "Điểm danh", key: "attendance", width: 20 },
+                      { header: "Giáo viên", key: "teacher", width: 25 },
+                      { header: "Nhận xét", key: "review", width: 12 },
+                      { header: "Ghi chú", key: "note", width: 30 },
+                      { header: "Học online", key: "online", width: 22 },
+                    ];
+                    const headerRow = worksheet.getRow(1);
+                    headerRow.font = { bold: true };
+                    headerRow.alignment = { vertical: "middle", horizontal: "center" };
+                    headerRow.height = 22;
+                    worksheet.views = [{ state: "frozen", ySplit: 1 }];
+                    worksheet.autoFilter = {
+                      from: "A1",
+                      to: "J1",
+                    };
+                    Object.entries(attendanceByClass)
+                      .sort(([a], [b]) => a.localeCompare(b, "vi"))
+                      .flatMap(([, records]) => records as StudentAttendance[])
+                      .forEach((record) => {
+                        worksheet.addRow({
+                          className: record.className,
+                          student: `${record.studentCode} - ${record.studentName}`,
+                          date: `${record.dayOfWeek}, ${format(new Date(record.sessionDate), "d/M/yyyy")}`,
+                          shift: record.shift,
+                          sessions: `${record.sessionOrder}/${record.totalSessions}`,
+                          attendance: STATUS_CONFIG[record.attendanceStatus || "pending"]?.label ?? "Chưa điểm danh",
+                          teacher: record.teacherName,
+                          review: hasReviewContent(record.reviewData) ? "✓" : "",
+                          note: record.attendanceNote || "",
+                          online: getOnlineAttendanceExportValue(record),
+                        });
+                      });
+                    const dateFrom = format(filters.dateRange.from ?? new Date(), "yyyyMMdd");
+                    const dateTo = format(filters.dateRange.to ?? filters.dateRange.from ?? new Date(), "yyyyMMdd");
+                    const buffer = await workbook.xlsx.writeBuffer();
+                    const blob = new Blob([buffer], {
+                      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    });
+                    const downloadUrl = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.href = downloadUrl;
+                    link.download = `diem-danh-${dateFrom}-${dateTo}.xlsx`;
+                    link.click();
+                    URL.revokeObjectURL(downloadUrl);
+                    toast({
+                      title: "Đã tải file Excel",
+                      description: `${filteredAttendanceRows.length} dòng theo bộ lọc hiện tại.`,
+                    });
+                  } catch (error) {
+                    toast({
+                      title: "Không thể xuất Excel",
+                      description: error instanceof Error ? error.message : "Vui lòng thử lại.",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setIsExporting(false);
+                  }
+                }}
+                disabled={isExporting || filteredAttendanceRows.length === 0}
+                data-testid="button-export-attendance"
+              >
+                <Download className="h-3.5 w-3.5" />
+                {isExporting ? "Đang xuất..." : "Tải Excel"}
+              </Button>
+
+              {/* Bộ lọc button */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5 border-border/70"
+                onClick={() => setFilterPanelOpen(true)}
+                data-testid="button-open-filter-panel"
+              >
+                <Filter className="h-3.5 w-3.5" />
+                Bộ lọc
+                {(filters.locations.length + filters.classes.length + filters.students.length + (filters.shift !== "all" ? 1 : 0)) > 0 && (
+                  <span className="ml-0.5 h-4 w-4 rounded-full bg-primary text-white text-[10px] flex items-center justify-center font-bold">
+                    {filters.locations.length + filters.classes.length + filters.students.length + (filters.shift !== "all" ? 1 : 0)}
+                  </span>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── BỘ LỌC DIALOG ── */}
+        <Dialog open={filterPanelOpen} onOpenChange={setFilterPanelOpen}>
+          <DialogContent className="sm:max-w-[480px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <SlidersHorizontal className="h-4 w-4" /> Bộ lọc
+              </DialogTitle>
+              <DialogDescription>Lọc theo cơ sở, lớp học, học viên và ca học</DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[70vh] space-y-4 overflow-y-auto py-2">
+
+              {/* Locations */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <MapPin className="h-3 w-3" /> Cơ sở
+                </Label>
+                <Popover open={locationPopoverOpen} onOpenChange={(open) => {
+                  setLocationPopoverOpen(open);
+                  if (!open) setLocationSearch("");
+                }}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full h-9 justify-start text-sm border-border/70"
+                      data-testid="button-location-filter"
+                    >
+                      {filters.locations.length > 0 ? (
+                        <span className="flex items-center gap-1.5">
+                          <Badge className="h-5 w-5 rounded-full p-0 flex items-center justify-center text-[10px] bg-primary text-white">
+                            {filters.locations.length}
+                          </Badge>
+                          cơ sở đã chọn
+                        </span>
+                      ) : <span className="text-muted-foreground">Chọn cơ sở...</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] min-w-60 bg-white shadow-lg border border-border/70 z-[200]" align="start">
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Tìm cơ sở..."
+                          className="pl-8 h-9"
+                          value={locationSearch}
+                          onChange={(event) => setLocationSearch(event.target.value)}
+                          data-testid="input-location-search"
+                        />
+                      </div>
+                      <ScrollArea className="h-48">
+                        <div className="space-y-0.5 pr-2">
+                          {filteredLocationOptions.length > 0 ? filteredLocationOptions.map((location) => (
+                            <div key={location.id} className="flex items-center space-x-2 px-1 py-1.5 rounded-lg hover:bg-muted/50">
+                              <Checkbox
+                                id={`location-${location.id}`}
+                                checked={filters.locations.includes(location.id)}
+                                onCheckedChange={(checked) => {
+                                  setFilters((prev) => ({
+                                    ...prev,
+                                    locations: checked
+                                      ? [...new Set([...prev.locations, location.id])]
+                                      : prev.locations.filter((id) => id !== location.id),
+                                  }));
+                                  setCurrentPage(1);
+                                }}
+                                data-testid={`checkbox-location-${location.id}`}
+                              />
+                              <Label htmlFor={`location-${location.id}`} className="text-sm cursor-pointer flex-1">
+                                {location.name}
+                              </Label>
+                            </div>
+                          )) : (
+                            <p className="py-6 text-center text-sm text-muted-foreground">Không tìm thấy cơ sở</p>
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {filters.locations.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {filters.locations.map((locationId) => {
+                      const location = locationOptions.find((option) => option.id === locationId);
+                      return (
+                        <Badge key={locationId} variant="secondary" className="text-xs gap-1 pl-2 pr-1">
+                          {location?.name ?? "Cơ sở"}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFilters((prev) => ({
+                                ...prev,
+                                locations: prev.locations.filter((id) => id !== locationId),
+                              }));
+                              setCurrentPage(1);
+                            }}
+                            className="ml-0.5 rounded-full hover:bg-muted p-0.5"
+                            aria-label={`Bỏ lọc cơ sở ${location?.name ?? ""}`}
+                          >
+                            <X className="h-2.5 w-2.5" />
+                          </button>
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Classes */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <CheckSquare className="h-3 w-3" /> Lớp học
+                </Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full h-9 justify-start text-sm border-border/70" data-testid="button-class-filter">
+                      {filters.classes.length > 0 ? (
+                        <span className="flex items-center gap-1.5">
+                          <Badge className="h-5 w-5 rounded-full p-0 flex items-center justify-center text-[10px] bg-primary text-white">{filters.classes.length}</Badge>
+                          lớp đã chọn
+                        </span>
+                      ) : <span className="text-muted-foreground">Chọn lớp...</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] min-w-60 bg-white shadow-lg border border-border/70 z-[200]" align="start">
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Tìm theo mã hoặc tên lớp"
+                          className="pl-8 h-9"
+                          value={classSearch}
+                          onChange={(e) => setClassSearch(e.target.value)}
+                          data-testid="input-class-search"
+                        />
+                      </div>
+                      <ScrollArea className="h-48">
+                        <div className="space-y-0.5 pr-2">
+                          {filteredClasses.length > 0 ? filteredClasses.map((cls: any) => (
+                            <div key={cls.id} className="flex items-center space-x-2 px-1 py-1.5 rounded-lg hover:bg-muted/50 cursor-pointer"
+                              onClick={() => setFilters(prev => ({ ...prev, classes: prev.classes.includes(cls.id) ? prev.classes.filter(id => id !== cls.id) : [...prev.classes, cls.id] }))}>
+                              <Checkbox id={`class-${cls.id}`} checked={filters.classes.includes(cls.id)} data-testid={`checkbox-class-${cls.classCode}`}
+                                onCheckedChange={(checked) => setFilters(prev => ({ ...prev, classes: checked ? [...prev.classes, cls.id] : prev.classes.filter(id => id !== cls.id) }))} />
+                              <Label htmlFor={`class-${cls.id}`} className="text-sm cursor-pointer flex-1">{cls.classCode}</Label>
+                            </div>
+                          )) : (
+                            <p className="py-6 text-center text-sm text-muted-foreground">Không tìm thấy lớp học</p>
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {filters.classes.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {filters.classes.map(classId => {
+                      const cls = classesData.find((c: any) => c.id === classId);
+                      return (
+                        <Badge key={classId} variant="secondary" className="text-xs gap-1 pl-2 pr-1">
+                          {cls?.classCode}
+                          <button onClick={() => setFilters(prev => ({ ...prev, classes: prev.classes.filter(id => id !== classId) }))} className="ml-0.5 rounded-full hover:bg-muted p-0.5"><X className="h-2.5 w-2.5" /></button>
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Students */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <Users className="h-3 w-3" /> Học viên
+                </Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-full h-9 justify-start text-sm border-border/70" data-testid="button-student-filter">
+                      {filters.students.length > 0 ? (
+                        <span className="flex items-center gap-1.5">
+                          <Badge className="h-5 w-5 rounded-full p-0 flex items-center justify-center text-[10px] bg-primary text-white">{filters.students.length}</Badge>
+                          học viên đã chọn
+                        </span>
+                      ) : <span className="text-muted-foreground">Tìm học viên...</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 bg-white shadow-lg border border-border/70 z-[200]" align="start">
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input placeholder="Tìm theo tên hoặc mã" className="pl-8 h-9" value={filters.studentSearch}
+                          onChange={(e) => setFilters(prev => ({ ...prev, studentSearch: e.target.value }))} data-testid="input-student-search" />
+                      </div>
+                      <ScrollArea className="h-48">
+                        <div className="space-y-0.5 pr-2">
+                          {filteredStudents.map((student: any) => (
+                            <div key={student.id} className="flex items-center space-x-2 px-1 py-1.5 rounded-lg hover:bg-muted/50 cursor-pointer"
+                              onClick={() => setFilters(prev => ({ ...prev, students: prev.students.includes(student.id) ? prev.students.filter(id => id !== student.id) : [...prev.students, student.id] }))}>
+                              <Checkbox id={`student-${student.id}`} checked={filters.students.includes(student.id)} data-testid={`checkbox-student-${student.code}`}
+                                onCheckedChange={(checked) => setFilters(prev => ({ ...prev, students: checked ? [...prev.students, student.id] : prev.students.filter(id => id !== student.id) }))} />
+                              <Label htmlFor={`student-${student.id}`} className="text-sm cursor-pointer flex-1">
+                                <span className="font-medium text-primary">{student.code}</span>
+                                <span className="text-muted-foreground ml-1">– {student.fullName}</span>
+                              </Label>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {filters.students.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {filters.students.map(studentId => {
+                      const student = studentsData.find((s: any) => s.id === studentId);
+                      return (
+                        <Badge key={studentId} variant="secondary" className="text-xs gap-1 pl-2 pr-1">
+                          {student?.code}
+                          <button onClick={() => setFilters(prev => ({ ...prev, students: prev.students.filter(id => id !== studentId) }))} className="ml-0.5 rounded-full hover:bg-muted p-0.5"><X className="h-2.5 w-2.5" /></button>
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Shift */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <Clock className="h-3 w-3" /> Ca học
+                </Label>
+                <Popover open={shiftPopoverOpen} onOpenChange={(open) => {
+                  setShiftPopoverOpen(open);
+                  if (!open) setShiftSearch("");
+                }}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      id="shift"
+                      data-testid="select-shift"
+                      className="w-full h-9 justify-between text-sm border-border/70 font-normal"
+                    >
+                      <span className={filters.shift === "all" ? "text-foreground" : "truncate"}>{shiftOptions.find((shift) => shift.value === filters.shift)?.label ?? "Tất cả"}</span>
+                      <ChevronDown className="h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] min-w-60 bg-white shadow-lg border border-border/70 z-[200] p-2" align="start">
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Tìm theo tên hoặc khung giờ"
+                          className="pl-8 h-9"
+                          value={shiftSearch}
+                          onChange={(e) => setShiftSearch(e.target.value)}
+                          data-testid="input-shift-search"
+                        />
+                      </div>
+                      <ScrollArea className="h-48">
+                        <div className="space-y-0.5">
+                          {filteredShiftOptions.length > 0 ? filteredShiftOptions.map((shift) => (
+                            <button
+                              key={shift.value}
+                              type="button"
+                              className={`w-full text-left px-2 py-1.5 rounded-md text-sm hover:bg-muted/50 ${filters.shift === shift.value ? "bg-primary/10 text-primary font-medium" : ""}`}
+                              onClick={() => {
+                                setFilters(prev => ({ ...prev, shift: shift.value }));
+                                setShiftPopoverOpen(false);
+                              }}
+                            >
+                              {shift.label}
+                            </button>
+                          )) : (
+                            <p className="py-6 text-center text-sm text-muted-foreground">Không tìm thấy ca học</p>
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Actions */}
+              <div className="flex justify-end gap-2 pt-2 border-t border-border/60">
+                <Button variant="outline" size="sm" onClick={() => {
+                  setFilters(prev => ({ ...prev, classes: [], students: [], locations: [], shift: "all", dateRange: getDefaultAttendanceDateRange(), studentSearch: "" }));
+                  setCurrentPage(1);
+                }}>Xoá bộ lọc</Button>
+                <Button size="sm" onClick={() => setFilterPanelOpen(false)}>Áp dụng</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {activeView === "overview" && (
+          <div className="bg-white border border-border rounded-2xl shadow-sm flex flex-col flex-1 overflow-hidden min-h-0">
+            <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+              <div className="text-sm text-muted-foreground">
+                Tổng cộng: <b className="text-foreground">{overviewData?.summary?.classes ?? 0}</b> lớp ·
+                <b className="text-foreground"> {overviewData?.summary?.students ?? 0}</b> học viên ·
+                <b className="text-foreground"> {overviewData?.summary?.sessions ?? 0}</b> buổi
+              </div>
+              <Button size="sm" variant="outline" disabled={isExporting || !overviewData?.total} onClick={() => void exportOverviewExcel()}>
+                <Download className="mr-1.5 h-3.5 w-3.5" />{isExporting ? "Đang xuất..." : "Tải Excel tổng quan"}
+              </Button>
+            </div>
+            <div className="flex-1 overflow-auto">
+              {overviewLoading ? (
+                <div className="py-16 text-center text-sm text-muted-foreground">Đang tải tổng quan điểm danh...</div>
+              ) : overviewError ? (
+                <div className="py-16 text-center text-sm text-destructive">Không thể tải tổng quan điểm danh. Hãy thử lại.</div>
+              ) : !overviewData?.rows?.length ? (
+                <div className="py-16 text-center text-sm text-muted-foreground">Không có dữ liệu theo bộ lọc hiện tại.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1120px] text-xs">
+                    <thead className="sticky top-0 z-10 bg-muted/80">
+                      <tr>
+                        {["Học viên", "Lớp học", "Tổng số buổi", "Ngày bắt đầu", "Ngày kết thúc", "Chưa điểm danh", "Có học", "Nghỉ chờ bù", "Nghỉ học", "Đã xếp bù", "Bảo lưu", "Rate"].map((heading) => (
+                          <th key={heading} className="border-b px-3 py-2.5 text-left font-semibold whitespace-nowrap">{heading}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {overviewGroups.flatMap((group) => [
+                        <tr key={`student-${group.studentId}`} className="border-y bg-blue-50/70">
+                          <td className="px-3 py-2 font-semibold text-primary whitespace-nowrap">
+                            {group.studentCode} {group.studentName}
+                          </td>
+                          <td colSpan={11} />
+                        </tr>,
+                        ...group.rows.map((row) => (
+                          <tr key={row.studentClassId} className="border-b last:border-0 hover:bg-muted/30">
+                            <td className="px-3 py-2" />
+                            <td className="px-3 py-2 whitespace-nowrap">{row.className}</td>
+                            <td className="px-3 py-2 text-center">{row.totalSessions}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">{row.startDate ?? "—"}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">{row.endDate ?? "—"}</td>
+                            <td className="px-3 py-2 text-center">{row.pending}</td>
+                            <td className="px-3 py-2 text-center">{row.attended}</td>
+                            <td className="px-3 py-2 text-center">{row.makeupWait}</td>
+                            <td className="px-3 py-2 text-center">{row.absent}</td>
+                            <td className="px-3 py-2 text-center">{row.makeupScheduled}</td>
+                            <td className="px-3 py-2 text-center">{row.paused}</td>
+                            <td className="px-3 py-2 text-center font-medium">
+                              {Number(row.totalSessions) > 0
+                                ? `${((Number(row.attended) / Number(row.totalSessions)) * 100).toLocaleString("vi-VN", { maximumFractionDigits: 1 })}%`
+                                : "—"}
+                            </td>
+                          </tr>
+                        )),
+                      ])}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t px-4 py-2.5">
+              <span className="text-xs text-muted-foreground">
+                {overviewData?.total ? `${(overviewPage - 1) * overviewPageSize + 1}-${Math.min(overviewPage * overviewPageSize, overviewData.total)} / ${overviewData.total} học viên` : "0 học viên"}
+              </span>
+              <div className="flex items-center gap-2">
+                <Select value={String(overviewPageSize)} onValueChange={(value) => { setOverviewPageSize(Number(value)); setOverviewPage(1); }}>
+                  <SelectTrigger className="h-8 w-[78px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>{[20, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size} / trang</SelectItem>)}</SelectContent>
+                </Select>
+                <Button size="icon" variant="outline" className="h-8 w-8" disabled={overviewPage <= 1} onClick={() => setOverviewPage((value) => value - 1)}><ChevronLeft className="h-4 w-4" /></Button>
+                <span className="text-xs">{overviewPage} / {overviewTotalPages}</span>
+                <Button size="icon" variant="outline" className="h-8 w-8" disabled={overviewPage >= overviewTotalPages} onClick={() => setOverviewPage((value) => value + 1)}><ChevronRight className="h-4 w-4" /></Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Main content */}
+        <div style={{ display: activeView === "detail" ? "flex" : "none" }} className="bg-white border border-border rounded-2xl shadow-sm flex-col flex-1 overflow-hidden min-h-0">
+
+          {/* Bulk action bar */}
+          {(() => {
+            const visibleRecordIds = Object.entries(attendanceByClass)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .slice((currentPage - 1) * pageSize, currentPage * pageSize)
+              .flatMap(([, recs]) => (recs as StudentAttendance[]).map(r => r.id));
+            const allPageSelected = visibleRecordIds.length > 0 && visibleRecordIds.every(id => selectedRows.has(id));
+            const somePageSelected = visibleRecordIds.some(id => selectedRows.has(id));
+            return (
+              <div className={`flex items-center gap-3 px-4 py-2.5 border-b border-border/60 flex-shrink-0 transition-colors ${selectedRows.size > 0 ? "bg-primary/5" : "bg-muted/20"}`}>
+                <Checkbox
+                  checked={allPageSelected ? true : somePageSelected ? "indeterminate" : false}
+                  onCheckedChange={(checked) => {
+                    const newSelected = new Set(selectedRows);
+                    if (checked) { visibleRecordIds.forEach(id => newSelected.add(id)); }
+                    else { visibleRecordIds.forEach(id => newSelected.delete(id)); }
+                    setSelectedRows(newSelected);
+                  }}
+                  data-testid="checkbox-all-page"
+                />
+                <span className="text-sm text-muted-foreground">
+                  {selectedRows.size > 0
+                    ? <span className="font-medium text-primary">Đã chọn {selectedRows.size} dòng</span>
+                    : "Chọn tất cả trang"}
+                </span>
+                {selectedRows.size > 0 && (
+                  <Button size="sm" className="h-7 text-xs ml-1" onClick={() => setIsBulkAttendanceOpen(true)}>
+                    Điểm danh hàng loạt ({selectedRows.size})
+                  </Button>
+                )}
+                <div className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span>{filteredAttendanceRows.length} bản ghi</span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Scrollable list */}
+          <div className="flex-1 overflow-y-auto overflow-x-auto p-4">
+            <div className="space-y-3">
+              {isLoading ? (
+                <div className="flex flex-col items-center justify-center py-20 gap-3">
+                  <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                  <p className="text-sm text-muted-foreground">Đang tải dữ liệu...</p>
+                </div>
+              ) : Object.keys(attendanceByClass).length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 gap-3">
+                  <div className="w-14 h-14 rounded-2xl bg-muted/50 flex items-center justify-center">
+                    <Users className="h-7 w-7 text-muted-foreground/50" />
+                  </div>
+                  <p className="text-sm text-muted-foreground font-medium">Không có dữ liệu điểm danh</p>
+                  <p className="text-xs text-muted-foreground">Thử thay đổi bộ lọc hoặc chọn ngày khác</p>
+                </div>
+              ) : (
+                Object.entries(attendanceByClass)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .slice((currentPage - 1) * pageSize, currentPage * pageSize)
+                  .map(([className, records]: [string, any]) => {
+                    const isExpanded = expandedClasses.includes(className) || expandedClasses.length === 0 ||
+                      (expandedClasses.length === 1 && expandedClasses[0] === "");
+                    const studentCount = new Set((records as StudentAttendance[]).map(r => r.studentCode)).size;
+                    const classRecordIds = (records as StudentAttendance[]).map(r => r.id);
+                    const allClassSelected = classRecordIds.length > 0 && classRecordIds.every(id => selectedRows.has(id));
+                    const someClassSelected = classRecordIds.some(id => selectedRows.has(id));
+
+                    const presentCount = (records as StudentAttendance[]).filter(r => r.attendanceStatus === "present").length;
+                    const absentCount = (records as StudentAttendance[]).filter(r => r.attendanceStatus === "absent").length;
+                    const pendingCount = (records as StudentAttendance[]).filter(r => !r.attendanceStatus || r.attendanceStatus === "pending").length;
+
+                    return (
+                      <div key={className} className="border border-border/70 rounded-xl overflow-hidden shadow-sm hover:shadow transition-shadow">
+                        {/* Class header */}
+                        <div
+                          className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/40 transition-colors bg-muted/20"
+                          onClick={() => toggleClass(className)}
+                          data-testid={`header-class-${className}`}
+                        >
+                          <div onClick={e => e.stopPropagation()}>
+                            <Checkbox
+                              checked={allClassSelected ? true : someClassSelected ? "indeterminate" : false}
+                              onCheckedChange={(checked) => {
+                                const newSelected = new Set(selectedRows);
+                                if (checked) { classRecordIds.forEach(id => newSelected.add(id)); }
+                                else { classRecordIds.forEach(id => newSelected.delete(id)); }
+                                setSelectedRows(newSelected);
+                              }}
+                              data-testid={`checkbox-header-class-${className}`}
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <div className="w-2 h-2 rounded-full bg-primary/70 flex-shrink-0" />
+                            <span className="font-semibold text-sm truncate">{className}</span>
+                            <Badge variant="secondary" className="text-xs flex-shrink-0">
+                              {studentCount} học viên
+                            </Badge>
+                          </div>
+
+                          <div className="hidden sm:flex items-center gap-2">
+                            {presentCount > 0 && (
+                              <span className="inline-flex items-center gap-1 text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                {presentCount} có học
+                              </span>
+                            )}
+                            {absentCount > 0 && (
+                              <span className="inline-flex items-center gap-1 text-xs text-red-700 bg-red-50 px-2 py-0.5 rounded-full">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                {absentCount} nghỉ
+                              </span>
+                            )}
+                            {pendingCount > 0 && (
+                              <span className="inline-flex items-center gap-1 text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                                {pendingCount} chưa
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex-shrink-0 text-muted-foreground ml-2">
+                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </div>
+                        </div>
+
+                        {/* Table */}
+                        {isExpanded && (
+                          <div className="w-full overflow-x-auto">
+                            <Table className="w-full min-w-[1210px] table-fixed">
+                              <TableHeader>
+                                <TableRow className="bg-muted/10 hover:bg-muted/10">
+                                  <TableHead className="w-[40px] text-xs font-semibold" data-testid="th-checkbox">
+                                    <Checkbox
+                                      checked={allClassSelected ? true : someClassSelected ? "indeterminate" : false}
+                                      onCheckedChange={(checked) => {
+                                        const newSelected = new Set(selectedRows);
+                                        if (checked) { classRecordIds.forEach(id => newSelected.add(id)); }
+                                        else { classRecordIds.forEach(id => newSelected.delete(id)); }
+                                        setSelectedRows(newSelected);
+                                      }}
+                                      data-testid={`checkbox-all-class-${className}`}
+                                    />
+                                  </TableHead>
+                                  <TableHead className="w-[180px] text-xs font-semibold" data-testid="th-student-name">Tên học viên</TableHead>
+                                  <TableHead className="w-[110px] text-xs font-semibold" data-testid="th-day">Thứ / Ngày</TableHead>
+                                  <TableHead className="w-[110px] text-xs font-semibold" data-testid="th-shift">Ca học</TableHead>
+                                  <TableHead className="w-[70px] text-xs font-semibold text-center" data-testid="th-sessions">Số buổi</TableHead>
+                                  <TableHead className="w-[160px] text-xs font-semibold" data-testid="th-attendance">Điểm danh</TableHead>
+                                  <TableHead className="w-[150px] text-xs font-semibold" data-testid="th-teacher">Giáo viên</TableHead>
+                                  <TableHead className="w-[100px] text-xs font-semibold text-center" data-testid="th-review">Nhận xét</TableHead>
+                                  <TableHead className="w-[170px] text-xs font-semibold" data-testid="th-notes">Ghi chú</TableHead>
+                                  <TableHead className="w-[120px] text-xs font-semibold" data-testid="th-online">Học online</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {(records as StudentAttendance[]).map((record, idx) => (
+                                  (() => {
+                                    const statusOptions = Object.entries(STATUS_CONFIG).filter(([val]) =>
+                                      record.recordType !== "free"
+                                        ? val !== "makeup_scheduled"
+                                        : ["pending", "present", "paused"].includes(val),
+                                    );
+                                    const hasReview = hasReviewContent(record.reviewData);
+                                    return (
+                                  <TableRow
+                                    key={`${record.id}-${idx}`}
+                                    className={`transition-colors ${selectedRows.has(record.id) ? "bg-primary/5" : idx % 2 === 0 ? "bg-white" : "bg-muted/10"} hover:bg-primary/5`}
+                                    data-testid={`row-attendance-${record.studentCode}`}
+                                  >
+                                     <TableCell className="w-[40px]">
+                                      <Checkbox
+                                        checked={selectedRows.has(record.id)}
+                                        onCheckedChange={(checked) => {
+                                          const newSelected = new Set(selectedRows);
+                                          if (checked) { newSelected.add(record.id); }
+                                          else { newSelected.delete(record.id); }
+                                          setSelectedRows(newSelected);
+                                        }}
+                                        data-testid={`checkbox-row-${record.id}`}
+                                      />
+                                    </TableCell>
+                                     <TableCell className="w-[180px] overflow-hidden text-sm font-medium">
+                                       <div className="min-w-0">
+                                         <StudentNameLink studentId={record.studentId} name={record.studentName} code={record.studentCode} />
+                                         {["makeup_scheduled", "makeup_done"].includes(record.attendanceStatus)
+                                           && record.note?.startsWith("Xếp bù sang ") && (
+                                           <div
+                                             className="mt-0.5 whitespace-pre-line text-[10px] font-medium text-orange-500"
+                                             data-testid={`makeup-note-${record.id}`}
+                                           >
+                                             {record.note}
+                                           </div>
+                                         )}
+                                       </div>
+                                    </TableCell>
+                                     <TableCell className="w-[110px] overflow-hidden text-sm whitespace-nowrap text-muted-foreground">
+                                      {record.dayOfWeek}, {format(new Date(record.sessionDate), "d/M/yyyy")}
+                                    </TableCell>
+                                     <TableCell className="w-[110px] overflow-hidden text-sm whitespace-nowrap">
+                                      <div className="flex flex-col gap-0.5">
+                                        <span>{record.shift}</span>
+                                        {record.learningFormat === "online" && record.onlineLink && record.onlineClickedAt && (
+                                          <span className="text-orange-500 text-xs font-medium">
+                                            Vào lúc {new Date(record.onlineClickedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </TableCell>
+                                     <TableCell className="w-[70px] overflow-hidden text-sm text-center whitespace-nowrap">
+                                      <span className="font-semibold text-foreground">{record.sessionOrder}</span>
+                                      <span className="text-muted-foreground">/{record.totalSessions}</span>
+                                    </TableCell>
+                                     <TableCell className="w-[160px] overflow-hidden text-sm whitespace-nowrap">
+                                      {canAttend ? (
+                                        <Select
+                                          value={record.attendanceStatus || "pending"}
+                                           onValueChange={(val) => updateAttendanceMutation.mutate({ record, attendanceStatus: val })}
+                                        >
+                                          <SelectTrigger className="w-auto h-7 text-xs border-0 shadow-none p-0 bg-transparent focus:ring-0">
+                                            <StatusBadge status={record.attendanceStatus || "pending"} />
+                                          </SelectTrigger>
+                                          <SelectContent className="bg-white">
+                                             {statusOptions.map(([val, cfg]) => (
+                                              <SelectItem key={val} value={val}>
+                                                <span className={`flex items-center gap-1.5 ${cfg.text}`}>
+                                                  <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                                                  {cfg.label}
+                                                </span>
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      ) : (
+                                        <StatusBadge status={record.attendanceStatus || "pending"} />
+                                      )}
+                                    </TableCell>
+                                     <TableCell className="w-[150px] overflow-hidden text-sm whitespace-nowrap text-muted-foreground">
+                                      {record.teacherName}
+                                    </TableCell>
+                                     <TableCell className="w-[100px] text-center" data-testid={`cell-review-${record.id}`}>
+                                      {hasReview ? (
+                                         canEditStudentReviews ? <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className={`h-8 w-8 ${record.reviewPublished ? "text-emerald-600 hover:text-emerald-700" : "text-slate-400 hover:text-slate-500"}`}
+                                           aria-label={record.reviewPublished ? "Sửa nhận xét đã công bố" : "Sửa nhận xét chưa công bố"}
+                                           title={record.reviewPublished ? "Sửa nhận xét đã công bố" : "Sửa nhận xét chưa công bố"}
+                                          onClick={() => setReviewTarget(record)}
+                                           data-testid={`button-edit-review-${record.id}`}
+                                        >
+                                          <MessageSquare className="h-4 w-4" fill="currentColor" />
+                                         </Button> : <span className="text-muted-foreground">—</span>
+                                      ) : (
+                                        <span className="text-muted-foreground">—</span>
+                                      )}
+                                    </TableCell>
+                                     <TableCell className="w-[170px] overflow-hidden text-sm whitespace-nowrap">
+                                      {canAttend ? (
+                                        <Input
+                                          className="h-7 text-xs min-w-[150px] bg-transparent border-dashed focus:border-solid focus:bg-white"
+                                          placeholder="Ghi chú..."
+                                          defaultValue={record.attendanceNote || ""}
+                                          onBlur={(e) => {
+                                            if (e.target.value !== record.attendanceNote) {
+                                              updateNoteMutation.mutate({ record, attendanceNote: e.target.value });
+                                            }
+                                          }}
+                                          data-testid={`input-note-${record.id}`}
+                                        />
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground" data-testid={`note-readonly-${record.id}`}>
+                                          {record.attendanceNote || "—"}
+                                        </span>
+                                      )}
+                                    </TableCell>
+                                     <TableCell className="w-[120px] overflow-hidden text-sm" data-testid={`cell-online-${record.id}`}>
+                                      {(record.learningFormat === "online" || !!record.onlineLink) ? (
+                                        record.onlineClickedAt ? (() => {
+                                          const clickedAt = new Date(record.onlineClickedAt);
+                                          const fmt = (d: Date) => d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+                                          let endedAt: Date | null = null;
+                                          let isDefaultEnd = false;
+                                          if (record.onlineEndedAt) {
+                                            endedAt = new Date(record.onlineEndedAt);
+                                          } else if (record.endTime && record.sessionDate) {
+                                            const [h, m, s = 0] = record.endTime.split(":").map(Number);
+                                            const [yr, mo, day] = (typeof record.sessionDate === "string"
+                                              ? record.sessionDate.split("T")[0]
+                                              : new Date(record.sessionDate).toISOString().split("T")[0]
+                                            ).split("-").map(Number);
+                                            const sessionEnd = new Date(yr, mo - 1, day, h, m, s, 0);
+                                            if (new Date() >= sessionEnd) { endedAt = sessionEnd; isDefaultEnd = true; }
+                                          }
+                                          return (
+                                            <div className="flex flex-col gap-0.5 whitespace-nowrap">
+                                              <span className="text-xs text-emerald-600 font-medium">↗ {fmt(clickedAt)}</span>
+                                              {endedAt && (
+                                                <span className={`text-xs font-medium ${isDefaultEnd ? "text-slate-400" : "text-red-500"}`}>
+                                                  ↙ {fmt(endedAt)}{isDefaultEnd ? " *" : ""}
+                                                </span>
+                                              )}
+                                            </div>
+                                          );
+                                        })() : (
+                                          <span className="text-xs text-muted-foreground">—</span>
+                                        )
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground">—</span>
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
+                                    );
+                                  })()
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+          </div>
+
+          {/* Footer pagination */}
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border/60 bg-muted/10 flex-shrink-0 gap-4 flex-wrap">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span className="text-xs">Hiển thị</span>
+              <Select value={pageSize.toString()} onValueChange={(val) => { setPageSize(parseInt(val)); setCurrentPage(1); }}>
+                <SelectTrigger className="w-16 h-7 bg-white text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-white">
+                  {[15, 20, 30, 50].map(n => <SelectItem key={n} value={n.toString()}>{n}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <span className="text-xs">lớp / trang</span>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 w-7 p-0"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="flex items-center gap-1 px-2">
+                <span className="text-xs font-medium">{currentPage}</span>
+                <span className="text-xs text-muted-foreground">/</span>
+                <span className="text-xs text-muted-foreground">{totalPages}</span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 w-7 p-0"
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Bulk Attendance Dialog */}
+      <Dialog open={isBulkAttendanceOpen} onOpenChange={setIsBulkAttendanceOpen}>
+        <DialogContent className="sm:max-w-[380px]">
+          <DialogHeader>
+            <DialogTitle>Điểm danh hàng loạt</DialogTitle>
+            <DialogDescription>
+              Chọn trạng thái điểm danh cho <strong>{selectedRows.size}</strong> học viên được chọn
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+             {(() => {
+               const selectedRecords = (attendanceData as StudentAttendance[]).filter((record) => selectedRows.has(record.id));
+               const includesFreeRecord = selectedRecords.some((record) => record.recordType === "free");
+               return Object.entries(STATUS_CONFIG)
+               .filter(([val]) =>
+                 val !== "pending"
+                 && val !== "makeup_scheduled"
+                 && (!includesFreeRecord || val === "present" || val === "paused"),
+               )
+              .map(([status, cfg]) => (
+                <Button
+                  key={status}
+                  variant="outline"
+                  className={`w-full justify-start gap-2 ${cfg.text} hover:${cfg.bg} border-border/70`}
+                  disabled={isBulkSaving}
+                  onClick={async () => {
+                    if (isBulkSaving) return;
+                    setIsBulkSaving(true);
+                    try {
+                      const result = await applyBulkAttendance(
+                        selectedRecords,
+                        status,
+                        (classSessionId, students) => apiRequest(
+                          "POST",
+                          "/api/student-sessions/bulk-attendance",
+                          { session_id: classSessionId, students },
+                        ),
+                        (registrationId, attendanceStatus) => apiRequest(
+                          "PATCH",
+                          `/api/attendance/free/${encodeURIComponent(registrationId)}`,
+                          { attendance_status: attendanceStatus },
+                        ),
+                      );
+                      await queryClient.invalidateQueries({ queryKey: ["/api/attendance"] });
+
+                      const failedIds = new Set(result.failures.map((failure) => failure.id));
+                      setSelectedRows((previous) =>
+                        new Set(Array.from(previous).filter((id) => failedIds.has(id))),
+                      );
+                      setIsBulkAttendanceOpen(false);
+
+                      if (result.failures.length === 0) {
+                        toast({
+                          title: "Điểm danh thành công",
+                          description: `Đã cập nhật ${result.updatedIds.length} học viên.`,
+                        });
+                      } else {
+                        toast({
+                          title: "Một số học viên chưa được cập nhật",
+                          description: `Đã lưu ${result.updatedIds.length}/${selectedRecords.length}. ${result.failures[0]?.message ?? "Hãy thử lại."} Các dòng lỗi vẫn được giữ chọn.`,
+                          variant: "destructive",
+                        });
+                      }
+                    } catch (error: any) {
+                      toast({
+                        title: "Không thể hoàn tất điểm danh",
+                        description: error?.message || "Hãy thử lại. Các học viên vẫn được giữ chọn.",
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setIsBulkSaving(false);
+                    }
+                  }}
+                >
+                  <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
+                  {isBulkSaving ? "Đang lưu..." : cfg.label}
+                </Button>
+               ))
+             })()}
+          </div>
+        </DialogContent>
+      </Dialog>
+      {reviewTarget && (
+        <ReviewDialog
+          open={!!reviewTarget}
+          onOpenChange={(open) => { if (!open) setReviewTarget(null); }}
+          studentSessionIds={reviewTarget.recordType === "free" ? [] : [reviewTarget.id]}
+          studentNames={[reviewTarget.studentName]}
+          criteria={getReviewCriteriaIds(reviewTarget)
+            .map((id) => allEvaluationCriteria.find((criterion: any) => criterion.id === id))
+            .filter(Boolean)}
+          teachers={getReviewTeacherOptions(reviewTarget)}
+          existingReviewData={
+            reviewTarget.reviewData
+              && typeof reviewTarget.reviewData === "object"
+              && !Array.isArray(reviewTarget.reviewData)
+              ? reviewTarget.reviewData as any
+              : null
+          }
+          existingPublished={reviewTarget.reviewPublished ?? false}
+          classSessionId={reviewTarget.recordType === "free" ? "" : reviewTarget.classSessionId ?? ""}
+          freeReview={reviewTarget.recordType === "free" ? {
+            classId: reviewTarget.classId,
+            registrationId: reviewTarget.freeRegistrationId ?? reviewTarget.id,
+          } : undefined}
+          onSaved={(reviewData, published) => {
+            queryClient.invalidateQueries({ queryKey: ["/api/attendance"] });
+            setReviewTarget((current) => current
+              ? { ...current, reviewData, reviewPublished: published }
+              : current);
+          }}
+        />
+      )}
+    </DashboardLayout>
+  );
+}

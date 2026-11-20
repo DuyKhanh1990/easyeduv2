@@ -1,0 +1,1085 @@
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { VoucherHint } from "@/components/finance/VoucherHint";
+import { apiRequest } from "@/lib/queryClient";
+import { useAutoInvoicePolicy } from "@/hooks/use-auto-invoice-policy";
+import { calculateInvoiceVatAmount, INVOICE_VAT_RATES } from "@shared/invoice-vat";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ChevronDown } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const DAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+const FULL_DAY_LABELS = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
+
+const STEP_COLORS = [
+  "bg-indigo-500",
+  "bg-violet-500",
+  "bg-amber-500",
+  "bg-teal-500",
+  "bg-emerald-500",
+  "bg-rose-400",
+];
+
+function StepLabel({ step, children }: { step: number; children: React.ReactNode }) {
+  const color = STEP_COLORS[(step - 1) % STEP_COLORS.length];
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-bold text-white shrink-0 ${color}`}>
+        {step}
+      </span>
+      <span className="text-sm font-medium leading-none">{children}</span>
+    </div>
+  );
+}
+
+function fmtMoney(n: number): string {
+  return Math.round(n).toLocaleString("vi-VN");
+}
+
+function formatDate(date: Date): string {
+  const d = date.getDate().toString().padStart(2, "0");
+  const m = (date.getMonth() + 1).toString().padStart(2, "0");
+  const y = date.getFullYear();
+  return `${d}/${m}/${y}`;
+}
+
+function parseSessionDate(raw: any): Date | null {
+  if (!raw) return null;
+  const d = new Date(raw);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function computeEndByCount(
+  lastDate: Date,
+  numSessions: number,
+  weekdays: number[]
+): { date: Date; count: number } | null {
+  if (weekdays.length === 0 || numSessions <= 0) return null;
+  const sorted = [...weekdays].sort();
+  const current = new Date(lastDate);
+  let count = 0;
+  let safeGuard = 0;
+  while (count < numSessions && safeGuard < 3650) {
+    current.setDate(current.getDate() + 1);
+    safeGuard++;
+    if (sorted.includes(current.getDay())) count++;
+  }
+  if (count < numSessions) return null;
+  return { date: new Date(current), count: numSessions };
+}
+
+// Count ALL class-weekday sessions strictly after lastDate up to (inclusive) endDate
+function countAllClassSessionsBetween(
+  lastDate: Date,
+  endDate: Date,
+  allWeekdays: number[]
+): number {
+  if (allWeekdays.length === 0) return 0;
+  const current = new Date(lastDate);
+  let count = 0;
+  let safeGuard = 0;
+  while (safeGuard < 3650) {
+    current.setDate(current.getDate() + 1);
+    safeGuard++;
+    if (current > endDate) break;
+    if (allWeekdays.includes(current.getDay())) count++;
+  }
+  return count;
+}
+
+function computeEndByDate(
+  lastDate: Date,
+  endDate: Date,
+  weekdays: number[]
+): { date: Date; count: number } | null {
+  if (weekdays.length === 0) return null;
+  const sorted = [...weekdays].sort();
+  const current = new Date(lastDate);
+  let count = 0;
+  let lastValidDate: Date | null = null;
+  let safeGuard = 0;
+  while (safeGuard < 3650) {
+    current.setDate(current.getDate() + 1);
+    safeGuard++;
+    if (current > endDate) break;
+    if (sorted.includes(current.getDay())) {
+      count++;
+      lastValidDate = new Date(current);
+    }
+  }
+  if (count === 0 || !lastValidDate) return null;
+  return { date: lastValidDate, count };
+}
+
+export function ExtensionDialog({
+  isOpen,
+  onOpenChange,
+  classData,
+  classSessions,
+  activeStudents,
+  selectedStudents,
+  feePackages,
+  onConfirm,
+  isPending,
+}: {
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  classData: any;
+  classSessions?: any[];
+  activeStudents?: any[];
+  selectedStudents: any[];
+  feePackages?: any[];
+  onConfirm: (data: any) => void;
+  isPending: boolean;
+}) {
+  const autoInvoicePolicyQuery = useAutoInvoicePolicy(isOpen);
+  const autoInvoicePolicy = autoInvoicePolicyQuery.data;
+  const canOverrideAutoInvoice = autoInvoicePolicy?.canOverride === true;
+  const defaultAutoInvoice = autoInvoicePolicy?.defaultEnabled ?? true;
+  const [mode, setMode] = useState<"class" | "student">("class");
+  const [extensionType, setExtensionType] = useState<"sessions" | "date">("sessions");
+  const [numSessions, setNumSessions] = useState(0);
+  const [endDate, setEndDate] = useState<string>("");
+  const [cycleMode, setCycleMode] = useState<"all" | "specific">("all");
+  const [specificShiftIds, setSpecificShiftIds] = useState<string[]>([]);
+  const [cycleConfigOpen, setCycleConfigOpen] = useState(false);
+  const [extensionName, setExtensionName] = useState("");
+
+  // Per-student fee state
+  const [studentPkgIds, setStudentPkgIds] = useState<Record<string, string>>({});
+  const [studentDiscountIds, setStudentDiscountIds] = useState<Record<string, string[]>>({});
+  const [studentSurchargeIds, setStudentSurchargeIds] = useState<Record<string, string[]>>({});
+  const [studentVatRates, setStudentVatRates] = useState<Record<string, number>>({});
+  const [studentAutoInvoice, setStudentAutoInvoice] = useState<Record<string, boolean>>({});
+  const [allAutoInvoice, setAllAutoInvoice] = useState(true);
+  const [openPromoStudentId, setOpenPromoStudentId] = useState<string | null>(null);
+  const [openSurchargeStudentId, setOpenSurchargeStudentId] = useState<string | null>(null);
+  const [selectedCycleIdx, setSelectedCycleIdx] = useState<number>(-1);
+
+  const { data: promotionOptions = [] } = useQuery<any[]>({
+    queryKey: ["/api/finance/promotions?type=promotion"],
+    enabled: isOpen,
+  });
+  const { data: surchargeOptions = [] } = useQuery<any[]>({
+    queryKey: ["/api/finance/promotions?type=surcharge"],
+    enabled: isOpen,
+  });
+  const { data: cycles = [] } = useQuery<Array<{ weekdays: number[]; fromSessionIndex: number; toSessionIndex: number | null; label: string }>>({
+    queryKey: ["/api/classes", classData?.id, "cycles"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/classes/${classData.id}/cycles`);
+      return res.json();
+    },
+    enabled: isOpen && !!classData?.id,
+  });
+
+  const prevIsOpenRef = useRef(false);
+  const [autoInvoicePolicyApplied, setAutoInvoicePolicyApplied] = useState(false);
+
+  // Default to most recent cycle when cycles load
+  useEffect(() => {
+    if (cycles.length > 0) {
+      setSelectedCycleIdx(cycles.length - 1);
+    }
+  }, [cycles]);
+
+  // Reset per-student state only when dialog transitions from closed -> open
+  useEffect(() => {
+    const wasOpen = prevIsOpenRef.current;
+    prevIsOpenRef.current = isOpen;
+
+    if (!isOpen) return;
+
+    // Only reset all state when the dialog first opens.
+    // Subsequent re-renders (e.g. query invalidation after submit changing selectedStudents
+    // reference) must NOT touch these — otherwise the user's toggle choices get wiped.
+    if (!wasOpen) {
+      const classFeePackageId = classData?.feePackageId || "";
+      const coursePkgId = classData?.course?.feePackages?.[0]?.id || "";
+      const pkgs: Record<string, string> = {};
+      const autoInv: Record<string, boolean> = {};
+      for (const s of selectedStudents) {
+        pkgs[s.id] = s.packageId || classFeePackageId || coursePkgId || "";
+        autoInv[s.id] = defaultAutoInvoice;
+      }
+      setStudentPkgIds(pkgs);
+      setStudentAutoInvoice(autoInv);
+      setAllAutoInvoice(defaultAutoInvoice);
+      setStudentDiscountIds({});
+      setStudentSurchargeIds({});
+      setStudentVatRates(Object.fromEntries(selectedStudents.map((student) => [student.id, 0])));
+    }
+  }, [isOpen, selectedStudents, classData, defaultAutoInvoice]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setAutoInvoicePolicyApplied(false);
+      return;
+    }
+    if (!autoInvoicePolicy || autoInvoicePolicyQuery.isFetching || autoInvoicePolicyQuery.isError || autoInvoicePolicyApplied) return;
+
+    setAutoInvoicePolicyApplied(true);
+    setAllAutoInvoice(autoInvoicePolicy.defaultEnabled);
+    setStudentAutoInvoice((previous) => {
+      const next = { ...previous };
+      for (const student of selectedStudents) {
+        next[student.id] = autoInvoicePolicy.defaultEnabled;
+      }
+      return next;
+    });
+  }, [isOpen, autoInvoicePolicy, autoInvoicePolicyQuery.isFetching, autoInvoicePolicyApplied, selectedStudents]);
+
+  const lastClassSession = useMemo(() => {
+    if (!classSessions || classSessions.length === 0) return null;
+    return classSessions.reduce((prev: any, cur: any) => {
+      const prevIdx = prev.sessionIndex ?? 0;
+      const curIdx = cur.sessionIndex ?? 0;
+      return curIdx > prevIdx ? cur : prev;
+    }, classSessions[0]);
+  }, [classSessions]);
+
+  // Derive weekdays from the selected cycle (falls back to classData.weekdays for single-cycle classes)
+  const selectedCycleWeekdays = useMemo((): number[] => {
+    if (selectedCycleIdx >= 0 && selectedCycleIdx < cycles.length) {
+      return cycles[selectedCycleIdx].weekdays;
+    }
+    return (classData?.weekdays || []) as number[];
+  }, [selectedCycleIdx, cycles, classData]);
+
+  const activeWeekdays = useMemo((): number[] => {
+    // When auto-mode (cycle config collapsed), use the full cycle for general previews.
+    // Each student's actual weekdays are handled per-student in studentExtensionInfos.
+    if (!cycleConfigOpen) return selectedCycleWeekdays;
+    if (cycleMode === "all") return selectedCycleWeekdays;
+    return specificShiftIds.map((id) => parseInt(id));
+  }, [cycleConfigOpen, cycleMode, specificShiftIds, selectedCycleWeekdays]);
+
+  const endSessionInfo = useMemo(() => {
+    if (!lastClassSession) return null;
+    const lastDate = parseSessionDate(lastClassSession.sessionDate);
+    if (!lastDate) return null;
+    const lastIdx: number = lastClassSession.sessionIndex ?? 0;
+    // Use the full cycle weekdays to count class sessions (includes intermediate days
+    // that have no student enrollment but are needed to preserve schedule order).
+    const fullCycleWeekdays = selectedCycleWeekdays;
+    if (extensionType === "sessions") {
+      if (numSessions <= 0) return null;
+      const result = computeEndByCount(lastDate, numSessions, activeWeekdays);
+      if (!result) return null;
+      const allSteps = countAllClassSessionsBetween(lastDate, result.date, fullCycleWeekdays);
+      return { sessionIndex: lastIdx + allSteps, date: result.date };
+    } else {
+      if (!endDate) return null;
+      const endDateObj = new Date(endDate);
+      if (isNaN(endDateObj.getTime())) return null;
+      const result = computeEndByDate(lastDate, endDateObj, activeWeekdays);
+      if (!result) return null;
+      const allSteps = countAllClassSessionsBetween(lastDate, result.date, fullCycleWeekdays);
+      return { sessionIndex: lastIdx + allSteps, date: result.date };
+    }
+  }, [lastClassSession, extensionType, numSessions, endDate, activeWeekdays, selectedCycleWeekdays]);
+
+  const lastSessionLabel = useMemo(() => {
+    if (!lastClassSession) return null;
+    const date = parseSessionDate(lastClassSession.sessionDate);
+    if (!date) return null;
+    const idx = lastClassSession.sessionIndex ?? "?";
+    const dayLabel = DAY_LABELS[date.getDay()] ?? "";
+    return `Buổi số ${idx}, ${dayLabel} ${formatDate(date)}`;
+  }, [lastClassSession]);
+
+  const sessionIndexMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    (classSessions || []).forEach((cs: any) => { m[cs.id] = cs.sessionIndex; });
+    return m;
+  }, [classSessions]);
+
+  const activeMap = useMemo(() => {
+    const m: Record<string, any> = {};
+    for (const a of (activeStudents || [])) m[a.studentId] = a;
+    return m;
+  }, [activeStudents]);
+
+  // Per-student: last session info and extension result (works for both mode="class" and mode="student")
+  const studentExtensionInfos = useMemo(() => {
+    const result: Record<string, { lastLabel: string; endLabel: string | null }> = {};
+    const allClassWeekdays: number[] = selectedCycleWeekdays;
+
+    for (const s of selectedStudents) {
+      let lastDate: Date | null = null;
+      let idx: number | null = null;
+      let lastLabel = "";
+
+      if (mode === "student") {
+        const fullRecord = activeMap[s.studentId] || s;
+        const sessions: any[] = fullRecord.studentSessions || s.studentSessions || [];
+        if (sessions.length === 0) {
+          result[s.id] = { lastLabel: "—", endLabel: null };
+          continue;
+        }
+        const sorted = [...sessions].sort((a, b) => {
+          const da = parseSessionDate(a.sessionDate);
+          const db = parseSessionDate(b.sessionDate);
+          if (!da || !db) return 0;
+          return db.getTime() - da.getTime();
+        });
+        const last = sorted[0];
+        lastDate = parseSessionDate(last.sessionDate);
+        if (!lastDate) {
+          result[s.id] = { lastLabel: "—", endLabel: null };
+          continue;
+        }
+        idx = sessionIndexMap[last.classSessionId];
+        const dayLabel = DAY_LABELS[lastDate.getDay()] ?? "";
+        lastLabel = idx != null
+          ? `Buổi ${idx}, ${dayLabel} ${formatDate(lastDate)}`
+          : `${dayLabel} ${formatDate(lastDate)}`;
+      } else {
+        // mode="class": all students share the same starting point (class's last session)
+        if (!lastClassSession) {
+          result[s.id] = { lastLabel: "", endLabel: null };
+          continue;
+        }
+        lastDate = parseSessionDate(lastClassSession.sessionDate);
+        if (!lastDate) {
+          result[s.id] = { lastLabel: "", endLabel: null };
+          continue;
+        }
+        idx = lastClassSession.sessionIndex ?? 0;
+        const dayLabel = DAY_LABELS[lastDate.getDay()] ?? "";
+        lastLabel = `Buổi ${idx}, ${dayLabel} ${formatDate(lastDate)}`;
+      }
+
+      // Each student uses their own scheduledWeekdays when useStudentCycle is active (cycleConfigOpen=false)
+      const record = activeMap[s.studentId] || s;
+      const studentOwnWeekdays: number[] = (() => {
+        if (cycleConfigOpen) return activeWeekdays;
+        const sw: number[] | null = record.scheduledWeekdays ?? null;
+        return (sw && sw.length > 0) ? sw : selectedCycleWeekdays;
+      })();
+
+      let endLabel: string | null = null;
+      if (extensionType === "sessions" && numSessions > 0) {
+        const r = computeEndByCount(lastDate, numSessions, studentOwnWeekdays);
+        if (r && idx != null) {
+          const allSteps = countAllClassSessionsBetween(lastDate, r.date, allClassWeekdays);
+          const endDayLabel = DAY_LABELS[r.date.getDay()] ?? "";
+          endLabel = `Buổi ${idx + allSteps}, ${endDayLabel} ${formatDate(r.date)}`;
+        }
+      } else if (extensionType === "date" && endDate) {
+        const endDateObj = new Date(endDate);
+        if (!isNaN(endDateObj.getTime())) {
+          const r = computeEndByDate(lastDate, endDateObj, studentOwnWeekdays);
+          if (r && idx != null) {
+            const allSteps = countAllClassSessionsBetween(lastDate, r.date, allClassWeekdays);
+            const endDayLabel = DAY_LABELS[r.date.getDay()] ?? "";
+            endLabel = `Buổi ${idx + allSteps}, ${endDayLabel} ${formatDate(r.date)}`;
+          }
+        }
+      }
+      result[s.id] = { lastLabel, endLabel };
+    }
+    return result;
+  }, [mode, selectedStudents, activeMap, lastClassSession, sessionIndexMap, extensionType, numSessions, endDate, activeWeekdays, cycleConfigOpen, selectedCycleWeekdays]);
+
+  // Get extension session count for a student (used for fee calc)
+  const getExtCount = (s: any): number => {
+    if (extensionType === "sessions") return numSessions;
+    if (!endDate) return 0;
+    const endDateObj = new Date(endDate);
+    if (isNaN(endDateObj.getTime())) return 0;
+    let lastDate: Date | null = null;
+    if (mode === "class") {
+      lastDate = parseSessionDate(lastClassSession?.sessionDate);
+    } else {
+      const fullRecord = activeMap[s.studentId] || s;
+      const sessions: any[] = fullRecord.studentSessions || s.studentSessions || [];
+      const sorted = [...sessions].sort((a: any, b: any) => {
+        const da = parseSessionDate(a.sessionDate);
+        const db = parseSessionDate(b.sessionDate);
+        if (!da || !db) return 0;
+        return db.getTime() - da.getTime();
+      });
+      if (sorted.length === 0) return 0;
+      lastDate = parseSessionDate(sorted[0].sessionDate);
+    }
+    if (!lastDate) return 0;
+    const r = computeEndByDate(lastDate, endDateObj, activeWeekdays);
+    return r?.count ?? 0;
+  };
+
+  const allPkgs: any[] = feePackages || classData?.course?.feePackages || [];
+
+  const getSelectedPackage = (s: any) => {
+    const pkgId = studentPkgIds[s.id] || s.packageId;
+    return allPkgs.find((pkg: any) => pkg.id === pkgId);
+  };
+
+  // Session records keep a per-session price, even for fixed-price course packages.
+  const getSessionPrice = (s: any): number => {
+    const pkg = getSelectedPackage(s);
+    if (pkg) {
+      if (pkg.type === "buổi") return parseFloat(pkg.fee) || 0;
+      if (pkg.type === "khoá" && pkg.sessions)
+        return parseFloat(pkg.fee) / parseFloat(pkg.sessions);
+    }
+    return parseFloat(s.sessionPrice || "0") || 0;
+  };
+
+  // Match invoice creation: course package price is fixed; quantity is informational.
+  const getInvoiceUnitPrice = (s: any): number => {
+    const pkg = getSelectedPackage(s);
+    if (pkg?.type === "khoá") {
+      return parseFloat(pkg.totalAmount || pkg.fee || "0") || 0;
+    }
+    return getSessionPrice(s);
+  };
+
+  // Compute fee amounts for a student
+  const getAmounts = (s: any) => {
+    const extCount = getExtCount(s);
+    const sprice = getSessionPrice(s);
+    const pkg = getSelectedPackage(s);
+    const base = extCount > 0
+      ? pkg?.type === "khoá"
+        ? getInvoiceUnitPrice(s)
+        : sprice > 0 ? sprice * extCount : 0
+      : 0;
+    const discIds = studentDiscountIds[s.id] ?? [];
+    const surchIds = studentSurchargeIds[s.id] ?? [];
+    const discAmt = discIds.reduce((sum: number, id: string) => {
+      const opt = (promotionOptions as any[]).find((p: any) => p.id === id);
+      if (!opt) return sum;
+      return sum + (opt.valueType === "percent"
+        ? base * parseFloat(opt.valueAmount) / 100
+        : parseFloat(opt.valueAmount) || 0);
+    }, 0);
+    const surchAmt = surchIds.reduce((sum: number, id: string) => {
+      const opt = (surchargeOptions as any[]).find((p: any) => p.id === id);
+      if (!opt) return sum;
+      return sum + (opt.valueType === "percent"
+        ? base * parseFloat(opt.valueAmount) / 100
+        : parseFloat(opt.valueAmount) || 0);
+    }, 0);
+    const beforeVat = Math.max(0, base - discAmt + surchAmt);
+    const vatRate = studentVatRates[s.id] ?? 0;
+    const vatAmount = calculateInvoiceVatAmount(beforeVat, vatRate);
+    return { base, discAmt, surchAmt, beforeVat, vatRate, vatAmount, total: beforeVat + vatAmount };
+  };
+
+  const getScheduleText = (weekdays: number[]): string => {
+    const selectedWeekdays = new Set(
+      weekdays
+        .map((weekday) => Number(weekday) === 7 ? 0 : Number(weekday))
+        .filter((weekday) => Number.isInteger(weekday) && weekday >= 0 && weekday <= 6),
+    );
+    const seen = new Set<string>();
+    const entries: Array<{ weekday: number; text: string }> = [];
+
+    for (const session of classSessions || []) {
+      const weekday = Number(session.weekday) === 7 ? 0 : Number(session.weekday);
+      if (!selectedWeekdays.has(weekday)) continue;
+      const shift = session.shiftTemplate || (session.shiftTemplateId ? null : classData?.shiftTemplate);
+      const startTime = shift?.startTime?.trim();
+      const endTime = shift?.endTime?.trim();
+      const key = `${weekday}_${startTime ?? ""}_${endTime ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      entries.push({
+        weekday,
+        text: startTime && endTime
+          ? `${FULL_DAY_LABELS[weekday]} (${startTime}-${endTime})`
+          : FULL_DAY_LABELS[weekday],
+      });
+    }
+
+    // Imported/legacy session payloads may not include shiftTemplate relations.
+    // Still show the selected weekdays in the preview; the server resolves times
+    // from shift_templates when it creates the invoice.
+    for (const weekday of selectedWeekdays) {
+      if (!entries.some((entry) => entry.weekday === weekday)) {
+        entries.push({ weekday, text: FULL_DAY_LABELS[weekday] });
+      }
+    }
+
+    entries.sort((a, b) => (a.weekday === 0 ? 7 : a.weekday) - (b.weekday === 0 ? 7 : b.weekday));
+    return entries.map((entry) => entry.text).join(", ");
+  };
+
+  // Build auto invoice description for a student
+  const buildNote = (s: any): string => {
+    const pkg = allPkgs.find((p: any) => p.id === studentPkgIds[s.id]);
+    const discIds = studentDiscountIds[s.id] ?? [];
+    const surchIds = studentSurchargeIds[s.id] ?? [];
+
+    let startDate: Date | null = null;
+    let noteEndDate: Date | null = null;
+
+    if (mode === "class") {
+      const lastDate = parseSessionDate(lastClassSession?.sessionDate);
+      if (lastDate) {
+        startDate = new Date(lastDate);
+        startDate.setDate(startDate.getDate() + 1);
+      }
+      noteEndDate = endSessionInfo?.date ?? null;
+    } else {
+      const fullRecord = activeMap[s.studentId] || s;
+      const sessions: any[] = fullRecord.studentSessions || s.studentSessions || [];
+      const sorted = [...sessions].sort((a: any, b: any) => {
+        const da = parseSessionDate(a.sessionDate);
+        const db = parseSessionDate(b.sessionDate);
+        if (!da || !db) return 0;
+        return db.getTime() - da.getTime();
+      });
+      const lastDate = sorted[0] ? parseSessionDate(sorted[0].sessionDate) : null;
+      if (lastDate) {
+        startDate = new Date(lastDate);
+        startDate.setDate(startDate.getDate() + 1);
+        if (extensionType === "sessions" && numSessions > 0) {
+          const r = computeEndByCount(lastDate, numSessions, activeWeekdays);
+          if (r) noteEndDate = r.date;
+        } else if (extensionType === "date" && endDate) {
+          const edObj = new Date(endDate);
+          if (!isNaN(edObj.getTime())) {
+            const r = computeEndByDate(lastDate, edObj, activeWeekdays);
+            if (r) noteEndDate = r.date;
+          }
+        }
+      }
+    }
+
+    const startStr = startDate ? formatDate(startDate) : "?";
+    const endStr = noteEndDate ? formatDate(noteEndDate) : "?";
+    const className = classData?.name || "";
+    const pkgName = pkg?.name || "";
+    const discNames = discIds.map((id: string) => (promotionOptions as any[]).find((p: any) => p.id === id)?.name).filter(Boolean).join(", ");
+    const surchNames = surchIds.map((id: string) => (surchargeOptions as any[]).find((p: any) => p.id === id)?.name).filter(Boolean).join(", ");
+    const record = activeMap[s.studentId] || s;
+    const studentOwnWeekdays: number[] = (() => {
+      if (cycleConfigOpen) return activeWeekdays;
+      const sw: number[] | null = record.scheduledWeekdays ?? null;
+      return (sw && sw.length > 0) ? sw : selectedCycleWeekdays;
+    })();
+    const scheduleText = getScheduleText(studentOwnWeekdays);
+
+    let note = `Học phí gia hạn từ ngày ${startStr} đến ngày ${endStr}. Lớp ${className}`;
+    if (pkgName) note += `, Gói học phí: ${pkgName}`;
+    if (scheduleText) note += `, Thời gian: ${scheduleText}`;
+    if (discNames) note += `, Khuyến mãi: ${discNames}`;
+    if (surchNames) note += `, Phụ thu: ${surchNames}`;
+    return note;
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[98vw] h-[98dvh] flex flex-col p-0 gap-0">
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
+          <DialogTitle>Gia hạn học viên</DialogTitle>
+        </DialogHeader>
+
+        {autoInvoicePolicyQuery.isError && (
+          <div className="flex items-center justify-between gap-3 border-b border-destructive/30 bg-destructive/5 px-6 py-2 text-sm">
+            <span className="text-destructive">Không tải được cấu hình hóa đơn tự động; chưa thể xác nhận gia hạn.</span>
+            <Button type="button" size="sm" variant="outline" onClick={() => autoInvoicePolicyQuery.refetch()}>
+              Thử lại
+            </Button>
+          </div>
+        )}
+
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          {/* ── LEFT PANEL: settings ─────────────────────────────── */}
+          <div className="w-[380px] shrink-0 border-r overflow-y-auto p-6 space-y-5">
+            <div className="space-y-2">
+              <StepLabel step={1}>Chế độ gia hạn</StepLabel>
+              <Select value={mode} onValueChange={(v: any) => setMode(v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="class">
+                    Gia hạn sau buổi cuối cùng của lịch lớp
+                  </SelectItem>
+                  <SelectItem value="student">
+                    Gia hạn sau buổi cuối cùng của từng học viên
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              {mode === "class" && lastSessionLabel && (
+                <p className="text-xs text-muted-foreground">
+                  Buổi cuối cùng của lớp:{" "}
+                  <span className="font-medium text-foreground">{lastSessionLabel}</span>
+                </p>
+              )}
+              {mode === "student" && (
+                <p className="text-xs text-muted-foreground">
+                  Mỗi học viên sẽ được gia hạn từ buổi cuối cùng của họ.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <StepLabel step={2}>Hình thức gia hạn</StepLabel>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={extensionType === "sessions" ? "default" : "outline"}
+                  onClick={() => setExtensionType("sessions")}
+                >
+                  Số buổi cụ thể
+                </Button>
+                <Button
+                  size="sm"
+                  variant={extensionType === "date" ? "default" : "outline"}
+                  onClick={() => setExtensionType("date")}
+                >
+                  Gia hạn đến ngày
+                </Button>
+              </div>
+            </div>
+
+            {extensionType === "sessions" ? (
+              <div className="space-y-2">
+                <StepLabel step={3}>Số buổi gia hạn</StepLabel>
+                <Input
+                  type="number"
+                  value={numSessions}
+                  onChange={(e) => setNumSessions(parseInt(e.target.value) || 0)}
+                />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <StepLabel step={3}>Gia hạn đến ngày</StepLabel>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+              </div>
+            )}
+
+            {/* Chu kỳ áp dụng — auto-detected as the last (most recent) cycle, read-only */}
+            {cycles.length > 0 && (
+              <div className="space-y-2">
+                <StepLabel step={4}>Chu kỳ áp dụng</StepLabel>
+                <div className="px-3 py-2 rounded-md border bg-muted/30 text-sm text-muted-foreground">
+                  {selectedCycleWeekdays.map((w: number) => DAY_LABELS[w] ?? `T${w}`).join(", ")}
+                  {cycles.length > 1 && (
+                    <span className="ml-1 text-xs text-blue-600 dark:text-blue-400">
+                      (Buổi {cycles[cycles.length - 1].fromSessionIndex} → hiện tại)
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Cấu hình chu kỳ — collapsible, optional */}
+            <div>
+              <button
+                type="button"
+                className="w-full flex items-center justify-between py-1 hover:opacity-75 transition-opacity"
+                onClick={() => setCycleConfigOpen(!cycleConfigOpen)}
+              >
+                <StepLabel step={5}>Cấu hình chu kỳ</StepLabel>
+                <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${cycleConfigOpen ? "rotate-180" : ""}`} />
+              </button>
+              {!cycleConfigOpen && (
+                <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">
+                  Tất cả học viên lựa chọn, sẽ có chu kỳ học được cấu hình giống nhau như đã lựa chọn.<br />
+                  <span className="text-amber-600 dark:text-amber-400 font-medium">Lưu ý:</span> Nếu không cần thay đổi liên quan đến chu kỳ của học viên thì không cấu hình ở đây.
+                </p>
+              )}
+              {cycleConfigOpen && (
+                <div className="mt-2 px-3 py-3 space-y-3 border rounded-md bg-muted/5">
+                  <Select value={cycleMode} onValueChange={(v: any) => setCycleMode(v)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tất cả ca học của lớp</SelectItem>
+                      <SelectItem value="specific">Chọn ca học cụ thể</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {cycleMode === "specific" && (
+                    <div className="space-y-2 bg-muted/20 rounded-md p-3">
+                      <Label className="text-xs mb-1 block">Chọn các ca học áp dụng</Label>
+                      <div className="space-y-2">
+                        {selectedCycleWeekdays.map((wd: number) => {
+                          const shift = classData?.shiftTemplate;
+                          return (
+                            <div key={wd} className="flex items-center space-x-2">
+                              <Checkbox
+                                id={`shift-${wd}`}
+                                checked={specificShiftIds.includes(wd.toString())}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    setSpecificShiftIds([...specificShiftIds, wd.toString()]);
+                                  } else {
+                                    setSpecificShiftIds(specificShiftIds.filter((id) => id !== wd.toString()));
+                                  }
+                                }}
+                              />
+                              <Label htmlFor={`shift-${wd}`} className="text-sm cursor-pointer">
+                                Thứ {DAY_LABELS[wd]}: {shift?.name} ({shift?.startTime}-{shift?.endTime})
+                              </Label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {mode === "class" && endSessionInfo && (
+              <div className="rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 px-3 py-2 text-xs text-blue-800 dark:text-blue-300">
+                {!cycleConfigOpen ? (
+                  <>Buổi cuối của mỗi học viên xem chi tiết trong bảng bên phải.</>
+                ) : (
+                  <>
+                    Học viên sẽ xếp vào đến buổi{" "}
+                    <span className="font-semibold">
+                      Số {endSessionInfo.sessionIndex},{" "}
+                      {DAY_LABELS[endSessionInfo.date.getDay()]}{" "}
+                      {formatDate(endSessionInfo.date)}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <StepLabel step={6}>Tên đợt gia hạn (tùy chọn)</StepLabel>
+              <Input
+                value={extensionName}
+                onChange={(e) => setExtensionName(e.target.value)}
+                placeholder="VD: Gia hạn tháng 7"
+              />
+            </div>
+          </div>
+
+          {/* ── RIGHT PANEL: student table ──────────────────────────── */}
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <div className="px-4 py-3 border-b shrink-0 flex items-center justify-between">
+              <p className="text-sm font-semibold">
+                Danh sách học viên gia hạn ({selectedStudents.length})
+              </p>
+              <div className="flex items-center gap-2 ml-auto">
+                <span className="text-xs text-muted-foreground">Hoá đơn tự động</span>
+                <Switch
+                  checked={allAutoInvoice}
+                  disabled={!autoInvoicePolicy || !autoInvoicePolicyApplied || autoInvoicePolicyQuery.isFetching || autoInvoicePolicyQuery.isError || !canOverrideAutoInvoice}
+                  onCheckedChange={(v) => {
+                    setAllAutoInvoice(v);
+                    const next: Record<string, boolean> = {};
+                    for (const s of selectedStudents) next[s.id] = v;
+                    setStudentAutoInvoice(next);
+                  }}
+                  data-testid="switch-all-auto-invoice"
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead className="bg-muted/50 sticky top-0 z-10">
+                  <tr className="border-b">
+                    <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap min-w-[180px]">Học viên</th>
+                    <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap min-w-[160px]">Gói học phí</th>
+                    <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap w-24">Đơn giá</th>
+                    <th className="px-3 py-2.5 text-center font-semibold whitespace-nowrap w-16">SL</th>
+                    <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap w-28">Khuyến mãi</th>
+                    <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap w-28">Phụ thu</th>
+                    <th className="px-3 py-2.5 text-center font-semibold whitespace-nowrap w-24">VAT</th>
+                    <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap w-28">Tổng tiền</th>
+                    <th className="px-3 py-2.5 text-center font-semibold whitespace-nowrap w-32">Hoá đơn tự động</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedStudents.map((s) => {
+                    const info = studentExtensionInfos[s.id];
+                    const pkgId = studentPkgIds[s.id] ?? "";
+                    const discIds = studentDiscountIds[s.id] ?? [];
+                    const surchIds = studentSurchargeIds[s.id] ?? [];
+                    const amounts = getAmounts(s);
+
+                    const discAmt = amounts.discAmt;
+                    const surchAmt = amounts.surchAmt;
+
+                    return (
+                      <tr key={s.id} className="border-b hover:bg-muted/30 transition-colors">
+                        {/* Học viên */}
+                        <td className="px-3 py-2">
+                          <div className="font-medium">{s.student?.fullName} ({s.student?.code})</div>
+                          {mode === "class" && lastSessionLabel && (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              Gia hạn từ sau {lastSessionLabel}
+                              {!cycleConfigOpen && info?.endLabel && (
+                                <span> → <span className="text-blue-600 dark:text-blue-400 font-medium">{info.endLabel}</span></span>
+                              )}
+                            </div>
+                          )}
+                          {mode === "student" && info && (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              <span>Buổi cuối: <span className="font-medium text-foreground">{info.lastLabel}</span></span>
+                              {info.endLabel && (
+                                <span> · <span className="text-blue-600 dark:text-blue-400 font-medium">{info.endLabel}</span></span>
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Gói học phí */}
+                        <td className="px-3 py-2">
+                          <Select
+                            value={pkgId}
+                            onValueChange={(v) =>
+                              setStudentPkgIds((prev) => ({ ...prev, [s.id]: v }))
+                            }
+                          >
+                            <SelectTrigger className="h-7 text-xs">
+                              <SelectValue placeholder="Chọn gói..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {allPkgs.length === 0 ? (
+                                <SelectItem value="_none" disabled>Chưa có gói</SelectItem>
+                              ) : (
+                                allPkgs.map((pkg: any) => (
+                                  <SelectItem key={pkg.id} value={pkg.id} className="text-xs">
+                                    {pkg.name}
+                                  </SelectItem>
+                                ))
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </td>
+
+                        {/* Đơn giá */}
+                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                          <span className="font-medium">{getInvoiceUnitPrice(s) > 0 ? `${fmtMoney(getInvoiceUnitPrice(s))}đ` : "—"}</span>
+                        </td>
+
+                        {/* SL */}
+                        <td className="px-3 py-2 text-center whitespace-nowrap">
+                          <span className="font-medium">{getExtCount(s) > 0 ? getExtCount(s) : "—"}</span>
+                        </td>
+
+                        {/* Khuyến mãi */}
+                        <td className="px-3 py-2">
+                          <Popover
+                            open={openPromoStudentId === s.id}
+                            onOpenChange={(v) => setOpenPromoStudentId(v ? s.id : null)}
+                          >
+                            <PopoverTrigger asChild>
+                              <button className="w-full h-7 flex items-center justify-between px-2 rounded-md border bg-background hover:border-primary transition-colors text-[11px]">
+                                <span className={discAmt > 0 ? "text-green-600 font-semibold" : "text-muted-foreground"}>
+                                  {discAmt > 0 ? `-${fmtMoney(discAmt)}đ` : "Chọn..."}
+                                </span>
+                                <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                              </button>
+                            </PopoverTrigger>
+                            <VoucherHint studentId={s.id} />
+                            <PopoverContent className="w-56 p-2" align="start">
+                              <p className="text-xs font-semibold mb-2 text-muted-foreground">Chọn khuyến mãi</p>
+                              {(promotionOptions as any[]).length === 0 ? (
+                                <p className="text-xs text-muted-foreground italic py-2 text-center">Chưa có khuyến mãi nào</p>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  {(promotionOptions as any[]).filter((p: any) => p.isActive).map((promo: any) => {
+                                    const amt = promo.valueType === "percent"
+                                      ? amounts.base * parseFloat(promo.valueAmount) / 100
+                                      : parseFloat(promo.valueAmount) || 0;
+                                    const label = promo.valueType === "percent"
+                                      ? `${parseFloat(promo.valueAmount)}%`
+                                      : `${fmtMoney(parseFloat(promo.valueAmount))}đ`;
+                                    return (
+                                      <label key={promo.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                                        <Checkbox
+                                          checked={discIds.includes(promo.id)}
+                                          onCheckedChange={() => {
+                                            const next = discIds.includes(promo.id)
+                                              ? discIds.filter((id: string) => id !== promo.id)
+                                              : [...discIds, promo.id];
+                                            setStudentDiscountIds((prev) => ({ ...prev, [s.id]: next }));
+                                          }}
+                                        />
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-xs font-medium">{promo.name}</p>
+                                          <p className="text-xs text-muted-foreground">
+                                            {amounts.base > 0 && promo.valueType === "percent"
+                                              ? `-${fmtMoney(amt)}đ (${label})`
+                                              : `-${label}`}
+                                          </p>
+                                        </div>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </PopoverContent>
+                          </Popover>
+                        </td>
+
+                        {/* Phụ thu */}
+                        <td className="px-3 py-2">
+                          <Popover
+                            open={openSurchargeStudentId === s.id}
+                            onOpenChange={(v) => setOpenSurchargeStudentId(v ? s.id : null)}
+                          >
+                            <PopoverTrigger asChild>
+                              <button className="w-full h-7 flex items-center justify-between px-2 rounded-md border bg-background hover:border-primary transition-colors text-[11px]">
+                                <span className={surchAmt > 0 ? "text-orange-600 font-semibold" : "text-muted-foreground"}>
+                                  {surchAmt > 0 ? `+${fmtMoney(surchAmt)}đ` : "Chọn..."}
+                                </span>
+                                <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-56 p-2" align="start">
+                              <p className="text-xs font-semibold mb-2 text-muted-foreground">Chọn phụ thu</p>
+                              {(surchargeOptions as any[]).length === 0 ? (
+                                <p className="text-xs text-muted-foreground italic py-2 text-center">Chưa có phụ thu nào</p>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  {(surchargeOptions as any[]).filter((s2: any) => s2.isActive).map((surcharge: any) => {
+                                    const amt = surcharge.valueType === "percent"
+                                      ? amounts.base * parseFloat(surcharge.valueAmount) / 100
+                                      : parseFloat(surcharge.valueAmount) || 0;
+                                    const label = surcharge.valueType === "percent"
+                                      ? `${parseFloat(surcharge.valueAmount)}%`
+                                      : `${fmtMoney(amt)}đ`;
+                                    return (
+                                      <label key={surcharge.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5">
+                                        <Checkbox
+                                          checked={surchIds.includes(surcharge.id)}
+                                          onCheckedChange={() => {
+                                            const next = surchIds.includes(surcharge.id)
+                                              ? surchIds.filter((id: string) => id !== surcharge.id)
+                                              : [...surchIds, surcharge.id];
+                                            setStudentSurchargeIds((prev) => ({ ...prev, [s.id]: next }));
+                                          }}
+                                        />
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-xs font-medium">{surcharge.name}</p>
+                                          <p className="text-xs text-muted-foreground">+{label}</p>
+                                        </div>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </PopoverContent>
+                          </Popover>
+                        </td>
+
+                        {/* VAT */}
+                        <td className="px-3 py-2">
+                          <Select
+                            value={String(amounts.vatRate)}
+                            onValueChange={(value) =>
+                              setStudentVatRates((previous) => ({ ...previous, [s.id]: Number(value) }))
+                            }
+                          >
+                            <SelectTrigger className="h-7 px-1.5 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {INVOICE_VAT_RATES.map((rate) => (
+                                <SelectItem key={rate} value={String(rate)}>{rate}%</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <div className="mt-0.5 text-center text-[10px] text-muted-foreground">
+                            VAT: {fmtMoney(amounts.vatAmount)}đ
+                          </div>
+                        </td>
+
+                        {/* Tổng tiền */}
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                          {amounts.total > 0 ? `${fmtMoney(amounts.total)}đ` : "—"}
+                        </td>
+
+                        {/* Hoá đơn tự động */}
+                        <td className="px-3 py-2 text-center">
+                          <Switch
+                            checked={studentAutoInvoice[s.id] ?? defaultAutoInvoice}
+                            disabled={!autoInvoicePolicy || !autoInvoicePolicyApplied || autoInvoicePolicyQuery.isFetching || autoInvoicePolicyQuery.isError || !canOverrideAutoInvoice}
+                            onCheckedChange={(v) =>
+                              setStudentAutoInvoice((prev) => ({ ...prev, [s.id]: v }))
+                            }
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter className="px-6 py-4 border-t shrink-0">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Hủy
+          </Button>
+          <Button
+            disabled={!autoInvoicePolicy || !autoInvoicePolicyApplied || autoInvoicePolicyQuery.isFetching || autoInvoicePolicyQuery.isError || isPending || (extensionType === "sessions" && numSessions <= 0)}
+            onClick={() =>
+              onConfirm({
+                mode,
+                numSessions,
+                endDate,
+                cycleMode: cycleConfigOpen ? cycleMode : "all",
+                specificShiftIds: cycleConfigOpen ? specificShiftIds : [],
+                useStudentCycle: !cycleConfigOpen,
+                extensionName,
+                autoInvoice: allAutoInvoice,
+                overrideClassWeekdays: selectedCycleWeekdays,
+                studentIds: selectedStudents.map((s) => s.studentId),
+                perStudent: selectedStudents.map((s) => {
+                  const amounts = getAmounts(s);
+                  const autoInv = studentAutoInvoice[s.id] ?? defaultAutoInvoice;
+                  return {
+                    studentId: s.studentId,
+                    packageId: studentPkgIds[s.id] || s.packageId || null,
+                    discountIds: studentDiscountIds[s.id] ?? [],
+                    surchargeIds: studentSurchargeIds[s.id] ?? [],
+                    promotionKeys: studentDiscountIds[s.id] ?? [],
+                    surchargeKeys: studentSurchargeIds[s.id] ?? [],
+                    autoInvoice: autoInv,
+                    vatRate: amounts.vatRate,
+                    grandTotal: amounts.beforeVat,
+                    totalAmount: amounts.base,
+                    promotionAmount: amounts.discAmt,
+                    surchargeAmount: amounts.surchAmt,
+                    unitPrice: getInvoiceUnitPrice(s),
+                    quantity: getExtCount(s),
+                    description: autoInv ? buildNote(s) : "",
+                  };
+                }),
+              })
+            }
+          >
+            {isPending ? "Đang xử lý..." : "Xác nhận gia hạn"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

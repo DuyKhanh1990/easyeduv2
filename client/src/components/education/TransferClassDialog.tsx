@@ -1,0 +1,2241 @@
+import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
+import { getCenterDateString, isPastCenterDate } from "@/lib/center-time-format";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Loader2,
+  Check,
+  ChevronsUpDown,
+  ChevronDown,
+  Search,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  FileText,
+  Wallet,
+  X,
+} from "lucide-react";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { useMyPermissions } from "@/hooks/use-my-permissions";
+import { FinancePromotionDialog } from "@/pages/finance/components/FinancePromotionDialog";
+import {
+  areInvoiceAndClassPackagesEquivalent,
+  calculateFirstSessionPriceAfterDiscount,
+  calculateInvoiceSessionPrice,
+  calculatePerSessionTransferTotal,
+  hasExistingSessionTuition,
+} from "./transferClassPricing";
+
+const transferSchema = z.object({
+  studentId: z.string().uuid(),
+  fromClassId: z.string().uuid(),
+  toClassId: z.string().uuid({ message: "Vui lòng chọn lớp mới" }),
+  fromSessionIndex: z.coerce.number().int().min(1, "Vui lòng chọn buổi bắt đầu chuyển"),
+  toSessionIndex: z.coerce.number().int().min(1, "Vui lòng chọn buổi bắt đầu ở lớp mới"),
+  transferCount: z.coerce.number().int().min(1, "Số buổi chuyển phải ít nhất là 1"),
+  targetTransferCount: z.coerce.number().int().min(1, "Số buổi chuyển ở lớp mới phải ít nhất là 1"),
+});
+
+type TransferFormValues = z.infer<typeof transferSchema>;
+
+interface TransferClassDialogProps {
+  isOpen: boolean;
+  onClose: () => void;
+  student: {
+    id: string;
+    fullName: string;
+  };
+  currentClass: {
+    id: string;
+    name: string;
+    classCode: string;
+    locationId?: string;
+    feePackageId?: string | null;
+    teacherName?: string;
+    weekdays: number[];
+  };
+}
+
+const formatCurrencyValue = (amount: number) =>
+  new Intl.NumberFormat("vi-VN", {
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+
+const formatCurrency = (amount: number) => formatCurrencyValue(amount) + "đ";
+
+const formatSignedCurrency = (amount: number) =>
+  `${amount > 0 ? "+" : amount < 0 ? "-" : ""}${formatCurrency(Math.abs(amount))}`;
+
+const formatPercent = (value: number | null | undefined) => {
+  if (value == null || !Number.isFinite(value) || value <= 0) return "";
+  return Number.isInteger(value) ? `${value}%` : `${value.toFixed(2).replace(/\.?0+$/, "")}%`;
+};
+
+const isCoursePackage = (pkg: any) =>
+  ["course", "khoa"].some((type) => {
+    const packageType = String(pkg?.type ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLocaleLowerCase("vi");
+    return packageType === type || packageType.includes(type);
+  });
+
+const packageTypeLabel = (pkg: any) =>
+  isCoursePackage(pkg) ? "Khóa" : pkg?.type === "buổi" ? "Buổi" : "";
+
+const getPackageSessionCount = (pkg: any, fallback = 0) => {
+  const sessions = Number(pkg?.sessions);
+  return sessions > 0 ? sessions : fallback;
+};
+
+const getPackageBaseSessionPrice = (pkg: any, fallback = 0, sessionCountOverride = 0) => {
+  if (!pkg) return fallback;
+  const sessions = sessionCountOverride > 0
+    ? sessionCountOverride
+    : getPackageSessionCount(pkg);
+  if (isCoursePackage(pkg) && sessions > 0) {
+    const total = Number(pkg.totalAmount ?? pkg.fee ?? 0);
+    return total / sessions;
+  }
+  return Number(pkg.fee ?? fallback) || fallback;
+};
+
+const getPackageBaseTotal = (pkg: any, fallback = 0, sessionCountOverride = 0) => {
+  if (!pkg) return fallback;
+  const sessions = sessionCountOverride > 0
+    ? sessionCountOverride
+    : getPackageSessionCount(pkg);
+  if (isCoursePackage(pkg)) {
+    return Number(pkg.totalAmount ?? pkg.fee ?? 0);
+  }
+  const fee = Number(pkg.fee ?? 0) || 0;
+  return sessions > 0 ? fee * sessions : fallback || fee;
+};
+
+type TransferAdjustmentRow = {
+  id: string;
+  optionKey?: string;
+  valueType: "amount" | "percent";
+  value: number;
+};
+
+const normalizeSearchText = (value: unknown) =>
+  String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+const formatPromotionLabel = (option: any) =>
+  option?.kind === "voucher" ? `Voucher: ${option.name}` : option?.name;
+
+const applyTransferPromotions = (
+  startingAmount: number,
+  keys: string[],
+  rows: TransferAdjustmentRow[],
+  options: any[],
+) => {
+  const representedKeys = new Set(rows.map((row) => row.optionKey).filter(Boolean));
+  const orderedRows: TransferAdjustmentRow[] = [
+    ...rows,
+    ...keys
+      .filter((key) => !representedKeys.has(key))
+      .map((key, index) => ({
+        id: `legacy-transfer-promotion-${index}-${key}`,
+        optionKey: key,
+        valueType: "amount" as const,
+        value: 0,
+      })),
+  ];
+  let currentAmount = Math.max(0, startingAmount);
+  const appliedOptionKeys = new Set<string>();
+
+  const applyValue = (valueType: "amount" | "percent", rawValue: number) => {
+    const value = Math.max(0, Number(rawValue) || 0);
+    const adjustment = valueType === "percent"
+      ? Math.round(currentAmount * value / 100)
+      : value;
+    currentAmount = Math.max(0, currentAmount - adjustment);
+  };
+
+  orderedRows.forEach((row) => {
+    if (row.optionKey && !appliedOptionKeys.has(row.optionKey)) {
+      appliedOptionKeys.add(row.optionKey);
+      const option = options.find((item: any) => item.id === row.optionKey);
+      if (option) {
+        applyValue(
+          option.valueType === "percent" ? "percent" : "amount",
+          Number(option.valueAmount ?? 0),
+        );
+      }
+    }
+    if (row.value > 0) applyValue(row.valueType, row.value);
+  });
+
+  return {
+    finalAmount: currentAmount,
+    adjustmentAmount: Math.max(0, startingAmount - currentAmount),
+  };
+};
+
+export function TransferClassDialog({
+  isOpen,
+  onClose,
+  student,
+  currentClass,
+}: TransferClassDialogProps) {
+  const { toast } = useToast();
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedTargetPackageId, setSelectedTargetPackageId] = useState<string>("");
+  const [isTargetClassPickerOpen, setIsTargetClassPickerOpen] = useState(false);
+  const [activeDiscountTarget, setActiveDiscountTarget] = useState<"current" | "target" | null>(null);
+  const [quickCreatePromotionTarget, setQuickCreatePromotionTarget] = useState<"current" | "target">("target");
+  const [discountSearch, setDiscountSearch] = useState("");
+  const [currentPromotionKeys, setCurrentPromotionKeys] = useState<string[]>([]);
+  const [currentPromotionRows, setCurrentPromotionRows] = useState<TransferAdjustmentRow[]>([]);
+  const [targetPromotionKeys, setTargetPromotionKeys] = useState<string[]>([]);
+  const [targetPromotionRows, setTargetPromotionRows] = useState<TransferAdjustmentRow[]>([]);
+  const [openDiscountPromotionPicker, setOpenDiscountPromotionPicker] = useState<string | null>(null);
+  const [quickCreatePromotionOpen, setQuickCreatePromotionOpen] = useState(false);
+  const [autoInvoice, setAutoInvoice] = useState(true);
+  const [invoiceCategory, setInvoiceCategory] = useState<"Hoàn học phí" | "Đặt cọc">("Hoàn học phí");
+  const [refundMethod, setRefundMethod] = useState<"invoice" | "deposit">("invoice");
+  const [transferFeeAdjustmentInput, setTransferFeeAdjustmentInput] = useState("");
+  const [actualSessionCount, setActualSessionCount] = useState(0);
+  const [currentPricingSource, setCurrentPricingSource] = useState<"invoice" | "class">("invoice");
+  const [targetTransferCountManuallyEdited, setTargetTransferCountManuallyEdited] = useState(false);
+  const [roundingMode, setRoundingMode] = useState<"none" | "down" | "up">("none");
+  const [excludeSourceSurcharge, setExcludeSourceSurcharge] = useState(true);
+  const { data: myPerms } = useMyPermissions();
+  const { data: pastSchedulePolicy } = usePastSchedulePolicy(isOpen);
+  const canRunPast = pastSchedulePolicy?.canRunPast === true;
+  const today = getCenterDateString();
+  const canCreatePromotion = Boolean(
+    myPerms?.isSuperAdmin || myPerms?.permissions["/finance-config#promotions"]?.canCreate,
+  );
+
+  const form = useForm<TransferFormValues>({
+    resolver: zodResolver(transferSchema),
+    defaultValues: {
+      studentId: student?.id,
+      fromClassId: currentClass?.id,
+      toClassId: "",
+      fromSessionIndex: 1,
+      toSessionIndex: 1,
+      transferCount: 1,
+      targetTransferCount: 1,
+    },
+  });
+
+  const selectedToClassId = form.watch("toClassId");
+  const fromSessionIndex = form.watch("fromSessionIndex");
+  const toSessionIndex = form.watch("toSessionIndex");
+  const transferCount = Number(form.watch("transferCount") || 0);
+  const targetTransferCount = Number(form.watch("targetTransferCount") || 0);
+
+  // Fetch student sessions in current class
+  const { data: currentSessions, isLoading: loadingCurrent } = useQuery<any[]>({
+    queryKey: ["/api/classes", currentClass?.id, "student", student?.id, "sessions"],
+    enabled: isOpen && !!currentClass?.id && !!student?.id,
+  });
+
+  // Fetch available classes for transfer
+  const { data: availableClasses, isLoading: loadingClasses } = useQuery<any[]>({
+    queryKey: ["/api/classes"],
+    enabled: isOpen,
+  });
+
+  // Fetch all fee packages to resolve class fee packages
+  const { data: allFeePackages } = useQuery<any[]>({
+    queryKey: ["/api/fee-packages"],
+    enabled: isOpen,
+  });
+
+  const { data: promotionOptions = [] } = useQuery<any[]>({
+    queryKey: ["/api/finance/promotions", { type: "promotion" }],
+    queryFn: () => apiRequest("GET", "/api/finance/promotions?type=promotion").then((response) => response.json()),
+    enabled: isOpen,
+  });
+
+  const transferAsOfDate = format(new Date(), "yyyy-MM-dd");
+  const { data: availableVouchers = [] } = useQuery<any[]>({
+    queryKey: ["/api/finance/vouchers/available", student?.id, transferAsOfDate],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        studentId: student.id,
+        asOfDate: transferAsOfDate,
+      });
+      return apiRequest("GET", `/api/finance/vouchers/available?${params}`).then((response) => response.json());
+    },
+    enabled: isOpen && Boolean(student?.id),
+    staleTime: 15_000,
+  });
+
+  const promotionOptionsWithVouchers = [...promotionOptions, ...availableVouchers];
+
+  // Filter classes inside the target-class picker.
+  const filteredClasses = availableClasses?.filter(
+    (c) =>
+      c.id !== currentClass?.id &&
+      (c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.classCode.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
+  const hasTransferSchedule = (classItem: any) => Number(classItem?.totalSessions ?? 0) > 0;
+
+  const isTransferableSourceSession = (session: any) =>
+    session.status !== "transferred" && session.status !== "cancelled";
+  const isPastTransferSession = (session: any) => {
+    const sessionDate = session.classSession?.sessionDate ?? session.sessionDate;
+    return Boolean(sessionDate && isPastCenterDate(sessionDate, today));
+  };
+
+  // Fetch sessions for the selected target class
+  const { data: targetSessions, isLoading: loadingTarget } = useQuery<any[]>({
+    queryKey: ["/api/classes", selectedToClassId, "sessions"],
+    enabled: !!selectedToClassId,
+  });
+
+  const { data: targetStudentSessions = [], isLoading: loadingTargetStudentSessions } = useQuery<any[]>({
+    queryKey: ["/api/classes", selectedToClassId, "student", student?.id, "sessions"],
+    enabled: !!selectedToClassId && !!student?.id,
+  });
+  const targetDataLoading = loadingTarget || loadingTargetStudentSessions;
+  const targetExistingSessionIds = new Set(
+    targetStudentSessions
+      .filter((session) =>
+        session.status !== "transferred"
+        && session.status !== "cancelled",
+      )
+      .map((session) => session.classSessionId),
+  );
+  const selectableTargetSessions = (targetSessions ?? []).filter((session) =>
+    session.sessionIndex != null
+    && session.sessionDate
+    && session.status === "scheduled"
+    && !targetExistingSessionIds.has(session.id)
+    && (canRunPast || !isPastTransferSession(session)),
+  );
+  const targetAvailableSessions = (targetSessions ?? []).filter((session) => {
+    const sessionIndex = Number(session.sessionIndex);
+    return Number.isFinite(sessionIndex)
+      && sessionIndex >= Number(toSessionIndex)
+      && session.status === "scheduled"
+      && !targetExistingSessionIds.has(session.id)
+      && (canRunPast || !isPastTransferSession(session));
+  });
+  const targetAvailableCount = targetAvailableSessions.length;
+  const currentAvailableSessionCount = (currentSessions ?? []).filter((session) => {
+    const sessionIndex = Number(session.classSession?.sessionIndex ?? session.sessionIndex);
+    return isTransferableSourceSession(session)
+      && Number.isFinite(sessionIndex)
+      && sessionIndex >= Number(fromSessionIndex)
+      && (canRunPast || !isPastTransferSession(session));
+  }).length;
+  const sourceSessionsForTransfer = (currentSessions ?? [])
+    .filter((session) => isTransferableSourceSession(session)
+      && Number(session.classSession?.sessionIndex ?? session.sessionIndex) >= Number(fromSessionIndex))
+    .sort((left, right) =>
+      Number(left.classSession?.sessionIndex ?? left.sessionIndex)
+      - Number(right.classSession?.sessionIndex ?? right.sessionIndex),
+    )
+    .slice(0, transferCount);
+  const targetSessionsForTransfer = (targetSessions ?? [])
+    .filter((session) => Number(session.sessionIndex) >= Number(toSessionIndex)
+      && session.status === "scheduled"
+      && !targetExistingSessionIds.has(session.id))
+    .sort((left, right) => Number(left.sessionIndex) - Number(right.sessionIndex))
+    .slice(0, targetTransferCount);
+
+  useEffect(() => {
+    if (!currentSessions?.length || canRunPast) return;
+    const currentIndex = Number(form.getValues("fromSessionIndex"));
+    const selectedSession = currentSessions.find(
+      (session) => Number(session.classSession?.sessionIndex ?? session.sessionIndex) === currentIndex,
+    );
+    if (!selectedSession || !isPastTransferSession(selectedSession)) return;
+    const firstAvailable = currentSessions
+      .filter((session) => isTransferableSourceSession(session) && !isPastTransferSession(session))
+      .sort((left, right) =>
+        Number(left.classSession?.sessionIndex ?? left.sessionIndex)
+        - Number(right.classSession?.sessionIndex ?? right.sessionIndex),
+      )[0];
+    const nextIndex = firstAvailable?.classSession?.sessionIndex ?? firstAvailable?.sessionIndex;
+    if (nextIndex != null) form.setValue("fromSessionIndex", Number(nextIndex), { shouldValidate: false });
+  }, [currentSessions, canRunPast, today, form]);
+
+  useEffect(() => {
+    if (!selectedToClassId || targetDataLoading || selectableTargetSessions.length === 0) return;
+    const selectedSession = (targetSessions ?? []).find(
+      (session) => Number(session.sessionIndex) === Number(toSessionIndex),
+    );
+    const selectedSessionIsAvailable =
+      selectedSession?.status === "scheduled"
+      && !targetExistingSessionIds.has(selectedSession.id)
+      && (canRunPast || !isPastTransferSession(selectedSession));
+    if (!selectedSessionIsAvailable) {
+      form.setValue("toSessionIndex", Number(selectableTargetSessions[0].sessionIndex), {
+        shouldValidate: false,
+      });
+    }
+  }, [
+    selectedToClassId,
+    targetSessions,
+    targetStudentSessions,
+    targetDataLoading,
+    toSessionIndex,
+    canRunPast,
+    today,
+    form,
+  ]);
+
+  // Auto-calculate transferCount = number of sessions from selected index to end
+  useEffect(() => {
+    if (!currentSessions || currentSessions.length === 0) return;
+    const idx = Number(fromSessionIndex);
+    if (!idx) return;
+    const remaining = currentSessions.filter((s) => {
+      const sessionIndex = s.classSession?.sessionIndex ?? s.sessionIndex;
+      return isTransferableSourceSession(s)
+        && sessionIndex != null
+        && Number(sessionIndex) >= idx
+        && (canRunPast || !isPastTransferSession(s));
+    }).length;
+    if (remaining > 0) {
+      form.setValue("transferCount", remaining, { shouldValidate: false });
+    }
+  }, [fromSessionIndex, currentSessions, canRunPast, today]);
+
+  useEffect(() => {
+    if (!selectedToClassId || targetDataLoading || targetAvailableCount <= 0) return;
+    const currentValue = Number(form.getValues("targetTransferCount") || 0);
+    const suggestedValue = Math.min(Math.max(transferCount, 1), targetAvailableCount);
+    const nextValue = targetTransferCountManuallyEdited
+      ? Math.min(currentValue, targetAvailableCount)
+      : suggestedValue;
+    if (currentValue !== nextValue) {
+      form.setValue("targetTransferCount", nextValue, { shouldValidate: false });
+    }
+  }, [
+    selectedToClassId,
+    toSessionIndex,
+    targetAvailableCount,
+    targetDataLoading,
+    transferCount,
+    targetTransferCountManuallyEdited,
+    form,
+  ]);
+
+  // Default the editable denominator from invoice allocations when available,
+  // then the source package, and finally the enrolled session count.
+  useEffect(() => {
+    if (!isOpen || !currentClass?.id || !student?.id) return;
+    const sourceSessions = (currentSessions ?? []).filter(isTransferableSourceSession);
+    const registeredCount = sourceSessions.length;
+    const sourcePackage = sourceSessions.find((session) => session.feePackage)?.feePackage;
+    const invoiceSessionCount = sourceSessions.filter(
+      (session) => session.pricing?.hasInvoiceAllocation,
+    ).length;
+    const packageSessionCount = invoiceSessionCount > 0
+      ? invoiceSessionCount
+      : getPackageSessionCount(sourcePackage, registeredCount);
+    if (packageSessionCount > 0) {
+      setActualSessionCount(packageSessionCount);
+    }
+  }, [isOpen, currentClass?.id, student?.id, currentSessions]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setTransferFeeAdjustmentInput("");
+      setExcludeSourceSurcharge(true);
+      setCurrentPricingSource("invoice");
+    }
+  }, [isOpen, student?.id, currentClass?.id]);
+
+  useEffect(() => {
+    setActiveDiscountTarget(null);
+    setDiscountSearch("");
+    setCurrentPromotionKeys([]);
+    setCurrentPromotionRows([]);
+  }, [isOpen, student?.id, currentClass?.id]);
+
+  // Reset target package when class changes
+  useEffect(() => {
+    setSelectedTargetPackageId("");
+    setTargetPromotionKeys([]);
+    setTargetPromotionRows([]);
+    setActiveDiscountTarget((target) => target === "target" ? null : target);
+    setOpenDiscountPromotionPicker(null);
+    setTargetTransferCountManuallyEdited(false);
+    setTransferFeeAdjustmentInput("");
+    form.setValue("targetTransferCount", 1, { shouldValidate: false });
+  }, [selectedToClassId, form]);
+
+  // Auto-select fee package of target class (use class's feePackageId or first from course)
+  const targetClass = availableClasses?.find((c) => c.id === selectedToClassId);
+  const targetFeePackages: any[] = (() => {
+    if (!targetClass || !allFeePackages) return [];
+    const byCourse = targetClass.courseId
+      ? allFeePackages.filter((p) => p.courseId === targetClass.courseId)
+      : [];
+    if (byCourse.length > 0) return byCourse;
+    // Fallback: if class has a direct feePackageId, include that single package
+    if (targetClass.feePackageId) {
+      const direct = allFeePackages.find((p) => p.id === targetClass.feePackageId);
+      return direct ? [direct] : [];
+    }
+    return [];
+  })();
+
+  useEffect(() => {
+    if (!selectedToClassId) return;
+    if (targetFeePackages.length > 0) {
+      // Pre-select the class's own feePackageId if available, else first package
+      const defaultPkg = targetClass?.feePackageId
+        ? targetFeePackages.find((p) => p.id === targetClass.feePackageId)
+        : null;
+      setSelectedTargetPackageId(defaultPkg?.id ?? targetFeePackages[0].id);
+    }
+  }, [selectedToClassId, targetFeePackages.length]);
+
+  useEffect(() => {
+    setTargetPromotionKeys([]);
+    setTargetPromotionRows([]);
+    setOpenDiscountPromotionPicker(null);
+  }, [selectedTargetPackageId]);
+
+  const getPromotionRows = (target: "current" | "target") =>
+    target === "current" ? currentPromotionRows : targetPromotionRows;
+
+  const getPromotionKeys = (target: "current" | "target") =>
+    target === "current" ? currentPromotionKeys : targetPromotionKeys;
+
+  const setPromotionRows = (
+    target: "current" | "target",
+    updater: (rows: TransferAdjustmentRow[]) => TransferAdjustmentRow[],
+  ) => {
+    if (target === "current") setCurrentPromotionRows(updater);
+    else setTargetPromotionRows(updater);
+  };
+
+  const setPromotionKeys = (target: "current" | "target", keys: string[]) => {
+    if (target === "current") setCurrentPromotionKeys(keys);
+    else setTargetPromotionKeys(keys);
+  };
+
+  const collectPromotionKeys = (rows: TransferAdjustmentRow[]) =>
+    Array.from(new Set(rows.map((row) => row.optionKey).filter((key): key is string => Boolean(key))));
+
+  const ensurePromotionRows = (
+    keys: string[],
+    rows: TransferAdjustmentRow[],
+    target: "current" | "target",
+  ): TransferAdjustmentRow[] => {
+    const representedKeys = new Set(rows.map((row) => row.optionKey).filter(Boolean));
+    const keyRows = keys
+      .filter((key) => !representedKeys.has(key))
+      .map((key, index) => ({
+        id: `transfer-${target}-promotion-option-${index}-${key}`,
+        optionKey: key,
+        valueType: "amount" as const,
+        value: 0,
+      }));
+    if (rows.length > 0 || keyRows.length > 0) return [...rows, ...keyRows];
+    return [{
+      id: `transfer-${target}-promotion-blank-${Date.now()}`,
+      valueType: "amount",
+      value: 0,
+    }];
+  };
+
+  const openDiscountPicker = (target: "current" | "target") => {
+    if (target === "target" && !selectedTargetPackage) return;
+    setPromotionRows(target, (rows) => ensurePromotionRows(getPromotionKeys(target), rows, target));
+    setDiscountSearch("");
+    setOpenDiscountPromotionPicker(null);
+    setActiveDiscountTarget(target);
+  };
+
+  const addPromotionRow = () => {
+    if (!activeDiscountTarget) return;
+    setPromotionRows(activeDiscountTarget, (rows) => [
+      ...rows,
+      {
+        id: `transfer-${activeDiscountTarget}-promotion-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        valueType: "amount",
+        value: 0,
+      },
+    ]);
+  };
+
+  const updatePromotionRow = (
+    rowId: string,
+    patch: Partial<TransferAdjustmentRow>,
+  ) => {
+    if (!activeDiscountTarget) return;
+    setPromotionRows(activeDiscountTarget, (rows) =>
+      rows.map((row) => row.id === rowId ? { ...row, ...patch } : row),
+    );
+  };
+
+  const selectPromotionOption = (rowId: string, optionKey: string) => {
+    if (!activeDiscountTarget) return;
+    const nextRows = getPromotionRows(activeDiscountTarget).map((row) =>
+      row.id === rowId ? { ...row, optionKey } : row,
+    );
+    setPromotionRows(activeDiscountTarget, () => nextRows);
+    setPromotionKeys(activeDiscountTarget, collectPromotionKeys(nextRows));
+  };
+
+  const removePromotionRow = (rowId: string) => {
+    if (!activeDiscountTarget) return;
+    const nextRows = getPromotionRows(activeDiscountTarget).filter((row) => row.id !== rowId);
+    setPromotionRows(activeDiscountTarget, () => nextRows);
+    setPromotionKeys(activeDiscountTarget, collectPromotionKeys(nextRows));
+  };
+
+  const getRowsWithCreatedPromotion = (
+    target: "current" | "target",
+    rows: TransferAdjustmentRow[],
+    created: any,
+  ) => {
+    const blankRow = rows.find((row) => !row.optionKey);
+    return blankRow
+      ? rows.map((row) => row.id === blankRow.id ? { ...row, optionKey: created.id } : row)
+      : [
+          ...rows,
+          {
+            id: `transfer-${target}-promotion-created-${created.id}`,
+            optionKey: created.id,
+            valueType: "amount" as const,
+            value: 0,
+          },
+        ];
+  };
+
+  const updateCreatedPromotionSelection = (created: any) => {
+    const target = quickCreatePromotionTarget;
+    const nextRows = getRowsWithCreatedPromotion(target, getPromotionRows(target), created);
+    setPromotionRows(target, () => nextRows);
+    setPromotionKeys(target, collectPromotionKeys(nextRows));
+  };
+
+  const createPromotionMutation = useMutation({
+    mutationFn: async (data: {
+      code: string;
+      name: string;
+      valueAmount: string | null;
+      valueType: "percent" | "vnd";
+      quantity: number | null;
+      fromDate: string | null;
+      toDate: string | null;
+    }) => {
+      const response = await apiRequest("POST", "/api/finance/promotions", {
+        ...data,
+        type: "promotion",
+      });
+      return response.json();
+    },
+    onSuccess: (created: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/finance/promotions"] });
+      if (created?.id) {
+        updateCreatedPromotionSelection(created);
+      }
+      setQuickCreatePromotionOpen(false);
+      toast({ title: "Đã thêm giảm trừ", description: "Giảm trừ mới đã được chọn." });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Không thể thêm giảm trừ",
+        description: error.message || "Vui lòng thử lại",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Current class fee info from student's sessions
+  const activeCurrentSessions = (currentSessions ?? []).filter(isTransferableSourceSession);
+  const invoicePricedSessions = activeCurrentSessions.filter(
+    (session) => session.pricing?.hasInvoiceAllocation,
+  );
+  const hasCurrentInvoicePricing = invoicePricedSessions.length > 0;
+  const currentInvoicePricing = activeCurrentSessions.reduce(
+    (total, session) => {
+      const pricing = session.pricing;
+      if (!pricing?.hasInvoiceAllocation) return total;
+      total.invoiceSubtotal += Number(pricing.allocatedFee) || 0;
+      total.surcharge += Number(pricing.allocatedSurchargeFee) || 0;
+      total.discount += Number(pricing.discountAmount) || 0;
+      for (const name of pricing.invoicePackageNames ?? []) {
+        if (name && !total.packageNames.includes(name)) total.packageNames.push(name);
+      }
+      for (const type of pricing.invoicePackageTypes ?? []) {
+        if (type && !total.packageTypes.includes(type)) total.packageTypes.push(type);
+      }
+      for (const code of pricing.invoiceCodes ?? []) {
+        if (code && !total.invoiceCodes.includes(code)) total.invoiceCodes.push(code);
+      }
+      return total;
+    },
+    {
+      invoiceSubtotal: 0,
+      surcharge: 0,
+      discount: 0,
+      packageNames: [] as string[],
+      packageTypes: [] as string[],
+      invoiceCodes: [] as string[],
+    },
+  );
+  const currentSession = activeCurrentSessions.find((s) => {
+    const idx = s.classSession?.sessionIndex ?? s.sessionIndex;
+    return Number(idx) === Number(fromSessionIndex);
+  }) ?? activeCurrentSessions[0];
+  const sourceClass = availableClasses?.find((classItem) => classItem.id === currentClass?.id);
+  const assignedSourcePackageId = sourceClass?.feePackageId ?? currentClass?.feePackageId;
+  const currentFeePackage = assignedSourcePackageId
+    ? allFeePackages?.find((feePackage) => feePackage.id === assignedSourcePackageId)
+      ?? (currentSession?.feePackage?.id === assignedSourcePackageId ? currentSession.feePackage : null)
+    : sourceClass?.feePackage
+      ?? (hasCurrentInvoicePricing ? null : currentSession?.feePackage);
+  const currentStoredSessionPrice = currentSession ? Number(currentSession.sessionPrice ?? 0) : 0;
+  const currentRegisteredSessionCount = activeCurrentSessions.length;
+  const configuredPackageSessionCount = getPackageSessionCount(
+    currentFeePackage,
+    currentRegisteredSessionCount,
+  );
+  const currentSessionCount = actualSessionCount > 0
+    ? actualSessionCount
+    : hasCurrentInvoicePricing
+      ? invoicePricedSessions.length
+      : configuredPackageSessionCount;
+  const configuredPackageSessionPrice = getPackageBaseSessionPrice(
+    currentFeePackage,
+    currentStoredSessionPrice,
+    configuredPackageSessionCount,
+  );
+  const packageBaseTotal = getPackageBaseTotal(
+    currentFeePackage,
+    configuredPackageSessionPrice * currentSessionCount,
+    currentSessionCount,
+  );
+  const invoiceBaseTotal = Math.max(
+    0,
+    currentInvoicePricing.invoiceSubtotal
+      + currentInvoicePricing.discount
+      - currentInvoicePricing.surcharge,
+  );
+  const sourceComparisonSessionCount = invoicePricedSessions.length
+    || currentRegisteredSessionCount
+    || configuredPackageSessionCount;
+  const classPackageComparisonPrice = getPackageBaseSessionPrice(
+    currentFeePackage,
+    currentStoredSessionPrice,
+    sourceComparisonSessionCount,
+  );
+  const classPackageComparisonTotal = getPackageBaseTotal(
+    currentFeePackage,
+    classPackageComparisonPrice * sourceComparisonSessionCount,
+    sourceComparisonSessionCount,
+  );
+  const packagesMatch = Boolean(
+    hasCurrentInvoicePricing
+    && currentFeePackage
+    && areInvoiceAndClassPackagesEquivalent({
+      invoicePackageNames: currentInvoicePricing.packageNames,
+      invoicePackageTypes: currentInvoicePricing.packageTypes,
+      classPackageName: currentFeePackage.name,
+      classPackageType: currentFeePackage.type,
+      invoiceBaseTotal,
+      classBaseTotal: classPackageComparisonTotal,
+    }),
+  );
+  const hasDifferentPricingSources = Boolean(
+    hasCurrentInvoicePricing && currentFeePackage && !packagesMatch,
+  );
+  const isInvoicePricingSelected = hasCurrentInvoicePricing
+    && (!hasDifferentPricingSources || currentPricingSource === "invoice");
+  const currentDisplayFeePackage = isInvoicePricingSelected
+    ? {
+        name: currentInvoicePricing.packageNames.join(", ") || "Gói trên hóa đơn",
+        type: currentInvoicePricing.packageTypes.length === 1
+          ? currentInvoicePricing.packageTypes[0]
+          : currentFeePackage?.type,
+      }
+    : currentFeePackage;
+  const currentBaseTotal = isInvoicePricingSelected ? invoiceBaseTotal : packageBaseTotal;
+  const currentBaseSessionPrice = currentSessionCount > 0
+    ? currentBaseTotal / currentSessionCount
+    : configuredPackageSessionPrice;
+  const usePackagePriceFallback = !isInvoicePricingSelected
+    || (!!currentFeePackage
+      && !hasExistingSessionTuition(activeCurrentSessions, configuredPackageSessionPrice));
+  const currentDiscountPerSession = isInvoicePricingSelected
+    ? Number(currentSession?.pricing?.discountAmount ?? 0)
+    : 0;
+  // Keep the invoice's total discount stable when the operator changes the
+  // editable session count; the source allocation was created for the
+  // student's original registered session count.
+  const currentAutomaticDiscountAmount = isInvoicePricingSelected
+    ? currentInvoicePricing.discount
+    : 0;
+  const hasManuallyAdjustedInvoiceSessionCount =
+    isInvoicePricingSelected
+    && actualSessionCount > 0
+    && actualSessionCount !== invoicePricedSessions.length;
+  const currentPromotionResult = applyTransferPromotions(
+    currentBaseTotal,
+    currentPromotionKeys,
+    currentPromotionRows,
+    promotionOptionsWithVouchers,
+  );
+  const currentDiscountAmount = currentAutomaticDiscountAmount > 0
+    ? currentAutomaticDiscountAmount
+    : currentPromotionResult.adjustmentAmount;
+  const currentDiscountPercent = isInvoicePricingSelected
+    ? currentSession?.pricing?.discountPercent ?? null
+    : null;
+  const currentAllocatedSessionPrice = isInvoicePricingSelected
+    ? Number(currentSession?.pricing?.allocatedFee ?? 0)
+    : 0;
+  const hasCurrentPackagePrice = !!currentFeePackage && currentBaseSessionPrice > 0;
+  const currentNetTotal = Math.max(0, currentBaseTotal - currentDiscountAmount);
+  const currentTransferNetTotal = Math.max(0, currentBaseTotal - currentAutomaticDiscountAmount);
+  const fallbackCurrentSessionPrice = isInvoicePricingSelected && currentSession?.sessionSource === "transfer"
+    ? currentStoredSessionPrice
+    : currentSessionCount > 0 && (currentAllocatedSessionPrice > 0 || currentTransferNetTotal > 0)
+    ? Number((currentTransferNetTotal / currentSessionCount).toFixed(2))
+    : hasCurrentPackagePrice
+    ? Math.max(0, currentBaseSessionPrice - currentDiscountPerSession)
+    : currentStoredSessionPrice;
+  const getSourceSurchargeFee = (session: any) => Math.max(
+    0,
+    Number(
+      session?.classTransferSurchargeFee
+        ?? session?.pricing?.allocatedSurchargeFee
+        ?? 0,
+    ) || 0,
+  );
+  const getEffectiveSourceSessionPrice = (
+    session: any,
+    excludeSurcharge = excludeSourceSurcharge,
+  ) => {
+    const surchargeToExclude = isInvoicePricingSelected && excludeSurcharge
+      ? getSourceSurchargeFee(session)
+      : 0;
+    const allocatedFee = session?.pricing?.allocatedFee;
+    if (allocatedFee != null && Number.isFinite(Number(allocatedFee))) {
+      return Math.max(0, Number(allocatedFee) - surchargeToExclude);
+    }
+    if (session?.sessionPrice != null && Number.isFinite(Number(session.sessionPrice))) {
+      return Math.max(0, Number(session.sessionPrice) - surchargeToExclude);
+    }
+    const sessionDiscount = Number(session?.pricing?.discountAmount ?? currentDiscountPerSession);
+    const fallback = currentBaseSessionPrice > 0
+      ? currentBaseSessionPrice - sessionDiscount
+      : fallbackCurrentSessionPrice;
+    return Math.max(0, (Number.isFinite(fallback) ? fallback : 0) - surchargeToExclude);
+  };
+  const currentSessionPrice = currentSession
+    ? isInvoicePricingSelected
+      ? hasManuallyAdjustedInvoiceSessionCount
+        ? calculateInvoiceSessionPrice(
+          currentInvoicePricing.invoiceSubtotal,
+          currentInvoicePricing.surcharge,
+          currentSessionCount,
+          excludeSourceSurcharge,
+        )
+        : usePackagePriceFallback
+          ? calculateFirstSessionPriceAfterDiscount(currentNetTotal, currentSessionCount)
+          : getEffectiveSourceSessionPrice(currentSession, excludeSourceSurcharge)
+      : calculateFirstSessionPriceAfterDiscount(currentNetTotal, currentSessionCount)
+    : fallbackCurrentSessionPrice;
+  const applyDiscountedPriceToTransfer =
+    usePackagePriceFallback && currentDiscountAmount > 0;
+  const selectedSourceSessions = activeCurrentSessions
+    .filter((session) => Number(session.classSession?.sessionIndex ?? session.sessionIndex ?? 0) >= Number(fromSessionIndex))
+    .sort((left, right) =>
+      Number(left.classSession?.sessionIndex ?? left.sessionIndex ?? 0)
+      - Number(right.classSession?.sessionIndex ?? right.sessionIndex ?? 0),
+    )
+    .slice(0, transferCount);
+  const selectedSourceSurchargeTotal = isInvoicePricingSelected
+    ? selectedSourceSessions.reduce(
+      (total, session) => total + getSourceSurchargeFee(session),
+      0,
+    )
+    : 0;
+  const currentSurchargeTotal = isInvoicePricingSelected && currentInvoicePricing.surcharge > 0
+    ? currentInvoicePricing.surcharge
+    : isInvoicePricingSelected
+      ? activeCurrentSessions.reduce(
+        (total, session) => total + getSourceSurchargeFee(session),
+        0,
+      )
+      : 0;
+  const exactCurrentTotal = !isInvoicePricingSelected || hasManuallyAdjustedInvoiceSessionCount
+    ? calculatePerSessionTransferTotal(currentSessionPrice, selectedSourceSessions.length)
+    : applyDiscountedPriceToTransfer
+      ? Math.max(
+        0,
+        calculatePerSessionTransferTotal(currentSessionPrice, selectedSourceSessions.length)
+          - (excludeSourceSurcharge ? selectedSourceSurchargeTotal : 0),
+      )
+      : selectedSourceSessions.reduce(
+        (total, session) => total + getEffectiveSourceSessionPrice(session, excludeSourceSurcharge),
+        0,
+      );
+  const currentTotal = roundingMode === "down"
+    ? Math.floor(exactCurrentTotal)
+    : roundingMode === "up"
+    ? Math.ceil(exactCurrentTotal)
+    : exactCurrentTotal;
+  const invoiceCodeLabel = currentInvoicePricing.invoiceCodes.join(", ");
+  const invoicePackageName = currentInvoicePricing.packageNames.join(", ") || "Gói học phí";
+  const invoicePackageType = currentInvoicePricing.packageTypes.length === 1
+    ? currentInvoicePricing.packageTypes[0]
+    : "";
+  const invoicePackageUnitPrice = calculateFirstSessionPriceAfterDiscount(
+    invoiceBaseTotal,
+    sourceComparisonSessionCount,
+  );
+  const invoicePricingOptionLabel = [
+    invoicePackageName,
+    isCoursePackage({ type: invoicePackageType })
+      ? `${formatCurrency(invoiceBaseTotal)}/khóa`
+      : `${formatCurrency(invoicePackageUnitPrice)}/buổi`,
+    invoiceCodeLabel ? `Hóa đơn ${invoiceCodeLabel}` : "Hóa đơn",
+  ].filter(Boolean).join(" · ");
+  const classPricingOptionLabel = [
+    currentFeePackage?.name || "Học phí",
+    isCoursePackage(currentFeePackage)
+      ? `${formatCurrency(classPackageComparisonTotal)}/khóa · ${formatCurrency(classPackageComparisonPrice)}/buổi`
+      : `${formatCurrency(classPackageComparisonPrice)}/buổi`,
+    "Gói lớp/lịch",
+  ].filter(Boolean).join(" · ");
+
+  // Target class fee info
+  const selectedTargetPackage = targetFeePackages.find((p) => p.id === selectedTargetPackageId);
+  const targetPackageSessionCount = getPackageSessionCount(selectedTargetPackage);
+  const targetBaseTotal = getPackageBaseTotal(
+    selectedTargetPackage,
+    getPackageBaseSessionPrice(selectedTargetPackage) * targetPackageSessionCount,
+  );
+  const targetPromotionResult = applyTransferPromotions(
+    targetBaseTotal,
+    targetPromotionKeys,
+    targetPromotionRows,
+    promotionOptionsWithVouchers,
+  );
+  const activeDiscountContext = activeDiscountTarget ?? "target";
+  const activePromotionRows = getPromotionRows(activeDiscountContext);
+  const activeDiscountResult = activeDiscountContext === "current"
+    ? currentPromotionResult
+    : targetPromotionResult;
+  const normalizedDiscountSearch = normalizeSearchText(discountSearch);
+  const filteredDiscountPromotions = promotionOptionsWithVouchers.filter((option: any) =>
+    !normalizedDiscountSearch ||
+    normalizeSearchText(`${option.name ?? ""} ${option.code ?? ""}`).includes(normalizedDiscountSearch),
+  );
+  const targetDiscountAmount = targetPromotionResult.adjustmentAmount;
+  const targetTotalAfterDiscount = targetPromotionResult.finalAmount;
+  const targetSessionPrice = targetPackageSessionCount > 0
+    ? Number((targetTotalAfterDiscount / targetPackageSessionCount).toFixed(2))
+    : getPackageBaseSessionPrice(selectedTargetPackage);
+  const targetTotal = targetSessionPrice * targetTransferCount;
+
+  // The manual transfer fee is a signed adjustment to the automatic difference:
+  // positive increases the amount to collect (or reduces a refund), negative
+  // reduces the amount to collect (or increases a refund).
+  const automaticDiff = targetTotal - currentTotal;
+  const parsedTransferFeeAdjustment = transferFeeAdjustmentInput.trim() === ""
+    ? 0
+    : Number(transferFeeAdjustmentInput);
+  const transferFeeAdjustment = Number.isFinite(parsedTransferFeeAdjustment)
+    ? parsedTransferFeeAdjustment
+    : 0;
+  const diff = automaticDiff + transferFeeAdjustment;
+  const refundAmount = Number(Math.abs(diff).toFixed(2));
+  const shouldRefundToDeposit = diff < 0 && refundMethod === "deposit";
+
+  const { data: feeWalletData, isLoading: loadingFeeWallet } = useQuery<{
+    summary?: { hocPhi?: number };
+  }>({
+    queryKey: ["/api/students", student?.id, "fee-wallet"],
+    enabled: isOpen && !!student?.id && shouldRefundToDeposit,
+  });
+  const tuitionWalletBalance = Number(feeWalletData?.summary?.hocPhi ?? 0);
+  const insufficientTuitionWallet =
+    shouldRefundToDeposit &&
+    !loadingFeeWallet &&
+    refundAmount > tuitionWalletBalance + 0.000001;
+
+  // Session info for invoice note
+  const getDayName = (day: number) => {
+    const days = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+    return days[day] || "";
+  };
+
+  const getFromSessionLabel = () => {
+    const s = activeCurrentSessions.find((s) => {
+      const idx = s.classSession?.sessionIndex ?? s.sessionIndex;
+      return Number(idx) === Number(fromSessionIndex);
+    });
+    if (!s) return `Buổi ${fromSessionIndex}`;
+    const date = s.classSession?.sessionDate ?? s.sessionDate;
+    return `Buổi ${fromSessionIndex}: ${getDayName(new Date(date).getDay())}, ${format(new Date(date), "dd/MM/yyyy")}`;
+  };
+
+  const getToSessionLabel = () => {
+    const s = targetSessions?.find((s) => Number(s.sessionIndex) === Number(toSessionIndex));
+    if (!s) return `Buổi ${toSessionIndex}`;
+    return `Buổi ${toSessionIndex}: ${getDayName(new Date(s.sessionDate).getDay())}, ${format(new Date(s.sessionDate), "dd/MM/yyyy")}`;
+  };
+
+  const buildInvoiceNote = () => {
+    const fromName = `${currentClass.name}`;
+    const toName = `${targetClass?.name || ""}`;
+    const fromLabel = getFromSessionLabel();
+    const toLabel = getToSessionLabel();
+    const suffix = automaticDiff > 0
+      ? `Do lớp ${toName} học phí cao hơn`
+      : automaticDiff < 0
+      ? `Do lớp ${toName} học phí thấp hơn`
+      : `Do học phí 2 lớp bằng nhau`;
+    const adjustmentNote = !autoInvoice && transferFeeAdjustment !== 0
+      ? ` Phí chuyển lớp điều chỉnh: ${formatSignedCurrency(transferFeeAdjustment)}.`
+      : "";
+    const sourcePriceLabel = isInvoicePricingSelected
+      ? `Hóa đơn${invoiceCodeLabel ? ` ${invoiceCodeLabel}` : ""}`
+      : `Gói lớp/lịch${currentFeePackage?.name ? ` ${currentFeePackage.name}` : ""}`;
+    const packagePriceDetails = selectedTargetPackage
+      ? ` Nguồn tính giá lớp cũ: ${sourcePriceLabel}; tổng giá thực tế của ${transferCount} buổi được chuyển = ${formatCurrency(currentTotal)}; gói lớp mới: ${selectedTargetPackage.name}, ${formatCurrency(targetSessionPrice)}/buổi × ${targetTransferCount} = ${formatCurrency(targetTotal)}.`
+      : "";
+    const finalAmountNote = diff === 0
+      ? " Sau điều chỉnh không phát sinh thu hoặc hoàn thêm."
+      : ` Số tiền ${diff < 0 ? "hoàn" : "thu"} sau điều chỉnh: ${formatCurrency(Math.abs(diff))}.`;
+
+    if (diff >= 0) {
+      return `Thu tiền Chuyển lớp ${fromName}, ${transferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${targetTransferCount} buổi bắt đầu từ ${toLabel}. ${suffix}.${packagePriceDetails}${adjustmentNote}${finalAmountNote}`;
+    } else {
+      return `Hoàn tiền Chuyển lớp ${fromName}, ${transferCount} buổi bắt đầu từ ${fromLabel} Sang Lớp ${toName}, ${targetTransferCount} buổi bắt đầu từ ${toLabel}. ${suffix}.${packagePriceDetails}${adjustmentNote}${finalAmountNote}`;
+    }
+  };
+
+  const createInvoiceMutation = useMutation({
+    mutationFn: async (invoiceData: any) => {
+      await apiRequest("POST", "/api/finance/invoices", invoiceData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
+    },
+  });
+
+  const transferMutation = useMutation({
+    mutationFn: async (values: TransferFormValues) => {
+      await apiRequest("POST", "/api/students/transfer-class", {
+        ...values,
+        targetPackageId: selectedTargetPackage?.id,
+        targetSessionPrice: selectedTargetPackage
+          ? Number(targetSessionPrice.toFixed(2))
+          : undefined,
+        sourcePricingMode: isInvoicePricingSelected ? "invoice" : "class",
+        sourceSessionPriceOverride:
+          !isInvoicePricingSelected
+          || hasManuallyAdjustedInvoiceSessionCount
+          || applyDiscountedPriceToTransfer
+          ? Number(currentSessionPrice.toFixed(2))
+          : undefined,
+        excludeSourceSurcharge: isInvoicePricingSelected && excludeSourceSurcharge,
+        roundingMode,
+        refundToDepositAmount: shouldRefundToDeposit ? refundAmount : undefined,
+        refundDescription: shouldRefundToDeposit ? buildInvoiceNote() : undefined,
+      });
+    },
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${currentClass?.id}/active-students`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${currentClass?.id}/sessions`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${currentClass?.id}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/classes", currentClass?.id] });
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${selectedToClassId}/active-students`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${selectedToClassId}/sessions`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/classes/${selectedToClassId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/classes", selectedToClassId] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/classes", selectedToClassId, "student", student?.id, "sessions"],
+      });
+      queryClient.invalidateQueries({
+        predicate: (q) => {
+          const key = q.queryKey[0];
+          return typeof key === "string" && key.startsWith("/api/class-sessions/") && key.endsWith("/student-sessions");
+        }
+      });
+
+      if (shouldRefundToDeposit) {
+        queryClient.invalidateQueries({ queryKey: ["/api/students", student.id, "fee-wallet"] });
+      } else if (autoInvoice && refundAmount > 0) {
+        const invoiceType = diff < 0 ? "Chi" : "Thu";
+        const category = diff < 0 ? invoiceCategory : "Học phí";
+        const amount = Math.round(Math.abs(diff));
+        await createInvoiceMutation.mutateAsync({
+          type: invoiceType,
+          studentId: student.id,
+          classId: selectedToClassId,
+          locationId: targetClass?.locationId || undefined,
+          category,
+          totalAmount: amount.toString(),
+          grandTotal: amount.toString(),
+          paidAmount: "0",
+          status: "unpaid",
+          description: buildInvoiceNote(),
+          items: [{
+            packageId: selectedTargetPackage?.id ?? null,
+            packageName: selectedTargetPackage?.name ?? "Chênh lệch chuyển lớp",
+            // This is only the net adjustment, not tuition for a set of
+            // sessions, so it must not be distributed across class sessions.
+            packageType: null,
+            unitPrice: amount.toString(),
+            quantity: 1,
+            promotionKeys: [],
+            surchargeKeys: [],
+            promotionAmount: "0",
+            surchargeAmount: "0",
+            subtotal: amount.toString(),
+            category,
+          }],
+          paymentSchedule: [],
+        });
+      }
+
+      queryClient.invalidateQueries({
+        queryKey: [`/api/students/${student.id}/classes`],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/students", student.id, "fee-wallet"],
+      });
+
+      toast({
+        title: "Thành công",
+        description: shouldRefundToDeposit
+          ? "Đã chuyển lớp và chuyển tiền hoàn vào ví cọc"
+          : autoInvoice
+          ? "Đã chuyển lớp và tạo hoá đơn thành công"
+          : "Đã chuyển lớp cho học viên thành công",
+      });
+      onClose();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Lỗi",
+        description: error.message || "Không thể chuyển lớp",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const onSubmit = (values: TransferFormValues) => {
+    if (!canRunPast && (
+      sourceSessionsForTransfer.some(isPastTransferSession)
+      || targetSessionsForTransfer.some(isPastTransferSession)
+    )) {
+      toast({
+        title: "Không thể chuyển buổi học trong quá khứ",
+        description: "Hãy chọn mốc chuyển bắt đầu từ hôm nay hoặc một ngày sau.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (
+      currentAvailableSessionCount > 0
+      && values.transferCount > currentAvailableSessionCount
+    ) {
+      toast({
+        title: "Số buổi chuyển không hợp lệ",
+        description: `Từ buổi ${fromSessionIndex} chỉ còn ${currentAvailableSessionCount} buổi có thể chuyển khỏi lớp cũ.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (selectedToClassId && !targetDataLoading && targetAvailableCount <= 0) {
+      toast({
+        title: "Không thể chuyển lớp",
+        description: "Lớp mới không còn buổi chưa có mặt từ buổi bắt đầu đã chọn.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (
+      selectedToClassId
+      && !targetDataLoading
+      && values.targetTransferCount > targetAvailableCount
+    ) {
+      toast({
+        title: "Số buổi lớp mới không hợp lệ",
+        description: `Từ buổi ${toSessionIndex} chỉ còn ${targetAvailableCount} buổi có thể chuyển vào lớp mới.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (selectedToClassId && targetDataLoading) {
+      toast({
+        title: "Đang tải lịch lớp mới",
+        description: "Vui lòng chờ hệ thống tải xong lịch lớp mới rồi thử lại.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (shouldRefundToDeposit && (loadingFeeWallet || insufficientTuitionWallet)) {
+      toast({
+        title: "Không thể chuyển lớp",
+        description: loadingFeeWallet
+          ? "Đang kiểm tra số dư ví học phí, vui lòng thử lại sau"
+          : `Ví học phí không đủ số dư để hoàn ${formatCurrency(refundAmount)}`,
+        variant: "destructive",
+      });
+      return;
+    }
+    transferMutation.mutate(values);
+  };
+
+  const isPending = transferMutation.isPending || createInvoiceMutation.isPending;
+
+  if (!student || !currentClass) return null;
+
+  const showFinancial = selectedToClassId
+    && (currentTotal > 0 || targetTotal > 0)
+    && targetTransferCount > 0;
+
+  return (
+    <>
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="w-screen h-screen max-w-none max-h-screen overflow-y-auto rounded-none">
+        <DialogHeader>
+          <DialogTitle>Chuyển lớp: {student.fullName}</DialogTitle>
+        </DialogHeader>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* LỚP HIỆN TẠI */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg font-semibold text-primary">LỚP HIỆN TẠI</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-1 gap-x-4 gap-y-1 text-sm md:grid-cols-[1.25fr_1.5fr_0.75fr]">
+                    <p
+                      className="min-w-0 truncate text-foreground"
+                      title={`${currentClass.name} (${currentClass.classCode})`}
+                    >
+                      <span className="font-semibold">Tên lớp:</span>{" "}
+                      <span>{currentClass.name} ({currentClass.classCode})</span>
+                    </p>
+                    <p
+                      className="min-w-0 truncate text-foreground"
+                      title={currentClass.teacherName || "Chưa gán"}
+                    >
+                      <span className="font-semibold">Giáo viên:</span>{" "}
+                      <span>{currentClass.teacherName || "Chưa gán"}</span>
+                    </p>
+                    <p className="min-w-0 truncate text-foreground">
+                      <span className="font-semibold">Chu kỳ:</span>{" "}
+                      <span>{currentClass.weekdays?.map(getDayName).join(", ") || "—"}</span>
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="fromSessionIndex"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Chọn buổi bắt đầu chuyển</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value?.toString()}
+                            disabled={loadingCurrent}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-from-session">
+                                <SelectValue placeholder="Chọn buổi học" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {currentSessions?.filter(isTransferableSourceSession).map((s) => {
+                                const sessionIndex = s.classSession?.sessionIndex ?? s.sessionIndex;
+                                const sessionDate = s.classSession?.sessionDate ?? s.sessionDate;
+                                if (sessionIndex == null || !sessionDate) return null;
+                                const pastRestricted = !canRunPast && isPastTransferSession(s);
+                                return (
+                                  <SelectItem
+                                    key={s.id}
+                                    value={sessionIndex.toString()}
+                                    disabled={pastRestricted}
+                                    className={pastRestricted ? "opacity-50" : undefined}
+                                  >
+                                    Buổi {sessionIndex}: {getDayName(new Date(sessionDate).getDay())}, {format(new Date(sessionDate), "dd/MM/yyyy")}
+                                  </SelectItem>
+                                );
+                              })}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="transferCount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Số buổi chuyển</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              {...field}
+                              min={1}
+                              max={currentAvailableSessionCount > 0 ? currentAvailableSessionCount : undefined}
+                              onChange={(event) => {
+                                const rawValue = Number(event.target.value);
+                                const cappedValue = currentAvailableSessionCount > 0
+                                  ? Math.min(rawValue, currentAvailableSessionCount)
+                                  : rawValue;
+                                field.onChange(Number.isFinite(cappedValue) ? cappedValue : 0);
+                              }}
+                              data-testid="input-transfer-count"
+                            />
+                          </FormControl>
+                          {currentAvailableSessionCount > 0 && (
+                            <p className="text-[11px] text-muted-foreground">
+                              Tối đa {currentAvailableSessionCount} buổi còn lại từ mốc đã chọn.
+                            </p>
+                          )}
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  {/* Fee summary - current class */}
+                  <div className="rounded-md border bg-muted/40 p-3 space-y-1.5 text-sm">
+                    <div className="flex justify-between items-center gap-3">
+                      <span className="text-muted-foreground">Gói học phí:</span>
+                      {hasDifferentPricingSources ? (
+                        <Select
+                          value={currentPricingSource}
+                          onValueChange={(value) => setCurrentPricingSource(value as "invoice" | "class")}
+                        >
+                          <SelectTrigger
+                            className="h-8 min-w-0 max-w-[72%] text-xs"
+                            data-testid="select-current-pricing-source"
+                            aria-label="Chọn nguồn tính giá chuyển lớp"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent align="end">
+                            <SelectItem value="invoice" className="text-xs">
+                              {invoicePricingOptionLabel}
+                            </SelectItem>
+                            <SelectItem value="class" className="text-xs">
+                              {classPricingOptionLabel}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="font-medium text-right">
+                          {currentDisplayFeePackage?.name || "—"}
+                          {packageTypeLabel(currentDisplayFeePackage) && (
+                            <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0">
+                              {packageTypeLabel(currentDisplayFeePackage)}
+                            </Badge>
+                          )}
+                          <Badge variant="secondary" className="ml-2 text-[10px] px-1.5 py-0">
+                            {isInvoicePricingSelected
+                              ? `Hóa đơn${invoiceCodeLabel ? ` ${invoiceCodeLabel}` : ""}`
+                              : "Gói lớp/lịch"}
+                          </Badge>
+                        </span>
+                      )}
+                    </div>
+                    {isInvoicePricingSelected && hasCurrentInvoicePricing && (
+                      <div className="text-right text-[11px] text-muted-foreground">
+                        Hóa đơn học phí: {formatCurrency(currentInvoicePricing.invoiceSubtotal)}
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Học phí:</span>
+                      <span className="font-medium">
+                        {currentBaseTotal > 0 ? formatCurrency(currentBaseTotal) : "—"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">Giảm trừ:</span>
+                      {currentAutomaticDiscountAmount > 0 ? (
+                        <span className="font-medium">
+                          {`${formatCurrency(currentDiscountAmount)}${formatPercent(currentDiscountPercent) ? ` (${formatPercent(currentDiscountPercent)})` : ""}`}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className={cn(
+                            "flex min-w-0 items-center gap-1 rounded px-1.5 py-0.5 text-right text-sm transition-colors",
+                            currentBaseTotal > 0
+                              ? "hover:bg-green-50 hover:text-green-700 dark:hover:bg-green-950/30"
+                              : "cursor-not-allowed text-muted-foreground opacity-60",
+                          )}
+                          onClick={() => openDiscountPicker("current")}
+                          disabled={currentBaseTotal <= 0}
+                          data-testid="button-current-discount"
+                        >
+                          <span className={currentDiscountAmount > 0 ? "font-semibold text-green-600" : "font-medium"}>
+                            {currentDiscountAmount > 0 ? formatCurrency(currentDiscountAmount) : "0đ"}
+                          </span>
+                          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        </button>
+                      )}
+                    </div>
+                    {isInvoicePricingSelected && hasCurrentInvoicePricing && (
+                      <div>
+                        <div className="flex items-center justify-between gap-2 rounded-md border border-amber-300/70 bg-amber-50/60 px-2 py-1.5 dark:bg-amber-950/20">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <label
+                              htmlFor="exclude-source-surcharge"
+                              className="cursor-pointer whitespace-nowrap text-xs font-medium"
+                            >
+                              Tính phụ thu:
+                            </label>
+                            <Switch
+                              id="exclude-source-surcharge"
+                              checked={!excludeSourceSurcharge}
+                              onCheckedChange={(checked) => setExcludeSourceSurcharge(!checked)}
+                              aria-label="Tính phụ thu vào giá trị chuyển lớp"
+                              data-testid="switch-exclude-source-surcharge"
+                            />
+                          </div>
+                          <span className="shrink-0 whitespace-nowrap text-xs font-semibold">
+                            {formatCurrency(excludeSourceSurcharge ? 0 : currentSurchargeTotal)}
+                          </span>
+                        </div>
+                        {currentSurchargeTotal > 0 && (
+                          <p className="mt-1 px-2 text-[11px] text-muted-foreground">
+                            Phụ thu trên hóa đơn: {formatCurrency(currentSurchargeTotal)}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Tiền sau giảm trừ/phụ thu:</span>
+                      <span className="font-medium">
+                        {formatCurrency(
+                          currentNetTotal + (excludeSourceSurcharge ? 0 : currentSurchargeTotal),
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Số buổi đăng ký thực tế:</span>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min={1}
+                          step={1}
+                          value={actualSessionCount > 0 ? actualSessionCount : ""}
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            setActualSessionCount(Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0);
+                          }}
+                          className="h-7 w-24 text-right"
+                          disabled={loadingCurrent}
+                          data-testid="input-actual-session-count"
+                        />
+                        <span className="font-medium">buổi</span>
+                      </div>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Đơn giá/buổi:</span>
+                      <span className="font-medium">
+                        {currentSessionPrice > 0 ? formatCurrency(currentSessionPrice) + "/buổi" : "—"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-t pt-1.5 mt-1">
+                      <span className="font-medium">Thành tiền:</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-foreground">
+                          {transferCount > 0 && selectedSourceSessions.length > 0 ? (
+                            <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                              <span className="text-[11px] font-normal text-muted-foreground whitespace-nowrap">
+                                ({transferCount} buổi theo giá thực tế từng buổi)
+                              </span>
+                              <span>{formatCurrency(currentTotal)}</span>
+                            </span>
+                          ) : "—"}
+                        </span>
+                        {transferCount > 0 && selectedSourceSessions.length > 0 && (
+                          <Select
+                            value={roundingMode}
+                            onValueChange={(value) => setRoundingMode(value as "none" | "down" | "up")}
+                          >
+                            <SelectTrigger
+                              className="h-7 w-[126px] text-xs"
+                              data-testid="select-rounding-mode"
+                            >
+                              <SelectValue placeholder="Làm tròn" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none" className="text-xs">Không làm tròn</SelectItem>
+                              <SelectItem value="down" className="text-xs">Bỏ phần lẻ</SelectItem>
+                              <SelectItem value="up" className="text-xs">Làm tròn lên</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* LỚP MỚI */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg font-semibold text-primary">LỚP MỚI</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="min-h-5" aria-hidden="true" />
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <FormField
+                      control={form.control}
+                      name="toClassId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Chọn lớp mới</FormLabel>
+                          <Popover
+                            open={isTargetClassPickerOpen}
+                            onOpenChange={setIsTargetClassPickerOpen}
+                          >
+                            <PopoverTrigger asChild>
+                              <FormControl>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  role="combobox"
+                                  aria-expanded={isTargetClassPickerOpen}
+                                  className="w-full justify-between font-normal"
+                                  disabled={loadingClasses}
+                                  data-testid="select-to-class"
+                                >
+                                  {targetClass
+                                    ? `${targetClass.name} (${targetClass.classCode})`
+                                    : loadingClasses
+                                    ? "Đang tải danh sách lớp..."
+                                    : "Chọn lớp đích"}
+                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                              </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                              <Command shouldFilter={false}>
+                                <CommandInput
+                                  placeholder="Tìm kiếm lớp..."
+                                  value={searchTerm}
+                                  onValueChange={setSearchTerm}
+                                />
+                                <CommandList>
+                                  <CommandEmpty>Không tìm thấy lớp</CommandEmpty>
+                                  <CommandGroup>
+                                    {filteredClasses?.map((c) => {
+                                      const canTransfer = hasTransferSchedule(c);
+                                      const isSelected = c.id === field.value;
+                                      return (
+                                        <CommandItem
+                                          key={c.id}
+                                          value={`${c.name} ${c.classCode}`}
+                                          disabled={!canTransfer}
+                                          onSelect={() => {
+                                            if (!canTransfer) return;
+                                            field.onChange(c.id);
+                                            setIsTargetClassPickerOpen(false);
+                                            setSearchTerm("");
+                                          }}
+                                          className={cn(
+                                            !canTransfer && "cursor-not-allowed opacity-40",
+                                          )}
+                                        >
+                                          <Check
+                                            className={cn(
+                                              "mr-2 h-4 w-4",
+                                              isSelected ? "opacity-100" : "opacity-0",
+                                            )}
+                                          />
+                                          <span className="truncate">
+                                            {c.name} ({c.classCode})
+                                          </span>
+                                          {!canTransfer && (
+                                            <span className="ml-auto text-xs text-muted-foreground">
+                                              Chưa có lịch
+                                            </span>
+                                          )}
+                                        </CommandItem>
+                                      );
+                                    })}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="toSessionIndex"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Chọn buổi bắt đầu ở lớp mới</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value?.toString()}
+                            disabled={!selectedToClassId || targetDataLoading}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-to-session">
+                                <SelectValue placeholder={!selectedToClassId ? "Vui lòng chọn lớp mới trước" : "Chọn buổi học"} />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {targetSessions?.map((s) => {
+                                if (s.sessionIndex == null || !s.sessionDate || s.status !== "scheduled") return null;
+                                const isAlreadyRegistered = targetExistingSessionIds.has(s.id);
+                                const pastRestricted = !canRunPast && isPastTransferSession(s);
+                                return (
+                                   <SelectItem
+                                     key={s.id}
+                                     value={s.sessionIndex.toString()}
+                                     disabled={isAlreadyRegistered || pastRestricted}
+                                   >
+                                     <span className={cn((isAlreadyRegistered || pastRestricted) && "text-muted-foreground")}>
+                                       Buổi {s.sessionIndex}: {getDayName(new Date(s.sessionDate).getDay())}, {format(new Date(s.sessionDate), "dd/MM/yyyy")}
+                                     </span>
+                                     {isAlreadyRegistered && (
+                                       <span className="ml-2 text-[10px] text-muted-foreground">
+                                         (Đã có học viên)
+                                       </span>
+                                     )}
+                                     {pastRestricted && (
+                                       <span className="ml-2 text-[10px] text-muted-foreground">
+                                         (Đã qua ngày)
+                                       </span>
+                                     )}
+                                  </SelectItem>
+                                );
+                              })}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="targetTransferCount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Số buổi chuyển ở lớp mới</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={targetAvailableCount > 0 ? targetAvailableCount : undefined}
+                              step={1}
+                              value={field.value ?? ""}
+                              onChange={(event) => {
+                                setTargetTransferCountManuallyEdited(true);
+                                const rawValue = event.target.value;
+                                const numericValue = Number(rawValue);
+                                const value = rawValue === ""
+                                  ? ""
+                                  : targetAvailableCount > 0
+                                  ? Math.min(numericValue, targetAvailableCount)
+                                  : numericValue;
+                                field.onChange(value);
+                              }}
+                              disabled={!selectedToClassId || targetDataLoading || targetAvailableCount === 0}
+                              data-testid="input-target-transfer-count"
+                            />
+                          </FormControl>
+                          <p className="text-xs text-muted-foreground">
+                            {selectedToClassId && !targetDataLoading
+                              ? `Tối đa ${targetAvailableCount} buổi còn lại từ buổi bắt đầu đã chọn.`
+                              : "Chọn lớp và buổi bắt đầu để xem số buổi tối đa."}
+                          </p>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  {selectedToClassId && !targetDataLoading && targetAvailableCount === 0 && (
+                    <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                      Lớp mới không còn buổi chưa có mặt từ buổi bắt đầu đã chọn.
+                    </div>
+                  )}
+
+                  {/* Fee summary - new class */}
+                  <div className="rounded-md border bg-muted/40 p-3 space-y-1.5 text-sm">
+                    <div className="flex justify-between items-center gap-3">
+                      <span className="text-muted-foreground">Gói học phí:</span>
+                      {selectedToClassId && targetFeePackages.length > 0 ? (
+                        <div className="flex items-center gap-2">
+                          <Select
+                            value={selectedTargetPackageId}
+                            onValueChange={setSelectedTargetPackageId}
+                          >
+                            <SelectTrigger className="h-7 w-auto min-w-[140px] text-xs border-0 shadow-none bg-transparent p-0 pr-6 font-medium" data-testid="select-target-package">
+                              <SelectValue placeholder="Chọn gói" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {targetFeePackages.map((p) => (
+                                <SelectItem key={p.id} value={p.id} className="text-xs">
+                                  {p.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {packageTypeLabel(selectedTargetPackage) && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
+                              {packageTypeLabel(selectedTargetPackage)}
+                            </Badge>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="font-medium text-muted-foreground">
+                          {selectedToClassId ? "Không có gói" : "—"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Tổng học phí:</span>
+                      <span className="font-medium">
+                        {targetBaseTotal > 0 ? formatCurrency(targetBaseTotal) : "—"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">Giảm trừ:</span>
+                      <Dialog
+                        open={activeDiscountTarget !== null}
+                        onOpenChange={(open) => {
+                          if (!open) {
+                            setActiveDiscountTarget(null);
+                            setOpenDiscountPromotionPicker(null);
+                          }
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className={cn(
+                            "flex min-w-0 items-center gap-1 rounded px-1.5 py-0.5 text-right text-sm transition-colors",
+                            selectedTargetPackage
+                              ? "hover:bg-green-50 hover:text-green-700 dark:hover:bg-green-950/30"
+                              : "cursor-not-allowed text-muted-foreground opacity-60",
+                          )}
+                          onClick={() => openDiscountPicker("target")}
+                          disabled={!selectedTargetPackage}
+                          data-testid="button-target-discount"
+                        >
+                          <span className={targetDiscountAmount > 0 ? "font-semibold text-green-600" : "font-medium"}>
+                            {targetDiscountAmount > 0 ? `- ${formatCurrency(targetDiscountAmount)}` : "0đ"}
+                          </span>
+                          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        </button>
+                        <DialogContent
+                          className="w-[min(92vw,40rem)] max-h-[90vh] overflow-y-auto rounded-xl p-6"
+                          overlayClassName="bg-black/30 backdrop-blur-[1px]"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <DialogTitle className="text-xl font-semibold">Chọn giảm trừ</DialogTitle>
+                            {canCreatePromotion && (
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-0.5 text-[11px] font-medium text-purple-600 hover:text-purple-700"
+                                onClick={() => {
+                                  setQuickCreatePromotionTarget(activeDiscountTarget ?? "target");
+                                  setQuickCreatePromotionOpen(true);
+                                }}
+                                data-testid="button-quick-add-transfer-promotion"
+                              >
+                                <span className="text-sm leading-none">+</span> Thêm mới
+                              </button>
+                            )}
+                          </div>
+                          <div className="mt-3 space-y-4">
+                            {activePromotionRows.map((row) => {
+                              const selectedOption = promotionOptionsWithVouchers.find(
+                                (option: any) => option.id === row.optionKey,
+                              );
+                              return (
+                                <div key={row.id} className="space-y-2 rounded-lg border border-muted p-2">
+                                  <Popover
+                                    open={openDiscountPromotionPicker === row.id}
+                                    onOpenChange={(open) => {
+                                      setOpenDiscountPromotionPicker(open ? row.id : null);
+                                      if (open) setDiscountSearch("");
+                                    }}
+                                  >
+                                    <PopoverTrigger asChild>
+                                      <button
+                                        type="button"
+                                        className="flex min-h-9 w-full items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-1.5 text-left text-xs hover:border-purple-400"
+                                      >
+                                        <span className={selectedOption ? "truncate" : "text-muted-foreground"}>
+                                          {selectedOption ? formatPromotionLabel(selectedOption) : "Chọn giảm trừ..."}
+                                        </span>
+                                        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                      </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent
+                                      className="w-[28rem] max-w-[calc(100vw-2rem)] p-3"
+                                      align="start"
+                                    >
+                                      <div className="relative mb-2">
+                                        <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                                        <Input
+                                          value={discountSearch}
+                                          onChange={(event) => setDiscountSearch(event.target.value)}
+                                          placeholder="Tìm theo tên hoặc mã giảm trừ..."
+                                          className="h-8 pl-7 text-xs"
+                                          autoFocus
+                                          onKeyDown={(event) => event.stopPropagation()}
+                                        />
+                                      </div>
+                                      <div className="max-h-64 space-y-1 overflow-y-auto">
+                                        {promotionOptionsWithVouchers.length === 0 ? (
+                                          <p className="py-3 text-center text-xs text-muted-foreground">
+                                            Chưa có giảm trừ
+                                          </p>
+                                        ) : filteredDiscountPromotions.length === 0 ? (
+                                          <p className="py-3 text-center text-xs text-muted-foreground">
+                                            Không tìm thấy giảm trừ phù hợp
+                                          </p>
+                                        ) : (
+                                          filteredDiscountPromotions.map((option: any) => {
+                                            const value = Number(option.valueAmount ?? 0) || 0;
+                                            return (
+                                              <button
+                                                key={option.id}
+                                                type="button"
+                                                className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left hover:bg-muted/60"
+                                                onClick={() => {
+                                                   selectPromotionOption(row.id, option.id);
+                                                   setOpenDiscountPromotionPicker(null);
+                                                }}
+                                              >
+                                                <span className="min-w-0 flex-1">
+                                                  <span className="flex items-center gap-1 text-xs font-medium">
+                                                    {option.kind === "voucher" && (
+                                                      <span className="shrink-0 rounded bg-red-100 px-1 text-[9px] font-semibold text-red-600">
+                                                        Voucher
+                                                      </span>
+                                                    )}
+                                                    <span className="truncate">{option.name}</span>
+                                                  </span>
+                                                  <span className="block text-xs text-muted-foreground">
+                                                    -{option.valueType === "percent" ? `${value}%` : formatCurrency(value)}
+                                                  </span>
+                                                </span>
+                                              </button>
+                                            );
+                                          })
+                                        )}
+                                      </div>
+                                    </PopoverContent>
+                                  </Popover>
+
+                                  <div className="flex items-center gap-1.5">
+                                    <select
+                                      value={row.valueType}
+                                      onChange={(event) =>
+                                        updatePromotionRow(row.id, {
+                                          valueType: event.target.value as TransferAdjustmentRow["valueType"],
+                                        })
+                                      }
+                                      className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
+                                    >
+                                      <option value="amount">Số tiền</option>
+                                      <option value="percent">Phần trăm</option>
+                                    </select>
+                                    <div className="relative min-w-0 flex-1">
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        value={row.value || ""}
+                                        onChange={(event) =>
+                                          updatePromotionRow(row.id, {
+                                            value: Math.max(0, Number(event.target.value) || 0),
+                                          })
+                                        }
+                                        placeholder="Nhập nhanh..."
+                                        className="h-8 pr-8 text-xs"
+                                      />
+                                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
+                                        {row.valueType === "percent" ? "%" : "₫"}
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
+                                      onClick={() => removePromotionRow(row.id)}
+                                      aria-label="Xóa dòng giảm trừ"
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            <button
+                              type="button"
+                              className="text-xs font-medium text-purple-600 hover:text-purple-700"
+                              onClick={addPromotionRow}
+                            >
+                              + Thêm
+                            </button>
+                            <div className="flex justify-between border-t pt-3 text-xs font-semibold">
+                              <span>
+                                {activeDiscountContext === "current"
+                                  ? "Tổng giảm trừ lớp hiện tại"
+                                  : "Tổng giảm trừ lớp mới"}
+                              </span>
+                              <span className="text-green-600">-{formatCurrency(activeDiscountResult.adjustmentAmount)}</span>
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button
+                              type="button"
+                              onClick={() => {
+                                setActiveDiscountTarget(null);
+                                setOpenDiscountPromotionPicker(null);
+                              }}
+                            >
+                              Xong
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Sau giảm trừ:</span>
+                      <span className="font-medium">
+                        {targetTotalAfterDiscount > 0 ? formatCurrency(targetTotalAfterDiscount) : "—"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Số buổi của gói:</span>
+                      <span className="font-medium">
+                        {targetPackageSessionCount > 0 ? `${targetPackageSessionCount} buổi` : "—"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Đơn giá sau giảm:</span>
+                      <span className="font-medium">
+                        {targetSessionPrice > 0 ? formatCurrency(targetSessionPrice) + "/buổi" : "—"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-t pt-1.5 mt-1">
+                      <span className="font-medium">Thành tiền:</span>
+                      <span className="font-semibold text-foreground">
+                        {targetTransferCount > 0 && targetSessionPrice > 0 ? (
+                          <span className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                            <span className="text-[11px] font-normal text-muted-foreground whitespace-nowrap">
+                              ({formatCurrencyValue(targetSessionPrice)} x {targetTransferCount})
+                            </span>
+                            <span>{formatCurrency(targetTotal)}</span>
+                          </span>
+                        ) : "—"}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Financial difference summary */}
+            {showFinancial && (
+              <div className={`rounded-md border p-3 space-y-3 text-sm ${
+                diff > 0
+                  ? "border-orange-200 bg-orange-50 dark:bg-orange-950/30 dark:border-orange-800"
+                  : diff < 0
+                  ? "border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-800"
+                  : "border-muted bg-muted/40"
+              }`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  {diff > 0 ? (
+                    <div className="flex items-center gap-2 font-medium text-orange-600 dark:text-orange-400">
+                      <TrendingUp className="h-4 w-4" />
+                      <span>Số tiền cần thu sau điều chỉnh</span>
+                    </div>
+                  ) : diff < 0 ? (
+                    <div className="flex items-center gap-2 font-medium text-green-600 dark:text-green-400">
+                      <TrendingDown className="h-4 w-4" />
+                      <span>Số tiền cần hoàn sau điều chỉnh</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 font-medium text-muted-foreground">
+                      <Minus className="h-4 w-4" />
+                      <span>Không phát sinh thu hoặc hoàn thêm</span>
+                    </div>
+                  )}
+                  <Badge
+                    variant="outline"
+                    className={`font-semibold text-sm ${
+                      diff > 0
+                        ? "text-orange-600 border-orange-300"
+                        : diff < 0
+                        ? "text-green-600 border-green-300"
+                        : ""
+                    }`}
+                  >
+                    {formatSignedCurrency(diff)}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-end">
+                  <div className="flex justify-between gap-3 text-xs">
+                    <span className="text-muted-foreground">Chênh lệch tự động:</span>
+                    <span className="font-semibold">{formatSignedCurrency(automaticDiff)}</span>
+                  </div>
+                  <div className="space-y-1">
+                    <label htmlFor="transfer-fee-adjustment" className="text-xs font-medium">
+                      Phí chuyển lớp
+                    </label>
+                    <div className="relative">
+                      <Input
+                        id="transfer-fee-adjustment"
+                        data-testid="input-transfer-fee-adjustment"
+                        type="number"
+                        step="1"
+                        inputMode="decimal"
+                        value={transferFeeAdjustmentInput}
+                        onChange={(event) => setTransferFeeAdjustmentInput(event.target.value)}
+                        placeholder="0"
+                        className="pr-8"
+                        aria-describedby="transfer-fee-adjustment-help"
+                      />
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                        ₫
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <p id="transfer-fee-adjustment-help" className="text-[11px] text-muted-foreground">
+                  Số cuối = chênh lệch tự động + phí chuyển lớp. Nhập số âm để giảm tiền thu hoặc tăng tiền hoàn; nhập số dương để tăng tiền thu hoặc giảm tiền hoàn.
+                </p>
+              </div>
+            )}
+
+            {diff < 0 && showFinancial && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 p-3">
+                <span className="text-sm font-medium">Cách hoàn tiền</span>
+                <RadioGroup
+                  value={refundMethod}
+                  onValueChange={(value) => setRefundMethod(value as "invoice" | "deposit")}
+                  className="flex flex-wrap items-center gap-x-5 gap-y-2"
+                  aria-label="Cách hoàn tiền"
+                >
+                  <label
+                    htmlFor="refund-method-invoice"
+                    className="flex cursor-pointer items-center gap-2 text-xs"
+                  >
+                    <RadioGroupItem
+                      value="invoice"
+                      id="refund-method-invoice"
+                      data-testid="radio-refund-method-invoice"
+                    />
+                    <span>Xuất Phiếu chi</span>
+                  </label>
+                  <label
+                    htmlFor="refund-method-deposit"
+                    className="flex cursor-pointer items-center gap-2 text-xs"
+                  >
+                    <RadioGroupItem
+                      value="deposit"
+                      id="refund-method-deposit"
+                      data-testid="radio-refund-method-deposit"
+                    />
+                    <span>Chuyển vào ví cọc</span>
+                  </label>
+                </RadioGroup>
+              </div>
+            )}
+
+            {shouldRefundToDeposit ? (
+              <div className="rounded-md border border-violet-200 bg-violet-50/60 p-4 space-y-2 dark:border-violet-900 dark:bg-violet-950/20">
+                <div className="flex items-center gap-2 text-sm font-medium text-violet-700 dark:text-violet-300">
+                  <Wallet className="h-4 w-4" />
+                  <span>Chuyển khoản hoàn vào ví cọc</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-muted-foreground">Số dư ví học phí: </span>
+                    <span className="font-semibold">{loadingFeeWallet ? "Đang kiểm tra..." : formatCurrency(tuitionWalletBalance)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Số tiền hoàn: </span>
+                    <span className="font-semibold">{formatCurrency(refundAmount)}</span>
+                  </div>
+                </div>
+                {insufficientTuitionWallet && (
+                  <p className="text-xs font-medium text-red-600">
+                    Ví học phí không đủ số dư. Còn {formatCurrency(tuitionWalletBalance)}, cần {formatCurrency(refundAmount)}. Không thể chuyển âm.
+                  </p>
+                )}
+                {!loadingFeeWallet && !insufficientTuitionWallet && (
+                  <p className="text-xs text-muted-foreground">
+                    Hệ thống sẽ trừ ví học phí và cộng đúng số tiền này vào ví cọc, đồng thời ghi lại hai giao dịch đối ứng.
+                  </p>
+                )}
+              </div>
+            ) : (
+              /* Auto invoice switch */
+              <div className="rounded-md border p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium">Hoá đơn tự động</span>
+                  </div>
+                  <Switch
+                    checked={autoInvoice}
+                    onCheckedChange={setAutoInvoice}
+                    data-testid="switch-auto-invoice"
+                  />
+                </div>
+
+                {autoInvoice && (
+                  <div className="space-y-2 pt-1 border-t">
+                    {showFinancial && refundAmount > 0 ? (
+                      <>
+                        <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground">
+                          <div>
+                            <span className="font-medium text-foreground">Loại phiếu: </span>
+                            {diff < 0 ? "Phiếu chi" : "Phiếu thu"}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-foreground">Loại: </span>
+                            {diff < 0 ? (
+                              <Select
+                                value={invoiceCategory}
+                                onValueChange={(v) => setInvoiceCategory(v as any)}
+                              >
+                                <SelectTrigger className="h-6 text-xs border-dashed w-auto min-w-[130px]" data-testid="select-invoice-category">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Hoàn học phí" className="text-xs">Hoàn học phí</SelectItem>
+                                  <SelectItem value="Đặt cọc" className="text-xs">Đặt cọc</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <span>Học phí</span>
+                            )}
+                          </div>
+                          <div>
+                            <span className="font-medium text-foreground">Số tiền: </span>
+                            {formatCurrency(refundAmount)}
+                          </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground bg-muted/50 rounded p-2 italic">
+                          {buildInvoiceNote()}
+                        </div>
+                      </>
+                    ) : showFinancial ? (
+                      <p className="text-xs text-muted-foreground italic">
+                        Số tiền sau điều chỉnh bằng 0, không phát sinh hóa đơn.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">
+                        Chọn đầy đủ lớp mới và gói học phí để xem hoá đơn tự động
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {!autoInvoice && (
+                  <p className="text-xs text-muted-foreground pt-1 border-t">
+                    Chỉ chuyển lớp, không tạo hoá đơn
+                  </p>
+                )}
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onClose}
+                data-testid="button-cancel-transfer"
+              >
+                Hủy
+              </Button>
+              <Button
+                type="submit"
+                disabled={isPending || loadingFeeWallet || insufficientTuitionWallet}
+                data-testid="button-confirm-transfer"
+              >
+                {isPending && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                Xác nhận chuyển
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+    <FinancePromotionDialog
+      open={quickCreatePromotionOpen}
+      onClose={() => setQuickCreatePromotionOpen(false)}
+      onSave={(data) => createPromotionMutation.mutate(data)}
+      title="Thêm mới giảm trừ"
+      isSaving={createPromotionMutation.isPending}
+    />
+    </>
+  );
+}

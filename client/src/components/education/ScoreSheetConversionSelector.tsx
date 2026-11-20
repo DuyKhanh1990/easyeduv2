@@ -1,0 +1,467 @@
+import { useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import type { ScoreSheetTemplate } from "@shared/score-sheet-template";
+import type { ScoreConversionTemplate } from "@shared/score-conversion";
+import type { ScoreSheetAssessmentInput } from "@shared/score-sheet-assessment";
+import { Loader2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { useLanguage } from "@/hooks/use-language";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { StaffAssignedScoreSheetAssessment } from "./StaffScoreSheetAssessmentStudentsDialog";
+
+type SelectionMode = "class" | "students";
+
+type StaffClass = {
+  id: string;
+  classCode: string;
+  name: string;
+};
+
+type EligibleStudent = {
+  studentId: string;
+  fullName: string;
+  code: string | null;
+  classes: Array<{
+    classId: string;
+    classCode: string;
+    className: string;
+  }>;
+};
+
+type ConversionTemplateOption = ScoreSheetTemplate & {
+  conversionTemplate: ScoreConversionTemplate | null;
+};
+
+interface ScoreSheetConversionSelectorProps {
+  enabled: boolean;
+  onCancel: () => void;
+  onSaved?: (assessment: StaffAssignedScoreSheetAssessment) => void;
+}
+
+type CreatedManualAssessment = {
+  id: string;
+  code: string;
+  name: string;
+  createdAt: string;
+  scoreSheetTemplateId: string;
+  scoreDeadlineAt: string | null;
+  attemptCount: number;
+  scoringPolicy: "highest" | "latest";
+  manualStudentIds: string[];
+  templateSnapshot: ScoreSheetTemplate;
+};
+
+function getClassRosterStudentId(row: any): string | null {
+  const id = row.studentId || row.student?.id || row.id;
+  return id ? String(id) : null;
+}
+
+export function ScoreSheetConversionSelector({
+  enabled,
+  onCancel,
+  onSaved,
+}: ScoreSheetConversionSelectorProps) {
+  const { t } = useLanguage();
+  const { toast } = useToast();
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>("class");
+  const [selectedClassId, setSelectedClassId] = useState("");
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [assessmentName, setAssessmentName] = useState("");
+
+  const {
+    data: staffClasses = [],
+    isLoading: classesLoading,
+    isError: classesError,
+  } = useQuery<StaffClass[]>({
+    queryKey: ["/api/my-space/score-sheet/staff-classes"],
+    enabled,
+  });
+
+  const {
+    data: eligibleStudents = [],
+    isLoading: studentsLoading,
+    isError: studentsError,
+  } = useQuery<EligibleStudent[]>({
+    queryKey: ["/api/my-space/score-sheet/staff-students"],
+    enabled: enabled && selectionMode === "students",
+  });
+
+  const {
+    data: classRoster = [],
+    isLoading: rosterLoading,
+    isError: rosterError,
+  } = useQuery<any[]>({
+    queryKey: [`/api/classes/${selectedClassId}/active-students`],
+    enabled: enabled && selectionMode === "class" && !!selectedClassId,
+  });
+
+  const {
+    data: allTemplates = [],
+    isLoading: templatesLoading,
+    isError: templatesError,
+  } = useQuery<ConversionTemplateOption[]>({
+    queryKey: ["/api/my-space/score-sheet/conversion-templates"],
+    enabled,
+    queryFn: async () => {
+      const response = await fetch(
+        "/api/my-space/score-sheet/conversion-templates",
+        { credentials: "include" },
+      );
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.message ?? t("mySpace.scoreSheet.conversionTemplatesLoadError"));
+      }
+      return payload;
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async (payload: ScoreSheetAssessmentInput) => {
+      const response = await apiRequest("POST", "/api/score-sheet-assessments", payload);
+      return response.json() as Promise<CreatedManualAssessment>;
+    },
+    onSuccess: (createdAssessment) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/score-sheet-assessments/assigned/students"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff-assessments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-space/score-sheet/staff"] });
+      toast({
+        title: t("mySpace.scoreSheet.conversionCreateSuccess"),
+      });
+      onSaved?.({
+        sessionId: createdAssessment.id,
+        classId: "manual",
+        classCode: "Thủ công",
+        className: "Thủ công",
+        isManual: true,
+        locationName: null,
+        teacherNames: null,
+        sessionIndex: null,
+        examDate: createdAssessment.createdAt,
+        assessmentId: createdAssessment.id,
+        scoreSheetTemplateId: createdAssessment.scoreSheetTemplateId,
+        assessmentCode: createdAssessment.code,
+        assessmentName: createdAssessment.name,
+        templateName: createdAssessment.templateSnapshot.name,
+        scoreDeadlineAt: createdAssessment.scoreDeadlineAt,
+        published: false,
+        studentCount: createdAssessment.manualStudentIds.length,
+        enteredStudentCount: 0,
+        completedStudentCount: 0,
+        individuallyPublishedStudentCount: 0,
+        allStudentsIndividuallyPublished: false,
+        attemptCount: createdAssessment.attemptCount,
+        scoringPolicy: createdAssessment.scoringPolicy,
+        hasConversion: true,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t("mySpace.scoreSheet.error"),
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const studentOptions = [
+    ...eligibleStudents.map((student) => ({
+      value: student.studentId,
+      label: [student.fullName || t("mySpace.scoreSheet.studentLabel"), student.code]
+        .filter(Boolean)
+        .join(" — "),
+    })),
+  ];
+
+  const classRosterStudentIds = classRoster
+    .map(getClassRosterStudentId)
+    .filter((studentId): studentId is string => Boolean(studentId));
+  const visibleStudentIds = selectionMode === "class"
+    ? Array.from(new Set(classRosterStudentIds))
+    : selectedStudentIds;
+  const currentStudentMap = new Map<string, EligibleStudent | any>();
+  classRoster.forEach((student: any) => {
+    const id = getClassRosterStudentId(student);
+    if (id) currentStudentMap.set(id, {
+      studentId: id,
+      fullName: student.fullName || student.full_name || student.student?.fullName || t("mySpace.scoreSheet.studentLabel"),
+      code: student.code || student.student?.code || null,
+    });
+  });
+  eligibleStudents.forEach((student) => currentStudentMap.set(student.studentId, student));
+  const selectedStudents = visibleStudentIds
+    .map((id) => currentStudentMap.get(id))
+    .filter(Boolean) as EligibleStudent[];
+  const selectedStudentCount = selectedStudents.length;
+  const usableTemplates = allTemplates.filter(
+    (template) => !template.scoreConversionTemplateId || Boolean(template.conversionTemplate),
+  );
+  const selectedTemplate = usableTemplates.find((template) => template.id === selectedTemplateId);
+  const selectionLoading = selectionMode === "class" ? rosterLoading : studentsLoading;
+  const selectionError = selectionMode === "class" ? rosterError : studentsError;
+  const canCreateAssessment = Boolean(
+    enabled
+    && selectedTemplate
+    && assessmentName.trim().length > 0
+    && selectedStudents.length > 0
+    && !selectionLoading
+    && !selectionError
+    && !templatesLoading
+    && !templatesError
+    && !saveMutation.isPending,
+  );
+
+  const changeSelectionMode = (mode: SelectionMode) => {
+    saveMutation.reset();
+    setSelectionMode(mode);
+    setSelectedClassId("");
+    setSelectedStudentIds([]);
+  };
+
+  const createSelectedAssessment = () => {
+    if (!selectedTemplate || !canCreateAssessment) return;
+    const dateCode = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+    const uniqueCode = crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
+    const payload: ScoreSheetAssessmentInput = {
+      code: `MAN-${dateCode}-${uniqueCode}`,
+      name: assessmentName.trim().slice(0, 120),
+      scoreSheetTemplateId: selectedTemplate.id,
+      creationMode: "manual",
+      manualSelectionMode: selectionMode,
+      manualClassId: selectionMode === "class" ? selectedClassId : null,
+      manualStudentIds: selectedStudents.map((student) => student.studentId),
+    };
+    saveMutation.mutate(payload);
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-6">
+        <div className="space-y-2">
+          <Label>{t("mySpace.scoreSheet.conversionSelectionMethod")}</Label>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={selectionMode === "class" ? "default" : "outline"}
+              onClick={() => changeSelectionMode("class")}
+              disabled={saveMutation.isPending}
+              data-testid="conversion-select-by-class"
+            >
+              {t("mySpace.scoreSheet.conversionByClass")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={selectionMode === "students" ? "default" : "outline"}
+              onClick={() => changeSelectionMode("students")}
+              disabled={saveMutation.isPending}
+              data-testid="conversion-select-by-students"
+            >
+              {t("mySpace.scoreSheet.conversionByStudents")}
+            </Button>
+          </div>
+        </div>
+
+        {selectionMode === "class" ? (
+          <div className="space-y-2">
+            <Label>{t("mySpace.scoreSheet.class")}</Label>
+            <SearchableSelect
+              options={staffClasses.map((staffClass) => ({
+                value: staffClass.id,
+                label: staffClass.classCode,
+                sublabel:
+                  staffClass.name && staffClass.name !== staffClass.classCode
+                    ? staffClass.name
+                    : undefined,
+              }))}
+              value={selectedClassId}
+              onChange={(classId) => {
+                saveMutation.reset();
+                setSelectedClassId(classId);
+              }}
+              placeholder={
+                classesLoading
+                  ? t("mySpace.scoreSheet.conversionLoadingClasses")
+                  : t("mySpace.scoreSheet.selectClass")
+              }
+              searchPlaceholder={t("mySpace.scoreSheet.conversionSearchClasses")}
+              disabled={saveMutation.isPending || classesLoading || classesError || staffClasses.length === 0}
+              data-testid="conversion-class-select"
+            />
+            {classesError && (
+              <p className="text-xs text-destructive">
+                {t("mySpace.scoreSheet.conversionClassesLoadError")}
+              </p>
+            )}
+            {!classesLoading && !classesError && staffClasses.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                {t("mySpace.scoreSheet.conversionNoEligibleClasses")}
+              </p>
+            )}
+            {selectedClassId && rosterLoading && (
+              <p className="text-xs text-muted-foreground">
+                {t("mySpace.scoreSheet.conversionLoadingStudents")}
+              </p>
+            )}
+            {selectedClassId && rosterError && (
+              <p className="text-xs text-destructive">
+                {t("mySpace.scoreSheet.conversionStudentsLoadError")}
+              </p>
+            )}
+            {selectedClassId && !rosterLoading && !rosterError && classRoster.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                {t("mySpace.scoreSheet.noStudents")}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Label>{t("mySpace.scoreSheet.conversionChooseStudents")}</Label>
+            <SearchableMultiSelect
+              options={studentOptions}
+              value={selectedStudentIds}
+              onChange={(studentIds) => {
+                saveMutation.reset();
+                setSelectedStudentIds(studentIds);
+              }}
+              placeholder={
+                studentsLoading
+                  ? t("mySpace.scoreSheet.conversionLoadingStudents")
+                  : t("mySpace.scoreSheet.conversionChooseStudents")
+              }
+              searchPlaceholder={t("mySpace.scoreSheet.conversionSearchStudents")}
+              disabled={saveMutation.isPending || studentsLoading || studentsError || eligibleStudents.length === 0}
+              data-testid="conversion-student-select"
+            />
+            {studentsError && (
+              <p className="text-xs text-destructive">
+                {t("mySpace.scoreSheet.conversionStudentsLoadError")}
+              </p>
+            )}
+            {!studentsLoading && !studentsError && eligibleStudents.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                {t("mySpace.scoreSheet.conversionNoEligibleStudents")}
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <Label>{t("mySpace.scoreSheet.conversionTemplateLabel")}</Label>
+          <SearchableSelect
+            options={usableTemplates.map((template) => ({
+              value: template.id,
+              label: `${template.code} — ${template.name}`,
+            }))}
+            value={selectedTemplateId}
+            onChange={(templateId) => {
+              saveMutation.reset();
+              setSelectedTemplateId(templateId);
+              const template = usableTemplates.find((item) => item.id === templateId);
+              setAssessmentName(template ? `${template.name.slice(0, 108)} - thủ công` : "");
+            }}
+            placeholder={
+              templatesLoading
+                ? t("mySpace.scoreSheet.conversionLoadingTemplates")
+                : t("mySpace.scoreSheet.conversionSelectTemplate")
+            }
+            searchPlaceholder={t("mySpace.scoreSheet.conversionSearchTemplates")}
+            disabled={saveMutation.isPending || templatesLoading || templatesError || usableTemplates.length === 0}
+            data-testid="conversion-template-select"
+          />
+          {templatesError && (
+            <p className="text-xs text-destructive">
+              {t("mySpace.scoreSheet.conversionTemplatesLoadError")}
+            </p>
+          )}
+          {!templatesLoading && !templatesError && usableTemplates.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              {t("mySpace.scoreSheet.conversionNoTemplates")}
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="conversion-assessment-name">
+            {t("mySpace.scoreSheet.conversionAssessmentNameLabel")}
+            <span className="ml-1 text-destructive">*</span>
+          </Label>
+          <Input
+            id="conversion-assessment-name"
+            value={assessmentName}
+            onChange={(event) => {
+              saveMutation.reset();
+              setAssessmentName(event.target.value);
+            }}
+            placeholder={t("mySpace.scoreSheet.conversionAssessmentNamePlaceholder")}
+            maxLength={120}
+            disabled={!selectedTemplate || saveMutation.isPending}
+            data-testid="conversion-assessment-name"
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2.5">
+          <span className="text-sm font-medium">
+            {t("mySpace.scoreSheet.conversionSelectedStudents")}
+          </span>
+          <Badge variant="secondary" data-testid="conversion-selected-student-count">
+            {selectedStudentCount} {t("mySpace.scoreSheet.studentCount")}
+          </Badge>
+        </div>
+
+        {saveMutation.isError && (
+          <p role="alert" className="text-sm text-destructive">
+            {saveMutation.error instanceof Error
+              ? saveMutation.error.message
+              : t("mySpace.scoreSheet.error")}
+          </p>
+        )}
+      </div>
+
+      <div className="shrink-0 border-t px-5 py-4 sm:px-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p aria-live="polite" className="text-xs text-muted-foreground">
+            {saveMutation.isPending
+              ? t("mySpace.scoreSheet.conversionCreatingAssessment")
+              : t("mySpace.scoreSheet.conversionCreateHint")}
+          </p>
+          <div className="flex shrink-0 justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              disabled={saveMutation.isPending}
+            >
+              {t("mySpace.scoreSheet.cancel")}
+            </Button>
+            <Button
+              type="button"
+              onClick={createSelectedAssessment}
+              disabled={!canCreateAssessment}
+              data-testid="button-create-conversion-assessment"
+            >
+              {saveMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {t("mySpace.scoreSheet.saving")}
+                </>
+              ) : saveMutation.isError ? (
+                t("mySpace.scoreSheet.conversionRetry")
+              ) : (
+                t("mySpace.scoreSheet.conversionCreateButton")
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,136 @@
+export interface SessionContentItem {
+  id: string;
+  type: string;
+  title: string;
+  description: string | null;
+  resourceUrl: string | null;
+  availableAt?: string | null;
+  maxAttempts?: number | null;
+}
+
+export interface PersonalContentItem extends SessionContentItem {
+  customTitle: string | null;
+  customDescription: string | null;
+}
+
+export interface ReviewSubItem {
+  subCriteriaName: string;
+  groupName?: string;
+  comment: string;
+  inputType?: "text" | "checkbox";
+  checked?: boolean;
+}
+
+export interface ReviewCriteriaGroup {
+  criteriaName: string;
+  items: ReviewSubItem[];
+  rating?: number;
+}
+
+export interface TeacherReview {
+  teacherName: string;
+  criteria: ReviewCriteriaGroup[];
+}
+
+export interface OnlineRuleConfig {
+  id: string;
+  locationId: string;
+  earlyEntryMinutes: number;
+  lateEntryMinutes: number;
+  earlyEndMinutes: number;
+  autoAttendanceOnJoin: boolean;
+}
+
+export interface RegularSessionStudent {
+  id: string;
+  studentId: string;
+  studentClassId: string | null;
+  attendanceStatus: string | null;
+  attendanceNote: string | null;
+  reviewData: unknown;
+  reviewPublished: boolean | null;
+  student: {
+    fullName: string;
+    code: string;
+  };
+}
+
+// Lightweight session — returned by the monthly calendar endpoint
+export interface MyCalendarSessionLight {
+  classSessionId: string;
+  studentSessionId: string | null;
+  sessionDate: string;
+  weekday: number;
+  className: string;
+  classCode: string;
+  classId?: string | null;
+  classColor?: string | null;
+  startTime: string;
+  endTime: string;
+  learningFormat: string;
+  onlineLink: string | null;
+  locationId: string | null;
+  sessionStatus: string;
+  attendanceStatus: string | null;
+  studentName?: string | null;
+  studentCode?: string | null;
+  studentId?: string | null;
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
+  isFreeSession?: boolean;
+  freeStatus?: string | null;
+  freeStudents?: {
+    registrationId: string | null;
+    studentClassId: string;
+    studentId: string;
+    fullName: string;
+    code: string;
+    status: string;
+    teacherId?: string | null;
+    note?: string | null;
+    reviewData?: unknown;
+    reviewPublished?: boolean;
+    latestScoreResult?: {
+      gradeBandLabel: string | null;
+      gradeBandColor: string | null;
+      passStatus: "passed" | "failed" | null;
+      examDate: string;
+    } | null;
+  }[];
+}
+
+// Full session detail — fetched on demand per session
+export interface MyCalendarSession extends MyCalendarSessionLight {
+  classId?: string;
+  sessionIndex?: number | null;
+  totalSessions?: number | null;
+  locationName?: string | null;
+  teachers?: { id: string; fullName: string; code: string | null }[];
+  teacherNames: string[];
+  evaluationCriteriaIds?: string[];
+  attendanceNote: string | null;
+  reviewData: TeacherReview[];
+  reviewPublished: boolean;
+  generalContents: SessionContentItem[];
+  personalContents: PersonalContentItem[];
+  sessionNote?: string | null;
+  userType: "student" | "staff";
+  enrolledCount?: number;
+  attendancePendingCount?: number;
+  reviewedCount?: number;
+  studentSessions?: RegularSessionStudent[];
+  isFreeSession?: boolean;
+  freeStatus?: string | null;
+  freeStudents?: MyCalendarSessionLight["freeStudents"];
+  studentName?: string | null;
+  studentCode?: string | null;
+  onlineClickedAt?: string | null;
+  onlineEndedAt?: string | null;
+}
+
+export interface MyCalendarResponse {
+  sessions: MyCalendarSessionLight[];
+  datesWithSessions: string[];
+  month: string;
+  staffId?: string;
+}
