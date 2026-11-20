@@ -5,6 +5,7 @@ import { getAuthHeaders } from "@/lib/queryClient";
 import {
   mapStudentImportRows,
   resolveStudentImportCredentials,
+  matchStudentImportLocation,
   STUDENT_EXPORT_HEADERS,
   STUDENT_UPLOAD_HEADERS,
 } from "@/lib/student-import-columns";
@@ -178,7 +179,7 @@ export function useExcelImportExport({
         column: "A",
         name: "StudentImportLocations",
         label: "Cơ sở",
-        values: cleanList(locations?.map((l: any) => l.name) || ["Cơ sở chính"]),
+        values: cleanList(locations?.map((l: any) => l.name) || ["Cơ sở chính"], false),
         inputColumn: "C",
       },
       {
@@ -698,12 +699,15 @@ export function useExcelImportExport({
         let rowLocationId = importLocation || "";
         if (!rowLocationId && row[2]) {
           const locName = String(row[2]).trim();
-          const matched = locations?.find((l: any) => l.name === locName);
-          if (matched) {
-            rowLocationId = matched.id;
+          const locationMatch = matchStudentImportLocation(locName, locations || []);
+          if (locationMatch.location) {
+            rowLocationId = locationMatch.location.id;
           } else {
-            const validLocs = locations?.map((l: any) => l.name).join(", ") || "";
-            validationErrors.push(`Cột C (Cơ sở) không hợp lệ: "${locName}". Các giá trị hợp lệ: ${validLocs}`);
+            const validLocs = locations?.map((l: any) => `"${l.name}"`).join("; ") || "";
+            const reason = locationMatch.ambiguous
+              ? "khớp với nhiều cơ sở sau khi chuẩn hóa; hãy nhập chính xác tên cơ sở"
+              : "không hợp lệ";
+            validationErrors.push(`Cột C (Cơ sở) ${reason}: "${locName}". Các giá trị hợp lệ: ${validLocs}`);
             errorColumns.push(2);
           }
         }

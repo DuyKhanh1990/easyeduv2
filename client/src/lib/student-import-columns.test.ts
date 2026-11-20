@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   mapStudentImportRows,
+  matchStudentImportLocation,
   resolveStudentImportCredentials,
   STUDENT_EXPORT_HEADERS,
   STUDENT_UPLOAD_HEADERS,
@@ -74,6 +75,32 @@ describe("student Excel upload column mapping", () => {
     expect(resolveStudentImportCredentials("HV-02", "", "new-pass-123")).toEqual({
       username: "HV-02",
       password: "new-pass-123",
+    });
+  });
+});
+
+describe("student import location matching", () => {
+  const locations = [
+    { id: "location-1", name: "218 Nguyễn Xí, Bình Thạnh" },
+    { id: "location-2", name: "17 Võ Oanh (D3), Bình Thạnh" },
+  ];
+
+  it("matches names from older templates that removed commas", () => {
+    expect(matchStudentImportLocation("218 Nguyễn Xí  Bình Thạnh", locations)).toEqual({
+      location: locations[0],
+      ambiguous: false,
+    });
+  });
+
+  it("does not guess when normalized names match multiple locations", () => {
+    const ambiguousLocations = [
+      { id: "one", name: "Cơ sở A, Quận 1" },
+      { id: "two", name: "Cơ sở A Quận 1" },
+    ];
+
+    expect(matchStudentImportLocation("Cơ sở A Quận 1", ambiguousLocations)).toEqual({
+      location: null,
+      ambiguous: true,
     });
   });
 });

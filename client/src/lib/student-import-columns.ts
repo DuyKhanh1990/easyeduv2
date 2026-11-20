@@ -72,3 +72,39 @@ export function resolveStudentImportCredentials(
     password: hasPassword ? String(passwordValue) : "123456",
   };
 }
+
+export type StudentImportLocation = {
+  id: string;
+  name: string;
+};
+
+function normalizeStudentImportLocationName(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFC")
+    .toLocaleLowerCase("vi")
+    .replace(/,/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function matchStudentImportLocation<T extends StudentImportLocation>(
+  value: unknown,
+  locations: readonly T[],
+): { location: T | null; ambiguous: boolean } {
+  const name = String(value ?? "").trim();
+  if (!name) return { location: null, ambiguous: false };
+
+  const exactMatches = locations.filter((location) => location.name.trim() === name);
+  if (exactMatches.length === 1) return { location: exactMatches[0], ambiguous: false };
+  if (exactMatches.length > 1) return { location: null, ambiguous: true };
+
+  const normalizedName = normalizeStudentImportLocationName(name);
+  const normalizedMatches = locations.filter(
+    (location) => normalizeStudentImportLocationName(location.name) === normalizedName,
+  );
+  if (normalizedMatches.length === 1) {
+    return { location: normalizedMatches[0], ambiguous: false };
+  }
+
+  return { location: null, ambiguous: normalizedMatches.length > 1 };
+}
