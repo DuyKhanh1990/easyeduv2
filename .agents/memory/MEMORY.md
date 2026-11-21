@@ -19,6 +19,7 @@
  - [Invoice summary cards](invoice-summary-cards.md) — thẻ thu-chi độc lập tab trạng thái, bám bộ lọc và loại hóa đơn hủy khỏi dự thu/chi.
  - [Invoice Excel parent rows](invoice-excel-parent-rows.md) — file Excel phải giữ dòng hóa đơn cha trước các đợt con để không mất khuyến mãi/phụ thu cấp hóa đơn.
 - [Omicall caller routing](omicall-caller-routing.md) — gọi ra phải ghép cấu hình tenant theo cơ sở với máy lẻ của nhân sự đăng nhập ở server.
+- [Staff call-center provider assignments](staff-call-center-provider-assignments.md) — shared provider credentials stay in Settings; staff records hold a labeled extension row per configured provider and assigned center.
 - [Imported encrypted provider settings](imported-encrypted-provider-settings.md) — sau khi import, secret mã hóa có thể khác; giữ cấu hình đọc được để admin thay credential thay vì trả 500.
 - [Page guide edit permissions](page-guide-edit-permissions.md) — tài liệu riêng theo từng trang; chỉ host gốc và Super Admin được sửa, host khác chỉ đọc.
 - [Schedule popup responsiveness](schedule-popup-responsiveness.md) — ưu tiên hiển thị popup lịch học trước khi mount cây component nặng; không thay đổi cơ chế chi tiết theo session.

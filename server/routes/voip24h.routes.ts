@@ -4,7 +4,7 @@ import { pipeline } from "node:stream/promises";
 import { and, eq, inArray, like } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db";
-import { locations, staff, staffAssignments, systemSettings } from "@shared/schema";
+import { locations, staff, staffAssignments, systemSettings, omicallLocationConfigs } from "@shared/schema";
 import { decrypt, encrypt } from "../lib/encryption";
 import { storage } from "../storage";
 import {
@@ -24,13 +24,6 @@ const saveConfigSchema = z.object({
   apiKey: z.string().optional(),
   apiSecret: z.string().optional(),
   isLonglive: z.boolean().optional(),
-});
-const extensionMappingsSchema = z.object({
-  locationId: locationIdSchema,
-  mappings: z.array(z.object({
-    staffId: z.string().uuid(),
-    extension: z.string().trim().max(50),
-  })).max(1000),
 });
 const voipDialSchema = z.object({
   locationId: locationIdSchema,
@@ -85,20 +78,6 @@ async function getSavedExtensionMap(locationId: string): Promise<Record<string, 
   } catch {
     return {};
   }
-}
-
-async function getLocationStaff(locationId: string) {
-  const rows = await db
-    .select({ id: staff.id, fullName: staff.fullName })
-    .from(staffAssignments)
-    .innerJoin(staff, eq(staff.id, staffAssignments.staffId))
-    .where(and(
-      eq(staffAssignments.locationId, locationId),
-      eq(staff.status, "Hoạt động"),
-    ));
-  const unique = new Map<string, { id: string; fullName: string }>();
-  rows.forEach((row) => unique.set(row.id, row));
-  return [...unique.values()].sort((a, b) => a.fullName.localeCompare(b.fullName, "vi"));
 }
 
 function normalizeDialPhone(value: string): string {
@@ -301,53 +280,81 @@ export function registerVoip24hRoutes(app: Express) {
     }
   });
 
-  app.get("/api/call-center/voip24h/extensions", async (req, res) => {
-    if (!req.isSuperAdmin) return res.status(403).json({ message: "Chỉ Super Admin được quản lý máy nhánh" });
-    const parsedLocationId = locationIdSchema.safeParse(req.query.locationId);
-    if (!parsedLocationId.success) return res.status(400).json({ message: "Cơ sở không hợp lệ" });
-    try {
-      const locationId = parsedLocationId.data;
-      const [staffList, mappings] = await Promise.all([
-        getLocationStaff(locationId),
-        getSavedExtensionMap(locationId),
-      ]);
-      return res.json({ locationId, staff: staffList, mappings });
-    } catch (error: any) {
-      console.error("[VoIP24H] Read extension mappings failed:", error?.message || error);
-      return res.status(500).json({ message: "Không thể đọc danh sách máy nhánh" });
-    }
-  });
+  app.get("/api/call-center/staff-provider-lines", async (req, res) => {
+    const parsed = z.object({
+      locationIds: z.string().min(1).max(4000),
+      staffId: z.string().uuid().optional(),
+    }).safeParse(req.query);
+    if (!parsed.success) return res.status(400).json({ message: "Danh sách cơ sở không hợp lệ" });
 
-  app.put("/api/call-center/voip24h/extensions", async (req, res) => {
-    if (!req.isSuperAdmin) return res.status(403).json({ message: "Chỉ Super Admin được quản lý máy nhánh" });
-    const parsed = extensionMappingsSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ message: "Danh sách máy nhánh không hợp lệ" });
     try {
-      const { locationId, mappings } = parsed.data;
-      if (!await locationExists(locationId)) {
-        return res.status(404).json({ message: "Không tìm thấy cơ sở đã chọn" });
+      const locationIds = [...new Set(parsed.data.locationIds.split(",").filter(Boolean))];
+      if (!locationIds.length || locationIds.some((id) => !locationIdSchema.safeParse(id).success)) {
+        return res.status(400).json({ message: "Danh sách cơ sở không hợp lệ" });
       }
-      const staffList = await getLocationStaff(locationId);
-      const validStaffIds = new Set(staffList.map((person) => person.id));
-      const mapEntries = mappings
-        .map((item) => [item.staffId, item.extension.trim()] as const)
-        .filter(([staffId, extension]) => validStaffIds.has(staffId) && extension);
-      const extensions = mapEntries.map(([, extension]) => extension.toLowerCase());
-      if (new Set(extensions).size !== extensions.length) {
-        return res.status(400).json({ message: "Không thể gán cùng một máy nhánh cho nhiều nhân viên tại một cơ sở." });
+      const allowedLocationIds = new Set(req.allowedLocationIds || []);
+      const scopedLocationIds = req.isSuperAdmin
+        ? locationIds
+        : locationIds.filter((id) => allowedLocationIds.has(id));
+      if (!scopedLocationIds.length) return res.status(403).json({ message: "Bạn không có quyền truy cập các cơ sở đã chọn." });
+
+      if (parsed.data.staffId && !req.isSuperAdmin) {
+        const [accessibleAssignment] = await db.select({ id: staffAssignments.id })
+          .from(staffAssignments)
+          .where(and(
+            eq(staffAssignments.staffId, parsed.data.staffId),
+            inArray(staffAssignments.locationId, [...allowedLocationIds]),
+          ))
+          .limit(1);
+        if (!accessibleAssignment) return res.status(403).json({ message: "Bạn không có quyền truy cập nhân sự này." });
       }
-      const mappingObject = Object.fromEntries(mapEntries);
-      const value = encrypt(JSON.stringify(mappingObject));
-      await db.insert(systemSettings)
-        .values({ key: extensionMapKey(locationId), value, updatedAt: new Date() })
-        .onConflictDoUpdate({
-          target: systemSettings.key,
-          set: { value, updatedAt: new Date() },
-        });
-      return res.json({ ok: true, message: "Đã lưu máy nhánh theo nhân viên." });
+
+      const [locationRows, omicallRows] = await Promise.all([
+        db.select({ id: locations.id, name: locations.name })
+          .from(locations)
+          .where(inArray(locations.id, scopedLocationIds)),
+        db.select({
+          locationId: omicallLocationConfigs.locationId,
+          isEnabled: omicallLocationConfigs.isEnabled,
+          authUser: omicallLocationConfigs.authUser,
+          sipRealm: omicallLocationConfigs.sipRealm,
+          authKeyEncrypted: omicallLocationConfigs.authKeyEncrypted,
+        })
+          .from(omicallLocationConfigs)
+          .where(inArray(omicallLocationConfigs.locationId, scopedLocationIds)),
+      ]);
+      const locationNameById = new Map(locationRows.map((row) => [row.id, row.name]));
+      const omicallByLocation = new Map(omicallRows.map((row) => [row.locationId, row]));
+      const [voipConfigEntries, extensionMapEntries] = await Promise.all([
+        Promise.all(scopedLocationIds.map(async (locationId) => [locationId, await getSavedConfig(locationId)] as const)),
+        parsed.data.staffId
+          ? Promise.all(scopedLocationIds.map(async (locationId) => [locationId, await getSavedExtensionMap(locationId)] as const))
+          : Promise.resolve([] as Array<readonly [string, Record<string, string>]>),
+      ]);
+      const voipConfigByLocation = new Map(voipConfigEntries);
+      const extensionMapByLocation = new Map(extensionMapEntries);
+      const providers: Array<{ locationId: string; locationName: string; provider: "omicall" | "voip24h" }> = [];
+      const voip24hExtensions: Record<string, string> = {};
+
+      for (const locationId of scopedLocationIds) {
+        const locationName = locationNameById.get(locationId) || "Cơ sở";
+        const omicall = omicallByLocation.get(locationId);
+        if (omicall?.isEnabled && omicall.authUser && omicall.sipRealm && omicall.authKeyEncrypted) {
+          providers.push({ locationId, locationName, provider: "omicall" });
+        }
+        const voipConfig = voipConfigByLocation.get(locationId);
+        if (voipConfig?.apiKey && voipConfig.apiSecret && !voipConfig.decryptionFailed) {
+          providers.push({ locationId, locationName, provider: "voip24h" });
+        }
+        if (parsed.data.staffId) {
+          voip24hExtensions[locationId] = extensionMapByLocation.get(locationId)?.[parsed.data.staffId] || "";
+        }
+      }
+
+      return res.json({ providers, voip24hExtensions });
     } catch (error: any) {
-      console.error("[VoIP24H] Save extension mappings failed:", error?.message || error);
-      return res.status(500).json({ message: "Không thể lưu máy nhánh" });
+      console.error("[Call Center] Read staff provider lines failed:", error?.message || error);
+      return res.status(500).json({ message: "Không thể đọc kết nối tổng đài của nhân sự" });
     }
   });
 

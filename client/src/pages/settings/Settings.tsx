@@ -4238,6 +4238,7 @@ function OmicallConfig({ onSelectVoip24h }: { onSelectVoip24h: () => void }) {
     onSuccess: () => {
       toast({ title: "Đã lưu cấu hình", description: "Đã lưu cấu hình Omicall riêng cho cơ sở này." });
       queryClient.invalidateQueries({ queryKey: ["/api/call-center/omicall/config", selectedLocationId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/call-center/staff-provider-lines"] });
     },
     onError: (error: any) => {
       toast({ title: "Lưu thất bại", description: error?.message || "Không thể lưu cấu hình Omicall", variant: "destructive" });
@@ -4486,8 +4487,6 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
   const { toast } = useToast();
   const { data: locations, isLoading: locationsLoading } = useLocations();
   const [selectedLocationId, setSelectedLocationId] = useState("");
-  const [extensionValues, setExtensionValues] = useState<Record<string, string>>({});
-  const [availableExtensions, setAvailableExtensions] = useState<string[]>([]);
   const [form, setForm] = useState({
     apiKey: "",
     apiSecret: "",
@@ -4526,28 +4525,9 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
   const activeSavedConfig =
     savedConfig?.locationId === selectedLocationId ? savedConfig : undefined;
 
-  const { data: extensionSettings, isLoading: extensionsLoading } = useQuery<{
-    locationId: string;
-    staff: { id: string; fullName: string }[];
-    mappings: Record<string, string>;
-  }>({
-    queryKey: ["/api/call-center/voip24h/extensions", selectedLocationId],
-    enabled: Boolean(selectedLocationId),
-    queryFn: async () => {
-      const res = await fetch(
-        `/api/call-center/voip24h/extensions?locationId=${encodeURIComponent(selectedLocationId)}`,
-        { credentials: "include", headers: getAuthHeaders() },
-      );
-      if (!res.ok) throw new Error("Không thể đọc danh sách máy nhánh");
-      return res.json();
-    },
-  });
-
   useEffect(() => {
     setForm({ apiKey: "", apiSecret: "", isLonglive: true });
     setAuthTestResult(null);
-    setExtensionValues({});
-    setAvailableExtensions([]);
   }, [selectedLocationId]);
 
   useEffect(() => {
@@ -4558,11 +4538,6 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
       isLonglive: savedConfig.isLonglive,
     });
   }, [savedConfig, selectedLocationId]);
-
-  useEffect(() => {
-    if (!extensionSettings || extensionSettings.locationId !== selectedLocationId) return;
-    setExtensionValues(extensionSettings.mappings || {});
-  }, [extensionSettings, selectedLocationId]);
 
   const apiKeyToSend = form.apiKey === "********" ? "__USE_SAVED__" : form.apiKey;
   const apiSecretToSend = form.apiSecret === "********" ? "__USE_SAVED__" : form.apiSecret;
@@ -4613,51 +4588,10 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
     onSuccess: (data: { message?: string }) => {
       toast({ title: "Đã lưu cấu hình", description: data.message || "Đã lưu cấu hình VoIP24H cho cơ sở này." });
       queryClient.invalidateQueries({ queryKey: ["/api/call-center/voip24h/config", selectedLocationId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/call-center/staff-provider-lines"] });
     },
     onError: (error: any) => {
       toast({ title: "Lưu thất bại", description: error?.message || "Không thể lưu cấu hình VoIP24H.", variant: "destructive" });
-    },
-  });
-
-  const syncExtensionsMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/call-center/voip24h/extension-list", {
-        locationId: selectedLocationId,
-      });
-      return res.json() as Promise<{ extensions: string[] }>;
-    },
-    onSuccess: (data) => {
-      setAvailableExtensions(data.extensions || []);
-      toast({
-        title: "Đã tải máy nhánh",
-        description: data.extensions?.length
-          ? `Tìm thấy ${data.extensions.length} máy nhánh trên VOIP24H.`
-          : "VOIP24H chưa trả về máy nhánh nào.",
-      });
-    },
-    onError: (error: any) => {
-      toast({ title: "Không tải được máy nhánh", description: error?.message || "Hãy kiểm tra cấu hình VOIP24H.", variant: "destructive" });
-    },
-  });
-
-  const saveExtensionsMutation = useMutation({
-    mutationFn: async () => {
-      const mappings = (extensionSettings?.staff || []).map((person) => ({
-        staffId: person.id,
-        extension: extensionValues[person.id] || "",
-      }));
-      const res = await apiRequest("PUT", "/api/call-center/voip24h/extensions", {
-        locationId: selectedLocationId,
-        mappings,
-      });
-      return res.json();
-    },
-    onSuccess: (data: { message?: string }) => {
-      toast({ title: "Đã lưu máy nhánh", description: data.message || "Đã lưu máy nhánh cho nhân viên." });
-      queryClient.invalidateQueries({ queryKey: ["/api/call-center/voip24h/extensions", selectedLocationId] });
-    },
-    onError: (error: any) => {
-      toast({ title: "Lưu máy nhánh thất bại", description: error?.message || "Không thể lưu danh sách máy nhánh.", variant: "destructive" });
     },
   });
 
@@ -4827,79 +4761,6 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
               Lưu cấu hình
             </Button>
           </div>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader className="py-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <CardTitle className="text-sm">Máy nhánh theo nhân viên</CardTitle>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Gán máy nhánh VOIP24H cho từng nhân viên tại {selectedLocation?.name || "cơ sở đang chọn"}.
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => syncExtensionsMutation.mutate()}
-              disabled={!selectedLocationId || !activeSavedConfig?.hasApiKey || !activeSavedConfig?.hasApiSecret || syncExtensionsMutation.isPending}
-              data-testid="button-load-voip24h-extensions"
-            >
-              {syncExtensionsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Tải máy nhánh từ VOIP24H
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {!selectedLocationId ? (
-            <p className="text-sm text-muted-foreground">Chọn cơ sở để cấu hình máy nhánh.</p>
-          ) : extensionsLoading ? (
-            <p className="text-sm text-muted-foreground">Đang tải nhân viên được phân công...</p>
-          ) : extensionSettings?.staff?.length ? (
-            <>
-              <div className="space-y-2">
-                {extensionSettings.staff.map((person) => (
-                  <div key={person.id} className="grid grid-cols-1 gap-2 rounded-md border p-3 sm:grid-cols-[1fr_minmax(180px,280px)] sm:items-center">
-                    <span className="text-sm font-medium">{person.fullName}</span>
-                    <Input
-                      list={`voip24h-extension-options-${selectedLocationId}`}
-                      value={extensionValues[person.id] || ""}
-                      onChange={(event) => setExtensionValues((current) => ({
-                        ...current,
-                        [person.id]: event.target.value,
-                      }))}
-                      placeholder="Nhập hoặc chọn máy nhánh"
-                      aria-label={`Máy nhánh VOIP24H của ${person.fullName}`}
-                      data-testid={`input-voip24h-extension-${person.id}`}
-                    />
-                  </div>
-                ))}
-              </div>
-              <datalist id={`voip24h-extension-options-${selectedLocationId}`}>
-                {availableExtensions.map((extension) => (
-                  <option key={extension} value={extension} />
-                ))}
-              </datalist>
-              <p className="text-xs text-muted-foreground">
-                Máy nhánh được dùng để khởi tạo cuộc gọi; nhân viên nghe cuộc gọi trên softphone/điện thoại đã đăng ký máy nhánh đó.
-                {!activeSavedConfig?.hasApiKey || !activeSavedConfig?.hasApiSecret
-                  ? " Có thể nhập thủ công; muốn tải danh sách tự động thì hãy lưu API Key và API Secret trước."
-                  : ""}
-              </p>
-              <Button
-                type="button"
-                onClick={() => saveExtensionsMutation.mutate()}
-                disabled={saveExtensionsMutation.isPending || extensionsLoading}
-                data-testid="button-save-voip24h-extensions"
-              >
-                {saveExtensionsMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Lưu máy nhánh
-              </Button>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">Cơ sở này chưa có nhân viên đang hoạt động được phân công.</p>
-          )}
         </CardContent>
       </Card>
       </div>

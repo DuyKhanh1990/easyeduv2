@@ -8,6 +8,7 @@ export { format, parseISO } from "date-fns";
 
 export {
   users, locations, staff, students, departments, roles,
+  systemSettings,
   departmentsRelations, rolesRelations,
   crmPipelineGroups, crmRelationships, crmRejectReasons, crmCustomerSources, crmSchools,
   crmRequiredFields, crmCustomFields, crmRegistrationFormFields,
