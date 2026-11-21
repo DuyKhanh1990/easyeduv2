@@ -4154,7 +4154,6 @@ function OmicallConfig({ onSelectVoip24h }: { onSelectVoip24h: () => void }) {
       return res.json();
     },
   });
-
   useEffect(() => {
     setForm({
       serviceName: "omicall",
@@ -4484,22 +4483,115 @@ function OmicallConfig({ onSelectVoip24h }: { onSelectVoip24h: () => void }) {
 }
 
 function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
+  const { toast } = useToast();
   const { data: locations, isLoading: locationsLoading } = useLocations();
   const [selectedLocationId, setSelectedLocationId] = useState("");
   const [form, setForm] = useState({
-    serviceName: "VOIP24H",
-    authUser: "",
-    authKey: "",
-    callHistoryUrl: "https://dial.voip24h.vn/dial/search",
-    autoCallUrl: "https://dial.voip24h.vn/dial",
+    apiKey: "",
+    apiSecret: "",
+    isLonglive: true,
   });
-  const [showAuthKey, setShowAuthKey] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [showApiSecret, setShowApiSecret] = useState(false);
+  const [authTestResult, setAuthTestResult] = useState<{ expiresAt: string | null; isLonglive: boolean } | null>(null);
 
   useEffect(() => {
     if (locations?.length && !selectedLocationId) {
       setSelectedLocationId(locations[0].id);
     }
   }, [locations, selectedLocationId]);
+
+  const { data: savedConfig } = useQuery<{
+    locationId: string;
+    hasApiKey: boolean;
+    apiKeyMasked: string;
+    hasApiSecret: boolean;
+    apiSecretMasked: string;
+    isLonglive: boolean;
+    decryptionFailed: boolean;
+  }>({
+    queryKey: ["/api/call-center/voip24h/config", selectedLocationId],
+    enabled: Boolean(selectedLocationId),
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/call-center/voip24h/config?locationId=${encodeURIComponent(selectedLocationId)}`,
+        { credentials: "include", headers: getAuthHeaders() },
+      );
+      if (!res.ok) throw new Error("Không thể đọc cấu hình VoIP24H");
+      return res.json();
+    },
+  });
+  const activeSavedConfig =
+    savedConfig?.locationId === selectedLocationId ? savedConfig : undefined;
+
+  useEffect(() => {
+    setForm({ apiKey: "", apiSecret: "", isLonglive: true });
+    setAuthTestResult(null);
+  }, [selectedLocationId]);
+
+  useEffect(() => {
+    if (!savedConfig || savedConfig.locationId !== selectedLocationId) return;
+    setForm({
+      apiKey: savedConfig.hasApiKey && !savedConfig.decryptionFailed ? "********" : "",
+      apiSecret: savedConfig.hasApiSecret && !savedConfig.decryptionFailed ? "********" : "",
+      isLonglive: savedConfig.isLonglive,
+    });
+  }, [savedConfig, selectedLocationId]);
+
+  const apiKeyToSend = form.apiKey === "********" ? "__USE_SAVED__" : form.apiKey;
+  const apiSecretToSend = form.apiSecret === "********" ? "__USE_SAVED__" : form.apiSecret;
+  const hasUsableApiKey = !!apiKeyToSend || !!activeSavedConfig?.hasApiKey;
+  const hasUsableApiSecret = !!apiSecretToSend || !!activeSavedConfig?.hasApiSecret;
+
+  const testMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedLocationId) throw new Error("Vui lòng chọn cơ sở.");
+      if (!hasUsableApiKey || !hasUsableApiSecret) {
+        throw new Error("Vui lòng nhập API Key và API Secret.");
+      }
+      const res = await apiRequest("POST", "/api/call-center/voip24h/test-connection", {
+        locationId: selectedLocationId,
+        apiKey: apiKeyToSend,
+        apiSecret: apiSecretToSend,
+        isLonglive: form.isLonglive,
+      });
+      return res.json();
+    },
+    onSuccess: (data: { message?: string; expiresAt?: string | null; isLonglive?: boolean }) => {
+      setAuthTestResult({
+        expiresAt: data.expiresAt ?? null,
+        isLonglive: data.isLonglive ?? form.isLonglive,
+      });
+      toast({ title: "Xác thực thành công", description: data.message || "Đã nhận token xác thực từ VOIP24H." });
+    },
+    onError: (error: any) => {
+      setAuthTestResult(null);
+      toast({ title: "Xác thực thất bại", description: error?.message || "Không thể xác thực với VOIP24H.", variant: "destructive" });
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedLocationId) throw new Error("Vui lòng chọn cơ sở.");
+      if (!hasUsableApiKey || !hasUsableApiSecret) {
+        throw new Error("Vui lòng nhập API Key và API Secret.");
+      }
+      const res = await apiRequest("PUT", "/api/call-center/voip24h/config", {
+        locationId: selectedLocationId,
+        apiKey: apiKeyToSend,
+        apiSecret: apiSecretToSend,
+        isLonglive: form.isLonglive,
+      });
+      return res.json();
+    },
+    onSuccess: (data: { message?: string }) => {
+      toast({ title: "Đã lưu cấu hình", description: data.message || "Đã lưu cấu hình VoIP24H cho cơ sở này." });
+      queryClient.invalidateQueries({ queryKey: ["/api/call-center/voip24h/config", selectedLocationId] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Lưu thất bại", description: error?.message || "Không thể lưu cấu hình VoIP24H.", variant: "destructive" });
+    },
+  });
 
   const selectedLocation = locations?.find(location => location.id === selectedLocationId);
 
@@ -4533,7 +4625,7 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
 
       <Card>
         <CardHeader className="py-3">
-          <CardTitle className="text-sm">Cấu hình tổng đài — VoIP24H</CardTitle>
+          <CardTitle className="text-sm">Xác thực tài khoản — VoIP24H</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {locationsLoading ? (
@@ -4566,70 +4658,105 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
           )}
 
           <div>
-            <label className="block text-sm font-medium mb-1.5">Service Name</label>
-            <Input
-              value={form.serviceName}
-              onChange={e => setForm(p => ({ ...p, serviceName: e.target.value }))}
-              data-testid="input-voip24h-service-name"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Auth user</label>
-            <Input
-              value={form.authUser}
-              onChange={e => setForm(p => ({ ...p, authUser: e.target.value }))}
-              data-testid="input-voip24h-auth-user"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Auth key</label>
+            <label className="block text-sm font-medium mb-1.5">API Key</label>
             <div className="relative">
               <Input
-                type={showAuthKey ? "text" : "password"}
-                value={form.authKey}
-                onChange={e => setForm(p => ({ ...p, authKey: e.target.value }))}
+                type={showApiKey ? "text" : "password"}
+                value={form.apiKey}
+                onChange={e => { setForm(p => ({ ...p, apiKey: e.target.value })); setAuthTestResult(null); }}
+                placeholder={activeSavedConfig?.hasApiKey ? "Đã lưu — nhập giá trị mới nếu cần thay đổi" : "Nhập API Key VOIP24H"}
                 className="pr-9"
-                data-testid="input-voip24h-auth-key"
+                autoComplete="new-password"
+                data-testid="input-voip24h-api-key"
               />
               <button
                 type="button"
-                onClick={() => setShowAuthKey(value => !value)}
+                onClick={() => setShowApiKey(value => !value)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                aria-label={showAuthKey ? "Ẩn Auth key" : "Hiện Auth key"}
-                data-testid="button-toggle-voip24h-auth-key"
+                aria-label={showApiKey ? "Ẩn API Key" : "Hiện API Key"}
               >
-                {showAuthKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1.5">Call History URL</label>
-            <Input
-              value={form.callHistoryUrl}
-              onChange={e => setForm(p => ({ ...p, callHistoryUrl: e.target.value }))}
-              data-testid="input-voip24h-call-history-url"
-            />
+            <label className="block text-sm font-medium mb-1.5">API Secret</label>
+            <div className="relative">
+              <Input
+                type={showApiSecret ? "text" : "password"}
+                value={form.apiSecret}
+                onChange={e => { setForm(p => ({ ...p, apiSecret: e.target.value })); setAuthTestResult(null); }}
+                placeholder={activeSavedConfig?.hasApiSecret ? "Đã lưu — nhập giá trị mới nếu cần thay đổi" : "Nhập API Secret VOIP24H"}
+                className="pr-9"
+                autoComplete="new-password"
+                data-testid="input-voip24h-api-secret"
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiSecret(value => !value)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label={showApiSecret ? "Ẩn API Secret" : "Hiện API Secret"}
+                data-testid="button-toggle-voip24h-api-secret"
+              >
+                {showApiSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1.5">Auto Call URL</label>
-            <Input
-              value={form.autoCallUrl}
-              onChange={e => setForm(p => ({ ...p, autoCallUrl: e.target.value }))}
-              data-testid="input-voip24h-auto-call-url"
-            />
+            <label className="block text-sm font-medium mb-1.5">Thời hạn token</label>
+            <Select
+              value={form.isLonglive ? "7" : "1"}
+              onValueChange={value => {
+                setForm(p => ({ ...p, isLonglive: value === "7" }));
+                setAuthTestResult(null);
+              }}
+            >
+              <SelectTrigger data-testid="select-voip24h-token-lifetime">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">1 ngày</SelectItem>
+                <SelectItem value="7">7 ngày</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
+          <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+            Gọi POST https://api.voip24h.vn/v3/authentication với API Key, API Secret và thời hạn token trong JSON. Token chỉ được xử lý ở máy chủ, không hiển thị trong trình duyệt.
+          </p>
+          {activeSavedConfig?.decryptionFailed && (
+            <p className="text-xs text-destructive">
+              Không đọc được thông tin đã lưu; hãy nhập lại cả API Key và API Secret.
+            </p>
+          )}
+          {authTestResult && (
+            <p className="text-xs text-emerald-700" role="status">
+              Xác thực thành công. Token hiệu lực {authTestResult.isLonglive ? "7 ngày" : "1 ngày"}
+              {authTestResult.expiresAt ? `, hết hạn ${authTestResult.expiresAt}` : ""}.
+            </p>
+          )}
           <div className="flex items-center gap-3 flex-wrap pt-2 border-t">
-            <Button type="button" disabled data-testid="button-save-voip24h">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => testMutation.mutate()}
+              disabled={!selectedLocationId || !hasUsableApiKey || !hasUsableApiSecret || testMutation.isPending}
+              data-testid="button-test-voip24h"
+            >
+              {testMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Kiểm tra xác thực
+            </Button>
+            <Button
+              type="button"
+              onClick={() => saveMutation.mutate()}
+              disabled={!selectedLocationId || !hasUsableApiKey || !hasUsableApiSecret || saveMutation.isPending}
+              data-testid="button-save-voip24h"
+            >
+              {saveMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Lưu cấu hình
             </Button>
-            <p className="text-xs text-muted-foreground">
-              Lưu cấu hình và tích hợp sẽ được kết nối ở bước tiếp theo.
-            </p>
           </div>
         </CardContent>
       </Card>

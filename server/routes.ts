@@ -40,6 +40,7 @@ import { registerAIRoutes } from "./routes/ai.routes";
 import { registerAISettingsRoutes } from "./routes/ai-settings.routes";
 import { registerPaymentGatewayRoutes } from "./routes/payment-gateways.routes";
 import { registerOmicallRoutes } from "./routes/omicall.routes";
+import { registerVoip24hRoutes } from "./routes/voip24h.routes";
 import { registerTaskStatusRoutes } from "./routes/task-statuses.routes";
 import { registerTaskLevelRoutes } from "./routes/task-levels.routes";
 import { registerTaskRoutes } from "./routes/tasks.routes";
@@ -482,6 +483,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerAISettingsRoutes(app);
   registerPaymentGatewayRoutes(app);
   registerOmicallRoutes(app);
+  registerVoip24hRoutes(app);
   registerTaskStatusRoutes(app);
   registerTaskLevelRoutes(app);
   registerTaskRoutes(app);
