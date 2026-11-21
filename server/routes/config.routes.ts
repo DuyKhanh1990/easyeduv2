@@ -529,7 +529,7 @@ function requestUserId(req: any): string | null {
 }
 
 function staffHistorySnapshot(data: any, staffId?: string | null) {
-  const { password, omicallPasswords, ...safe } = data ?? {};
+  const { password, omicallPasswords, voip24hSipPasswords, ...safe } = data ?? {};
   return JSON.stringify({ ...safe, staffId: staffId ?? data?.id ?? null });
 }
 

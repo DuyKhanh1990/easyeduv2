@@ -4491,6 +4491,7 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
     apiKey: "",
     apiSecret: "",
     isLonglive: true,
+    sipServerIp: "",
   });
   const [showApiKey, setShowApiKey] = useState(false);
   const [showApiSecret, setShowApiSecret] = useState(false);
@@ -4510,6 +4511,7 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
     apiSecretMasked: string;
     isLonglive: boolean;
     decryptionFailed: boolean;
+    sipServerIp: string;
   }>({
     queryKey: ["/api/call-center/voip24h/config", selectedLocationId],
     enabled: Boolean(selectedLocationId),
@@ -4526,7 +4528,7 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
     savedConfig?.locationId === selectedLocationId ? savedConfig : undefined;
 
   useEffect(() => {
-    setForm({ apiKey: "", apiSecret: "", isLonglive: true });
+    setForm({ apiKey: "", apiSecret: "", isLonglive: true, sipServerIp: "" });
     setAuthTestResult(null);
   }, [selectedLocationId]);
 
@@ -4536,6 +4538,7 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
       apiKey: savedConfig.hasApiKey && !savedConfig.decryptionFailed ? "********" : "",
       apiSecret: savedConfig.hasApiSecret && !savedConfig.decryptionFailed ? "********" : "",
       isLonglive: savedConfig.isLonglive,
+      sipServerIp: savedConfig.sipServerIp || "",
     });
   }, [savedConfig, selectedLocationId]);
 
@@ -4555,6 +4558,7 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
         apiKey: apiKeyToSend,
         apiSecret: apiSecretToSend,
         isLonglive: form.isLonglive,
+        sipServerIp: form.sipServerIp,
       });
       return res.json();
     },
@@ -4724,6 +4728,20 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
                 <SelectItem value="7">7 ngày</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">IP máy chủ SIP</label>
+            <Input
+              value={form.sipServerIp}
+              onChange={(event) => setForm((current) => ({ ...current, sipServerIp: event.target.value }))}
+              placeholder="Nhập IP SIP do VoIP24H cung cấp"
+              autoComplete="off"
+              data-testid="input-voip24h-sip-server-ip"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Dùng để đăng nhập máy nhánh WebRTC trên trình duyệt; không ảnh hưởng đến gọi qua softphone.
+            </p>
           </div>
 
           <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">

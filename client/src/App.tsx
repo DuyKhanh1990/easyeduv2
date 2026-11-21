@@ -10,6 +10,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useFavicon } from "@/hooks/use-favicon";
 import { LanguageProvider } from "@/hooks/use-language";
 import { useWebPush } from "@/hooks/use-web-push";
+import { Voip24hWebPhone } from "@/components/call/Voip24hWebPhone";
 
 const NotFound = lazy(() => import("@/pages/not-found"));
 
@@ -169,6 +170,7 @@ function App() {
               <ErrorBoundary>
                 <WouterRouter>
                   <Router />
+                  <Voip24hWebPhone />
                 </WouterRouter>
               </ErrorBoundary>
               <AppUpdateBanner />

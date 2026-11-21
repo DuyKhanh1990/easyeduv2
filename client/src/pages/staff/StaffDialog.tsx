@@ -60,6 +60,7 @@ const formSchema = z.object({
   omicallExtensions: z.record(z.string(), z.string().max(50)).default({}),
   omicallPasswords: z.record(z.string(), z.string().max(255)).default({}),
   voip24hExtensions: z.record(z.string(), z.string().max(50)).default({}),
+  voip24hSipPasswords: z.record(z.string(), z.string().max(255)).default({}),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -110,6 +111,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
   const [cropViewSize, setCropViewSize] = useState(AVATAR_CROP_SIZE);
   const [isCroppingAvatar, setIsCroppingAvatar] = useState(false);
   const [visibleOmicallPasswords, setVisibleOmicallPasswords] = useState<Record<string, boolean>>({});
+  const [visibleVoip24hSipPasswords, setVisibleVoip24hSipPasswords] = useState<Record<string, boolean>>({});
   const [availableVoipExtensions, setAvailableVoipExtensions] = useState<Record<string, string[]>>({});
   const [loadingVoipExtensionsLocation, setLoadingVoipExtensionsLocation] = useState<string | null>(null);
   const codeAutoRef = useRef(!staff);
@@ -128,6 +130,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
       omicallExtensions: {},
       omicallPasswords: {},
       voip24hExtensions: {},
+      voip24hSipPasswords: {},
       code: "",
       username: "",
       password: "123456",
@@ -147,6 +150,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
       const isEditing = Boolean(staff);
       codeAutoRef.current = !isEditing;
       setVisibleOmicallPasswords({});
+      setVisibleVoip24hSipPasswords({});
       voip24hManualEditsRef.current = {};
       form.reset({
         fullName: staff?.fullName || "",
@@ -164,6 +168,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
           (staff?.assignments || []).map((assignment: any) => [assignment.locationId, ""]),
         ),
         voip24hExtensions: {},
+        voip24hSipPasswords: {},
         code: staff?.code || "",
         username: staff?.username || "",
         password: isEditing ? STORED_PASSWORD_MASK : "123456",
@@ -186,6 +191,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
   const { data: providerLinesData, isLoading: providerLinesLoading, error: providerLinesError } = useQuery<{
     providers: StaffProviderLine[];
     voip24hExtensions: Record<string, string>;
+    voip24hSipPasswordsConfigured: Record<string, boolean>;
   }>({
     queryKey: ["/api/call-center/staff-provider-lines", staff?.id || "new", locationIdsKey],
     enabled: open && Boolean(locationIdsKey),
@@ -446,6 +452,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
         omicallExtensions: values.omicallExtensions || {},
         omicallPasswords: values.omicallPasswords || {},
         ...(providerLinesData ? { voip24hExtensions: values.voip24hExtensions || {} } : {}),
+        ...(providerLinesData ? { voip24hSipPasswords: values.voip24hSipPasswords || {} } : {}),
       };
 
       if (staff) {
@@ -828,33 +835,47 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
                             {providerName}
                           </span>
                         </div>
-                        <div className={cn("grid grid-cols-1 gap-3", isVoip24h ? "sm:grid-cols-[1fr_auto]" : "sm:grid-cols-2")}>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                           <div>
                             <FormLabel className={FL}>Số máy lẻ</FormLabel>
-                            <Input
-                              list={isVoip24h ? datalistId : undefined}
-                              value={isVoip24h
-                                ? (voip24hExtensions?.[line.locationId] || "")
-                                : (omicallExtensions?.[line.locationId] || "")}
-                              onChange={(event) => {
-                                const value = event.target.value.split("|", 1)[0].trim();
-                                if (isVoip24h) {
-                                  voip24hManualEditsRef.current[line.locationId] = value;
-                                  form.setValue("voip24hExtensions", {
-                                    ...(form.getValues("voip24hExtensions") || {}),
-                                    [line.locationId]: value,
-                                  }, { shouldDirty: true });
-                                } else {
-                                  form.setValue("omicallExtensions", {
-                                    ...(form.getValues("omicallExtensions") || {}),
-                                    [line.locationId]: value,
-                                  }, { shouldDirty: true });
-                                }
-                              }}
-                              placeholder="Ví dụ: 102"
-                              className={cn(INP, "mt-1")}
-                              data-testid={`input-${line.provider}-extension-${line.locationId}`}
-                            />
+                            <div className="mt-1 flex gap-2">
+                              <Input
+                                list={isVoip24h ? datalistId : undefined}
+                                value={isVoip24h
+                                  ? (voip24hExtensions?.[line.locationId] || "")
+                                  : (omicallExtensions?.[line.locationId] || "")}
+                                onChange={(event) => {
+                                  const value = event.target.value.split("|", 1)[0].trim();
+                                  if (isVoip24h) {
+                                    voip24hManualEditsRef.current[line.locationId] = value;
+                                    form.setValue("voip24hExtensions", {
+                                      ...(form.getValues("voip24hExtensions") || {}),
+                                      [line.locationId]: value,
+                                    }, { shouldDirty: true });
+                                  } else {
+                                    form.setValue("omicallExtensions", {
+                                      ...(form.getValues("omicallExtensions") || {}),
+                                      [line.locationId]: value,
+                                    }, { shouldDirty: true });
+                                  }
+                                }}
+                                placeholder="Ví dụ: 102"
+                                className={cn(INP)}
+                                data-testid={`input-${line.provider}-extension-${line.locationId}`}
+                              />
+                              {isVoip24h && myPermissions?.isSuperAdmin && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => loadVoip24hExtensions(line.locationId)}
+                                  disabled={loadingVoipExtensionsLocation === line.locationId}
+                                  data-testid={`button-load-voip24h-extensions-${line.locationId}`}
+                                >
+                                  {loadingVoipExtensionsLocation === line.locationId && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                  Tải máy nhánh
+                                </Button>
+                              )}
+                            </div>
                             {isVoip24h && (
                               <datalist id={datalistId}>
                                 {(availableVoipExtensions[line.locationId] || []).map((extension) => (
@@ -864,21 +885,42 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
                             )}
                           </div>
                           {isVoip24h ? (
-                            myPermissions?.isSuperAdmin ? (
-                              <div className="flex items-end">
-                                <Button
+                            <div>
+                              <FormLabel className={FL}>
+                                Mật khẩu SIP {providerLinesData?.voip24hSipPasswordsConfigured?.[line.locationId] ? "(đã lưu)" : ""}
+                              </FormLabel>
+                              <div className="relative">
+                                <Input
+                                  type={visibleVoip24hSipPasswords[line.locationId] ? "text" : "password"}
+                                  value={form.watch("voip24hSipPasswords")?.[line.locationId] || ""}
+                                  onChange={(event) =>
+                                    form.setValue("voip24hSipPasswords", {
+                                      ...(form.getValues("voip24hSipPasswords") || {}),
+                                      [line.locationId]: event.target.value,
+                                    }, { shouldDirty: true })
+                                  }
+                                  placeholder={providerLinesData?.voip24hSipPasswordsConfigured?.[line.locationId] ? "Để trống để giữ nguyên" : "Nhập mật khẩu máy nhánh"}
+                                  className={cn(INP, "mt-1 pr-10")}
+                                  autoComplete="new-password"
+                                  data-testid={`input-voip24h-sip-password-${line.locationId}`}
+                                />
+                                <button
                                   type="button"
-                                  variant="outline"
-                                  className="mt-1"
-                                  onClick={() => loadVoip24hExtensions(line.locationId)}
-                                  disabled={loadingVoipExtensionsLocation === line.locationId}
-                                  data-testid={`button-load-voip24h-extensions-${line.locationId}`}
+                                  onClick={() => setVisibleVoip24hSipPasswords((current) => ({
+                                    ...current,
+                                    [line.locationId]: !current[line.locationId],
+                                  }))}
+                                  className="absolute right-2 top-1/2 mt-0.5 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                                  aria-label={visibleVoip24hSipPasswords[line.locationId] ? "Ẩn mật khẩu SIP" : "Hiện mật khẩu SIP"}
+                                  aria-pressed={Boolean(visibleVoip24hSipPasswords[line.locationId])}
                                 >
-                                  {loadingVoipExtensionsLocation === line.locationId && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                  Tải danh sách máy nhánh
-                                </Button>
+                                  {visibleVoip24hSipPasswords[line.locationId] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                </button>
                               </div>
-                            ) : null
+                              <p className="mt-1 text-[11px] text-muted-foreground">
+                                Cần cho đăng nhập WebRTC; mật khẩu được mã hóa và không trả lại khi mở hồ sơ.
+                              </p>
+                            </div>
                           ) : (
                             <div>
                               <FormLabel className={FL}>

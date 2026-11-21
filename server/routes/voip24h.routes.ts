@@ -17,6 +17,7 @@ import {
 
 const configKey = (locationId: string) => `voip24h:${locationId}`;
 const extensionMapKey = (locationId: string) => `voip24h-extension-map:${locationId}`;
+const sipPasswordMapKey = (locationId: string) => `voip24h-sip-password-map:${locationId}`;
 const locationIdSchema = z.string().uuid();
 
 const saveConfigSchema = z.object({
@@ -24,6 +25,7 @@ const saveConfigSchema = z.object({
   apiKey: z.string().optional(),
   apiSecret: z.string().optional(),
   isLonglive: z.boolean().optional(),
+  sipServerIp: z.string().trim().max(255).optional(),
 });
 const voipDialSchema = z.object({
   locationId: locationIdSchema,
@@ -35,6 +37,7 @@ type SavedVoip24hConfig = {
   apiKey: string;
   apiSecret: string;
   isLonglive: boolean;
+  sipServerIp: string;
   decryptionFailed?: boolean;
 };
 
@@ -49,15 +52,16 @@ async function getSavedConfig(locationId: string): Promise<SavedVoip24hConfig | 
   try {
     const config = JSON.parse(decrypt(row.value)) as Partial<SavedVoip24hConfig>;
     if (typeof config.apiKey !== "string" || typeof config.apiSecret !== "string") {
-      return { apiKey: "", apiSecret: "", isLonglive: true, decryptionFailed: true };
+      return { apiKey: "", apiSecret: "", isLonglive: true, sipServerIp: "", decryptionFailed: true };
     }
     return {
       apiKey: config.apiKey,
       apiSecret: config.apiSecret,
       isLonglive: typeof config.isLonglive === "boolean" ? config.isLonglive : true,
+      sipServerIp: typeof config.sipServerIp === "string" ? config.sipServerIp.trim() : "",
     };
   } catch {
-    return { apiKey: "", apiSecret: "", isLonglive: true, decryptionFailed: true };
+    return { apiKey: "", apiSecret: "", isLonglive: true, sipServerIp: "", decryptionFailed: true };
   }
 }
 
@@ -74,6 +78,25 @@ async function getSavedExtensionMap(locationId: string): Promise<Record<string, 
       Object.entries(parsed || {})
         .filter(([staffId, extension]) => z.string().uuid().safeParse(staffId).success && typeof extension === "string")
         .map(([staffId, extension]) => [staffId, String(extension).trim()]),
+    );
+  } catch {
+    return {};
+  }
+}
+
+async function getSavedSipPasswordMap(locationId: string): Promise<Record<string, string>> {
+  const [row] = await db
+    .select({ value: systemSettings.value })
+    .from(systemSettings)
+    .where(eq(systemSettings.key, sipPasswordMapKey(locationId)))
+    .limit(1);
+  if (!row) return {};
+  try {
+    const parsed = JSON.parse(decrypt(row.value)) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(parsed || {})
+        .filter(([staffId, password]) => z.string().uuid().safeParse(staffId).success && typeof password === "string")
+        .map(([staffId, password]) => [staffId, String(password)]),
     );
   } catch {
     return {};
@@ -235,6 +258,7 @@ export function registerVoip24hRoutes(app: Express) {
         hasApiSecret: !!saved?.apiSecret,
         apiSecretMasked: maskCredential(saved?.apiSecret || ""),
         isLonglive: saved?.isLonglive ?? true,
+        sipServerIp: saved?.sipServerIp || "",
         decryptionFailed: saved?.decryptionFailed ?? false,
       });
     } catch (error: any) {
@@ -265,6 +289,7 @@ export function registerVoip24hRoutes(app: Express) {
         apiKey,
         apiSecret,
         isLonglive: body.isLonglive ?? saved?.isLonglive ?? true,
+        sipServerIp: body.sipServerIp?.trim() ?? saved?.sipServerIp ?? "",
       }));
       await db.insert(systemSettings)
         .values({ key: configKey(body.locationId), value, updatedAt: new Date() })
@@ -325,16 +350,21 @@ export function registerVoip24hRoutes(app: Express) {
       ]);
       const locationNameById = new Map(locationRows.map((row) => [row.id, row.name]));
       const omicallByLocation = new Map(omicallRows.map((row) => [row.locationId, row]));
-      const [voipConfigEntries, extensionMapEntries] = await Promise.all([
+      const [voipConfigEntries, extensionMapEntries, sipPasswordMapEntries] = await Promise.all([
         Promise.all(scopedLocationIds.map(async (locationId) => [locationId, await getSavedConfig(locationId)] as const)),
         parsed.data.staffId
           ? Promise.all(scopedLocationIds.map(async (locationId) => [locationId, await getSavedExtensionMap(locationId)] as const))
           : Promise.resolve([] as Array<readonly [string, Record<string, string>]>),
+        parsed.data.staffId
+          ? Promise.all(scopedLocationIds.map(async (locationId) => [locationId, await getSavedSipPasswordMap(locationId)] as const))
+          : Promise.resolve([] as Array<readonly [string, Record<string, string>]>),
       ]);
       const voipConfigByLocation = new Map(voipConfigEntries);
       const extensionMapByLocation = new Map(extensionMapEntries);
+      const sipPasswordMapByLocation = new Map(sipPasswordMapEntries);
       const providers: Array<{ locationId: string; locationName: string; provider: "omicall" | "voip24h" }> = [];
       const voip24hExtensions: Record<string, string> = {};
+      const voip24hSipPasswordsConfigured: Record<string, boolean> = {};
 
       for (const locationId of scopedLocationIds) {
         const locationName = locationNameById.get(locationId) || "Cơ sở";
@@ -348,10 +378,11 @@ export function registerVoip24hRoutes(app: Express) {
         }
         if (parsed.data.staffId) {
           voip24hExtensions[locationId] = extensionMapByLocation.get(locationId)?.[parsed.data.staffId] || "";
+          voip24hSipPasswordsConfigured[locationId] = !!sipPasswordMapByLocation.get(locationId)?.[parsed.data.staffId];
         }
       }
 
-      return res.json({ providers, voip24hExtensions });
+      return res.json({ providers, voip24hExtensions, voip24hSipPasswordsConfigured });
     } catch (error: any) {
       console.error("[Call Center] Read staff provider lines failed:", error?.message || error);
       return res.status(500).json({ message: "Không thể đọc kết nối tổng đài của nhân sự" });
@@ -468,6 +499,7 @@ export function registerVoip24hRoutes(app: Express) {
             locationId: row.locationId,
             locationName: row.locationName,
             extension,
+            webRtcReady: Boolean(config.sipServerIp && (await getSavedSipPasswordMap(row.locationId))[row.staffId]),
             ready: true,
           };
         } catch (error: any) {
@@ -484,6 +516,55 @@ export function registerVoip24hRoutes(app: Express) {
     } catch (error: any) {
       console.error("[VoIP24H] Caller lookup failed:", error?.message || error);
       return res.status(500).json({ message: "Không thể xác định máy nhánh VoIP24H của nhân viên." });
+    }
+  });
+
+  app.post("/api/call-center/voip24h/webrtc-credentials", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const userId = (req.user as any)?.id;
+    if (!userId) return res.status(401).json({ message: "Yêu cầu đăng nhập" });
+    if (req.isStudent || !req.staffId) {
+      return res.status(403).json({ message: "Tài khoản này không được phép sử dụng máy nhánh VoIP24H." });
+    }
+    const parsed = locationIdSchema.safeParse(req.body?.locationId);
+    if (!parsed.success) return res.status(400).json({ message: "Cơ sở không hợp lệ." });
+    const locationId = parsed.data;
+    if (!req.isSuperAdmin && !(req.allowedLocationIds || []).includes(locationId)) {
+      return res.status(403).json({ message: "Bạn không có quyền sử dụng máy nhánh tại cơ sở này." });
+    }
+
+    try {
+      const [assignment] = await db
+        .select({ id: staffAssignments.id })
+        .from(staffAssignments)
+        .innerJoin(staff, eq(staff.id, staffAssignments.staffId))
+        .where(and(
+          eq(staffAssignments.staffId, req.staffId),
+          eq(staffAssignments.locationId, locationId),
+          eq(staff.userId, userId),
+          eq(staff.status, "Hoạt động"),
+        ))
+        .limit(1);
+      if (!assignment) return res.status(403).json({ message: "Bạn chưa được phân công tại cơ sở này." });
+
+      const [config, extensions, sipPasswords] = await Promise.all([
+        getSavedConfig(locationId),
+        getSavedExtensionMap(locationId),
+        getSavedSipPasswordMap(locationId),
+      ]);
+      const extension = extensions[req.staffId]?.trim() || "";
+      const password = sipPasswords[req.staffId] || "";
+      if (!config?.apiKey || !config.apiSecret || config.decryptionFailed) {
+        return res.status(400).json({ message: "Cơ sở chưa có cấu hình xác thực VoIP24H hợp lệ." });
+      }
+      if (!config.sipServerIp || !extension || !password) {
+        return res.status(400).json({ message: "Cần cấu hình IP máy chủ SIP, số máy lẻ và mật khẩu SIP trước khi kết nối WebRTC." });
+      }
+
+      return res.json({ sipServerIp: config.sipServerIp, extension, password });
+    } catch (error: any) {
+      console.error("[VoIP24H] WebRTC credentials lookup failed:", error?.message || error);
+      return res.status(500).json({ message: "Không thể tải thông tin đăng nhập máy nhánh VoIP24H." });
     }
   });
 

@@ -46,8 +46,8 @@ async function updateVoip24hExtensionMap(
   locationId: string,
   staffId: string,
   extensionValue: string | null | undefined,
-) {
-  if (extensionValue === undefined) return;
+): Promise<string | undefined> {
+  if (extensionValue === undefined) return undefined;
 
   const key = `voip24h-extension-map:${locationId}`;
   const [row] = await tx.select({ value: systemSettings.value })
@@ -69,6 +69,7 @@ async function updateVoip24hExtensionMap(
     }
   }
 
+  const previousExtension = mappings[staffId]?.trim() || "";
   const extension = typeof extensionValue === "string" ? extensionValue.trim() : "";
   if (extension) {
     const unchanged = mappings[staffId]?.trim().toLowerCase() === extension.toLowerCase();
@@ -85,10 +86,57 @@ async function updateVoip24hExtensionMap(
 
   if (Object.keys(mappings).length === 0) {
     if (row) await tx.delete(systemSettings).where(eq(systemSettings.key, key));
-    return;
+    return previousExtension;
   }
 
   const value = encrypt(JSON.stringify(mappings));
+  await tx.insert(systemSettings)
+    .values({ key, value, updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: systemSettings.key,
+      set: { value, updatedAt: new Date() },
+    });
+  return previousExtension;
+}
+
+async function updateVoip24hSipPasswordMap(
+  tx: any,
+  locationId: string,
+  staffId: string,
+  passwordValue: string | null | undefined,
+  clearSavedPassword = false,
+) {
+  const password = typeof passwordValue === "string" ? passwordValue.trim() : "";
+  if (!password && !clearSavedPassword) return;
+
+  const key = `voip24h-sip-password-map:${locationId}`;
+  const [row] = await tx.select({ value: systemSettings.value })
+    .from(systemSettings)
+    .where(eq(systemSettings.key, key))
+    .limit(1);
+  let passwords: Record<string, string> = {};
+  if (row?.value) {
+    try {
+      const parsed = JSON.parse(decrypt(row.value));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("invalid mapping");
+      }
+      passwords = Object.fromEntries(
+        Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+      );
+    } catch {
+      throw new Error("Không thể đọc mật khẩu SIP VoIP24H đã lưu; chưa thay đổi dữ liệu.");
+    }
+  }
+
+  if (password) passwords[staffId] = password;
+  else delete passwords[staffId];
+
+  if (Object.keys(passwords).length === 0) {
+    if (row) await tx.delete(systemSettings).where(eq(systemSettings.key, key));
+    return;
+  }
+  const value = encrypt(JSON.stringify(passwords));
   await tx.insert(systemSettings)
     .values({ key, value, updatedAt: new Date() })
     .onConflictDoUpdate({
@@ -474,6 +522,7 @@ export async function createStaff(insertData: any): Promise<Staff> {
     omicallExtensions,
     omicallPasswords,
     voip24hExtensions,
+    voip24hSipPasswords,
     ...staffData
   } = insertData;
   const normalizedUsername = typeof username === "string" ? username.trim().toLowerCase() : username;
@@ -626,6 +675,7 @@ export async function createStaff(insertData: any): Promise<Staff> {
       if (voip24hExtensions && typeof voip24hExtensions === "object") {
         for (const loc of locList) {
           await updateVoip24hExtensionMap(tx, loc, newStaff.id, voip24hExtensions[loc]);
+          await updateVoip24hSipPasswordMap(tx, loc, newStaff.id, voip24hSipPasswords?.[loc]);
         }
       }
 
@@ -647,6 +697,7 @@ export async function updateStaff(id: string, updates: any, allowedLocationIds: 
     omicallExtensions,
     omicallPasswords,
     voip24hExtensions,
+    voip24hSipPasswords,
     ...staffUpdates
   } = updates;
   const normalizedUsername = typeof username === "string" ? username.trim().toLowerCase() : "";
@@ -693,7 +744,7 @@ export async function updateStaff(id: string, updates: any, allowedLocationIds: 
       await tx.update(users).set({ isActive }).where(eq(users.id, existingStaff.userId));
     }
 
-    if (locationIds || departmentIds || roleIds || omicallExtensions || omicallPasswords || voip24hExtensions) {
+    if (locationIds || departmentIds || roleIds || omicallExtensions || omicallPasswords || voip24hExtensions || voip24hSipPasswords) {
       const existingAssignments = await tx.select().from(staffAssignments).where(eq(staffAssignments.staffId, id));
       const existingLocationIds = Array.from(new Set(existingAssignments.map((assignment) => assignment.locationId)));
       const extensionMap: Record<string, string | null> = omicallExtensions ?? Object.fromEntries(
@@ -767,14 +818,28 @@ export async function updateStaff(id: string, updates: any, allowedLocationIds: 
         for (const locationId of new Set([...existingLocationIds, ...newLocationIds])) {
           if (!newLocationSet.has(locationId)) {
             await updateVoip24hExtensionMap(tx, locationId, id, "");
+            await updateVoip24hSipPasswordMap(tx, locationId, id, "", true);
           } else if (Object.prototype.hasOwnProperty.call(voip24hExtensions, locationId)) {
-            await updateVoip24hExtensionMap(tx, locationId, id, voip24hExtensions[locationId]);
+            const previousExtension = await updateVoip24hExtensionMap(tx, locationId, id, voip24hExtensions[locationId]);
+            const nextExtension = typeof voip24hExtensions[locationId] === "string"
+              ? voip24hExtensions[locationId].trim()
+              : "";
+            await updateVoip24hSipPasswordMap(
+              tx,
+              locationId,
+              id,
+              voip24hSipPasswords?.[locationId],
+              previousExtension !== undefined && previousExtension.toLowerCase() !== nextExtension.toLowerCase(),
+            );
+          } else if (Object.prototype.hasOwnProperty.call(voip24hSipPasswords || {}, locationId)) {
+            await updateVoip24hSipPasswordMap(tx, locationId, id, voip24hSipPasswords[locationId]);
           }
         }
       } else if (locationIds) {
         for (const locationId of existingLocationIds) {
           if (!newLocationSet.has(locationId)) {
             await updateVoip24hExtensionMap(tx, locationId, id, "");
+            await updateVoip24hSipPasswordMap(tx, locationId, id, "", true);
           }
         }
       }
