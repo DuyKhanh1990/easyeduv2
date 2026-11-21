@@ -210,18 +210,25 @@ export function useInvoices(queryParams: InvoiceQueryParams = {}) {
       account,
       counterAccount,
       paymentMethod,
+      appliedBankAccount,
     }: {
       invoiceId: string;
       status: string;
       account?: string | null;
       counterAccount?: string | null;
       paymentMethod?: string;
+      appliedBankAccount?: {
+        bankName?: string;
+        bankAccount: string;
+        accountHolder?: string;
+      } | null;
     }) =>
       apiRequest("PATCH", `/api/finance/invoices/${invoiceId}/status`, {
         status,
         account,
         counterAccount,
         paymentMethod,
+        appliedBankAccount,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [BASE_KEY] });

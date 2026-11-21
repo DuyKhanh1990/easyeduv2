@@ -287,6 +287,11 @@ const updateInvoiceBodySchema = insertInvoiceSchema.partial().extend({
   createdAt: z.coerce.date().optional(),
   paidAt: z.coerce.date().nullable().optional(),
 }).omit({ createdBy: true, updatedBy: true });
+const invoiceStatusBankAccountSchema = z.object({
+  bankName: z.string().optional(),
+  bankAccount: z.string().trim().min(1),
+  accountHolder: z.string().optional(),
+}).nullable();
 
 const updateScheduleBodySchema = z.object({
   amount: z.union([z.number(), z.string().transform(v => Number(v))]).optional(),
@@ -2048,6 +2053,13 @@ export function registerFinanceRoutes(app: Express): void {
       if (startsPayment && !allowedPaymentMethods.has(paymentMethod)) {
         return res.status(400).json({ message: "Vui lòng chọn hình thức thanh toán." });
       }
+      const hasAppliedBankAccount = Object.prototype.hasOwnProperty.call(req.body ?? {}, "appliedBankAccount");
+      const parsedBankAccount = hasAppliedBankAccount
+        ? invoiceStatusBankAccountSchema.safeParse(req.body.appliedBankAccount)
+        : undefined;
+      if (startsPayment && parsedBankAccount && !parsedBankAccount.success) {
+        return res.status(400).json({ message: "Thông tin ngân hàng không hợp lệ." });
+      }
       const paymentDetails = startsPayment ? {
         paymentMethod,
         account: Object.prototype.hasOwnProperty.call(req.body ?? {}, "account")
@@ -2056,6 +2068,7 @@ export function registerFinanceRoutes(app: Express): void {
         counterAccount: Object.prototype.hasOwnProperty.call(req.body ?? {}, "counterAccount")
           ? (typeof req.body.counterAccount === "string" ? (req.body.counterAccount.trim() || null) : null)
           : undefined,
+        appliedBankAccount: parsedBankAccount?.success ? parsedBankAccount.data : undefined,
       } : undefined;
 
       if (scheduleBefore?.invoiceId) {
@@ -2438,6 +2451,13 @@ export function registerFinanceRoutes(app: Express): void {
       if (startsPayment && !allowedPaymentMethods.has(paymentMethod)) {
         return res.status(400).json({ message: "Vui lòng chọn hình thức thanh toán." });
       }
+      const hasAppliedBankAccount = Object.prototype.hasOwnProperty.call(req.body ?? {}, "appliedBankAccount");
+      const parsedBankAccount = hasAppliedBankAccount
+        ? invoiceStatusBankAccountSchema.safeParse(req.body.appliedBankAccount)
+        : undefined;
+      if (startsPayment && parsedBankAccount && !parsedBankAccount.success) {
+        return res.status(400).json({ message: "Thông tin ngân hàng không hợp lệ." });
+      }
       const paymentDetails = startsPayment ? {
         paymentMethod,
         account: Object.prototype.hasOwnProperty.call(req.body ?? {}, "account")
@@ -2446,6 +2466,7 @@ export function registerFinanceRoutes(app: Express): void {
         counterAccount: Object.prototype.hasOwnProperty.call(req.body ?? {}, "counterAccount")
           ? (typeof req.body.counterAccount === "string" ? (req.body.counterAccount.trim() || null) : null)
           : undefined,
+        appliedBankAccount: parsedBankAccount?.success ? parsedBankAccount.data : undefined,
       } : undefined;
       const updated = await storage.updateInvoiceStatus(req.params.id, status, userId, paymentDetails);
 
@@ -2464,12 +2485,14 @@ export function registerFinanceRoutes(app: Express): void {
             account: before.account ?? null,
             counterAccount: before.counterAccount ?? null,
             paymentMethod: before.paymentMethod ?? null,
+            appliedBankAccount: before.appliedBankAccount ?? null,
           },
           newContent: {
             status: updated.status,
             account: updated.account ?? null,
             counterAccount: updated.counterAccount ?? null,
             paymentMethod: updated.paymentMethod ?? null,
+            appliedBankAccount: updated.appliedBankAccount ?? null,
           },
         }).catch(() => {});
       }

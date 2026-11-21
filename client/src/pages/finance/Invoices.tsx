@@ -731,7 +731,7 @@ function renderInvoiceCell(
   updateStatusMutation: InvoiceUpdateStatusMutation,
   updateScheduleStatusMutation: {
     mutate: (
-      vars: { scheduleId: string; status: string },
+      vars: { scheduleId: string; status: string } & Partial<InvoicePaymentStatusDetails>,
       options?: { onSuccess?: () => void; onError?: (err: Error) => void },
     ) => void;
     isPending: boolean;
@@ -917,6 +917,8 @@ function renderInvoiceCell(
                 updateStatusMutation={updateScheduleStatusMutation}
                 initialAccount={inv.account}
                 initialCounterAccount={inv.counterAccount}
+                locationId={inv.locationId}
+                initialAppliedBankAccount={inv.appliedBankAccount}
               />
             ) : <Badge className={`text-xs font-medium ${status.className}`}>{invoiceStatusLabel(inv.status, t)}</Badge>
           ) : inv.hasSchedules ? (
@@ -929,6 +931,8 @@ function renderInvoiceCell(
               updateStatusMutation={updateStatusMutation}
               initialAccount={inv.account}
               initialCounterAccount={inv.counterAccount}
+              locationId={inv.locationId}
+              initialAppliedBankAccount={inv.appliedBankAccount}
             />
           ) : <Badge className={`text-xs font-medium ${status.className}`}>{invoiceStatusLabel(inv.status, t)}</Badge>}
         </td>
@@ -1797,6 +1801,7 @@ export default function Invoices() {
       account,
       counterAccount,
       paymentMethod,
+      appliedBankAccount,
     }: {
       invoiceIds: string[];
       scheduleIds: string[];
@@ -1804,13 +1809,14 @@ export default function Invoices() {
       account?: string | null;
       counterAccount?: string | null;
       paymentMethod?: string;
+      appliedBankAccount?: InvoicePaymentStatusDetails["appliedBankAccount"];
     }) => {
       await Promise.all([
         ...invoiceIds.map(id => apiRequest("PATCH", `/api/finance/invoices/${id}/status`, {
-          status, account, counterAccount, paymentMethod,
+          status, account, counterAccount, paymentMethod, appliedBankAccount,
         })),
         ...scheduleIds.map(id => apiRequest("PATCH", `/api/finance/invoice-schedules/${id}/status`, {
-          status, account, counterAccount, paymentMethod,
+          status, account, counterAccount, paymentMethod, appliedBankAccount,
         })),
       ]);
     },
@@ -2146,15 +2152,17 @@ export default function Invoices() {
       account,
       counterAccount,
       paymentMethod,
+      appliedBankAccount,
     }: {
       scheduleId: string;
       status: string;
       account?: string | null;
       counterAccount?: string | null;
       paymentMethod?: string;
+      appliedBankAccount?: InvoicePaymentStatusDetails["appliedBankAccount"];
     }) =>
       apiRequest("PATCH", `/api/finance/invoice-schedules/${scheduleId}/status`, {
-        status, account, counterAccount, paymentMethod,
+        status, account, counterAccount, paymentMethod, appliedBankAccount,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/finance/invoices"] });
@@ -2207,6 +2215,22 @@ export default function Invoices() {
       status,
     });
   };
+  const selectedPaymentLocationIds = [
+    ...Array.from(selectedIds).map(id => invoices.find(invoice => invoice.id === id)?.locationId),
+    ...Array.from(selectedSchedules.values()).map(schedule =>
+      schedule.locationId
+      ?? invoices.find(invoice => invoice.paymentSchedule?.some((item: ScheduleItem) => item.id === schedule.id))?.locationId
+        ?? displayInvoices.find(invoice => invoice.scheduleId === schedule.id)?.parentInvoice?.locationId,
+    ),
+  ];
+  const resolvedPaymentLocationIds = selectedPaymentLocationIds.filter(
+    (locationId): locationId is string => !!locationId,
+  );
+  const bulkPaymentLocationId =
+    resolvedPaymentLocationIds.length === selectedIds.size + selectedSchedules.size
+      && new Set(resolvedPaymentLocationIds).size === 1
+      ? resolvedPaymentLocationIds[0]
+      : undefined;
 
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => {
@@ -2247,9 +2271,14 @@ export default function Invoices() {
       return;
     }
     const parentIds = displayInvoices.filter(i => !i.isScheduleRow).map(i => i.id);
-    const scheduleEntries = displayInvoices
-      .map(i => getScheduleForRow(i))
-      .filter((s): s is ScheduleItem => !!s);
+    const scheduleEntries = displayInvoices.flatMap(row => {
+      const schedule = getScheduleForRow(row);
+      if (!schedule) return [];
+      return [{
+        ...schedule,
+        locationId: row.parentInvoice?.locationId ?? row.locationId,
+      }];
+    });
     setSelectedIds(new Set(parentIds));
     setSelectedSchedules(new Map(scheduleEntries.map(s => [s.id, s])));
   };
@@ -2874,7 +2903,7 @@ export default function Invoices() {
                           onCheckedChange={checked => {
                             const nextChecked = checked === true;
                             if (isScheduleRow && schedule) {
-                              toggleSchedule(schedule, nextChecked);
+                              toggleSchedule({ ...schedule, locationId: invoiceLocationId }, nextChecked);
                               if (nextChecked) reopenActionMenuAfterCheckboxClick();
                             }
                             else {
@@ -3072,6 +3101,7 @@ export default function Invoices() {
                         code: inv.code ?? undefined,
                         name: inv.name ?? undefined,
                         branch: inv.branch ?? undefined,
+                        locationId: inv.locationId,
                         account: inv.account,
                         counterAccount: inv.counterAccount,
                         dueDate: inv.dueDate ?? undefined,
@@ -3079,7 +3109,9 @@ export default function Invoices() {
                         note: (inv as any).note ?? undefined,
                       }}
                       selectedScheduleIds={selectedScheduleIdSet}
-                      onToggleSchedule={toggleSchedule}
+                      onToggleSchedule={(schedule, checked) =>
+                        toggleSchedule({ ...schedule, locationId: inv.locationId }, checked)
+                      }
                       canSelect={invPerm.canDelete}
                       canDelete={invPerm.canDelete}
                       allowedStatusTargets={allowedStatusTargets}
@@ -3859,6 +3891,7 @@ export default function Invoices() {
         }}
         isPending={bulkUpdateStatusMutation.isPending}
         title="Thông tin thanh toán cho các hóa đơn đã chọn"
+        locationId={bulkPaymentLocationId}
         onConfirm={details => {
           if (!bulkPaymentStatus) return;
           bulkUpdateStatusMutation.mutate({

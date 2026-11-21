@@ -81,12 +81,13 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets, c
       account,
       counterAccount,
       paymentMethod,
+      appliedBankAccount,
     }: {
       scheduleId: string;
       status: string;
     } & Partial<InvoicePaymentStatusDetails>) =>
       apiRequest("PATCH", `/api/finance/invoice-schedules/${scheduleId}/status`, {
-        status, account, counterAccount, paymentMethod,
+        status, account, counterAccount, paymentMethod, appliedBankAccount,
       }),
     onSuccess: invalidate,
   });
@@ -96,11 +97,11 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets, c
     onSuccess: () => { invalidate(); setCalOpenId(null); },
   });
   const updateInvoiceMutation = useMutation({
-    mutationFn: ({ status, account, counterAccount, paymentMethod }: {
+    mutationFn: ({ status, account, counterAccount, paymentMethod, appliedBankAccount }: {
       status: string;
     } & Partial<InvoicePaymentStatusDetails>) =>
       apiRequest("PATCH", `/api/finance/invoices/${inv.id}/status`, {
-        status, account, counterAccount, paymentMethod,
+        status, account, counterAccount, paymentMethod, appliedBankAccount,
       }),
     onSuccess: invalidate,
   });
@@ -510,6 +511,10 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets, c
         title="Thông tin thanh toán"
         initialAccount={inv.account}
         initialCounterAccount={inv.counterAccount}
+        locationId={inv.locationId}
+        initialAppliedBankAccount={paymentStatusTarget?.kind === "schedule"
+          ? schedules.find(schedule => schedule.id === paymentStatusTarget.scheduleId)?.appliedBankAccount
+          : inv.appliedBankAccount}
         onConfirm={details => {
           if (!paymentStatusTarget) return;
           const options = { onSuccess: () => setPaymentStatusTarget(null) };

@@ -428,13 +428,23 @@ export interface IStorage {
     scheduleId: string,
     status: string,
     userId?: string | null,
-    paymentDetails?: { paymentMethod?: string; account?: string | null; counterAccount?: string | null },
+    paymentDetails?: {
+      paymentMethod?: string;
+      account?: string | null;
+      counterAccount?: string | null;
+      appliedBankAccount?: { bankName?: string; bankAccount: string; accountHolder?: string } | null;
+    },
   ): Promise<any>;
   updateInvoiceStatus(
     invoiceId: string,
     status: string,
     userId?: string,
-    paymentDetails?: { paymentMethod?: string; account?: string | null; counterAccount?: string | null },
+    paymentDetails?: {
+      paymentMethod?: string;
+      account?: string | null;
+      counterAccount?: string | null;
+      appliedBankAccount?: { bankName?: string; bankAccount: string; accountHolder?: string } | null;
+    },
   ): Promise<any>;
   createInvoice(data: any): Promise<any>;
   updateInvoice(id: string, data: any): Promise<any>;
@@ -1334,7 +1344,12 @@ export class DatabaseStorage implements IStorage {
     scheduleId: string,
     status: string,
     userId?: string | null,
-    paymentDetails?: { paymentMethod?: string; account?: string | null; counterAccount?: string | null },
+    paymentDetails?: {
+      paymentMethod?: string;
+      account?: string | null;
+      counterAccount?: string | null;
+      appliedBankAccount?: { bankName?: string; bankAccount: string; accountHolder?: string } | null;
+    },
   ): Promise<any> {
     return financeStorage.updateInvoiceScheduleStatus(scheduleId, status, userId, paymentDetails);
   }
@@ -1343,7 +1358,12 @@ export class DatabaseStorage implements IStorage {
     invoiceId: string,
     status: string,
     userId?: string,
-    paymentDetails?: { paymentMethod?: string; account?: string | null; counterAccount?: string | null },
+    paymentDetails?: {
+      paymentMethod?: string;
+      account?: string | null;
+      counterAccount?: string | null;
+      appliedBankAccount?: { bankName?: string; bankAccount: string; accountHolder?: string } | null;
+    },
   ): Promise<any> {
     return financeStorage.updateInvoiceStatus(invoiceId, status, userId, paymentDetails);
   }

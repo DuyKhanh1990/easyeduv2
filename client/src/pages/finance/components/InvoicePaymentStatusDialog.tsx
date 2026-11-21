@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -16,12 +16,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useLanguage } from "@/hooks/use-language";
+import { useLocations } from "@/hooks/use-locations";
 import { INVOICE_ACCOUNT_OPTIONS } from "../invoiceAccountOptions";
+
+export type AppliedBankAccount = {
+  bankName?: string;
+  bankAccount: string;
+  accountHolder?: string;
+};
 
 export type InvoicePaymentStatusDetails = {
   account?: string | null;
   counterAccount?: string | null;
   paymentMethod: string;
+  appliedBankAccount?: AppliedBankAccount | null;
 };
 
 const OPTIONAL_ACCOUNT_OPTIONS = [
@@ -37,6 +45,8 @@ export function InvoicePaymentStatusDialog({
   title = "Thông tin thanh toán",
   initialAccount,
   initialCounterAccount,
+  locationId,
+  initialAppliedBankAccount,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -45,19 +55,39 @@ export function InvoicePaymentStatusDialog({
   title?: string;
   initialAccount?: string | null;
   initialCounterAccount?: string | null;
+  locationId?: string | null;
+  initialAppliedBankAccount?: AppliedBankAccount | null;
 }) {
   const { lang, t } = useLanguage();
+  const { data: locations = [] } = useLocations();
   const [account, setAccount] = useState("");
   const [counterAccount, setCounterAccount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
+  const [bankAccount, setBankAccount] = useState("");
+
+  const locationBanks = useMemo(() => {
+    const raw = locations.find(location => location.id === locationId)?.bankAccounts;
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed)
+        ? parsed.filter((bank): bank is AppliedBankAccount =>
+            typeof bank?.bankAccount === "string" && bank.bankAccount.length > 0,
+          )
+        : [];
+    } catch {
+      return [];
+    }
+  }, [locations, locationId]);
 
   useEffect(() => {
     if (open) {
       setAccount(initialAccount ?? "");
       setCounterAccount(initialCounterAccount ?? "");
       setPaymentMethod("");
+      setBankAccount(initialAppliedBankAccount?.bankAccount ?? "");
     }
-  }, [open, initialAccount, initialCounterAccount]);
+  }, [open, initialAccount, initialCounterAccount, initialAppliedBankAccount]);
 
   const searchPlaceholder = lang === "en"
     ? "Search by account code or name..."
@@ -105,7 +135,13 @@ export function InvoicePaymentStatusDialog({
             <label className="text-sm font-medium">
               {t("finance.paymentMethod")} <span className="text-destructive">*</span>
             </label>
-            <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+            <Select
+              value={paymentMethod}
+              onValueChange={value => {
+                setPaymentMethod(value);
+                if (value !== "transfer") setBankAccount("");
+              }}
+            >
               <SelectTrigger className="h-10" data-testid="quick-payment-method">
                 <SelectValue placeholder="Chọn hình thức thanh toán" />
               </SelectTrigger>
@@ -118,6 +154,35 @@ export function InvoicePaymentStatusDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {paymentMethod === "transfer" && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">{t("finance.bank")}</label>
+              {!locationId ? (
+                <p className="text-xs text-muted-foreground">
+                  {lang === "en"
+                    ? "Select one location at a time to choose a bank account."
+                    : "Hãy chọn hóa đơn cùng một cơ sở để chọn ngân hàng."}
+                </p>
+              ) : (
+                <Select value={bankAccount} onValueChange={setBankAccount}>
+                  <SelectTrigger className="h-10" data-testid="quick-payment-bank">
+                    <SelectValue placeholder={t("finance.create.chooseBank")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {locationBanks.length === 0
+                      ? <SelectItem value="__bank_not_configured__" disabled>{t("finance.bankNotConfigured")}</SelectItem>
+                      : locationBanks.map((bank, index) => (
+                          <SelectItem key={`${bank.bankAccount}-${index}`} value={bank.bankAccount}>
+                            {bank.bankName || bank.bankAccount} - {bank.bankAccount}
+                            {bank.accountHolder ? ` (${bank.accountHolder})` : ""}
+                          </SelectItem>
+                        ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -135,6 +200,10 @@ export function InvoicePaymentStatusDialog({
               account: account || undefined,
               counterAccount: counterAccount || undefined,
               paymentMethod,
+              appliedBankAccount: paymentMethod === "transfer"
+                ? locationBanks.find(bank => bank.bankAccount === bankAccount)
+                  ?? (bankAccount ? { bankAccount } : locationId ? null : undefined)
+                : null,
             })}
             disabled={!paymentMethod || isPending}
             data-testid="quick-payment-confirm"

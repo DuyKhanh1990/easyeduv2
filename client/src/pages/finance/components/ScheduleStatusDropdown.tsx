@@ -24,6 +24,8 @@ export function ScheduleStatusDropdown({
   updateStatusMutation,
   initialAccount,
   initialCounterAccount,
+  locationId,
+  initialAppliedBankAccount,
 }: {
   scheduleId: string;
   currentStatus: string;
@@ -31,6 +33,8 @@ export function ScheduleStatusDropdown({
   updateStatusMutation: UpdateStatusMutation;
   initialAccount?: string | null;
   initialCounterAccount?: string | null;
+  locationId?: string | null;
+  initialAppliedBankAccount?: InvoicePaymentStatusDetails["appliedBankAccount"];
 }) {
   const [open, setOpen] = useState(false);
   const [quickPaymentOpen, setQuickPaymentOpen] = useState(false);
@@ -98,6 +102,8 @@ export function ScheduleStatusDropdown({
         title="Thông tin thanh toán đợt"
         initialAccount={initialAccount}
         initialCounterAccount={initialCounterAccount}
+        locationId={locationId}
+        initialAppliedBankAccount={initialAppliedBankAccount}
         onConfirm={details => {
           if (!pendingStatus) return;
           updateStatusMutation.mutate(

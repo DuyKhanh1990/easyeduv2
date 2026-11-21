@@ -27,6 +27,7 @@ interface ParentInvoice {
   code?: string;
   name?: string;
   branch?: string;
+  locationId?: string | null;
   account?: string | null;
   counterAccount?: string | null;
   dueDate?: string;
@@ -149,6 +150,8 @@ export function ScheduleRows({
                 updateStatusMutation={updateStatusMutation}
                 initialAccount={invoice?.account}
                 initialCounterAccount={invoice?.counterAccount}
+                locationId={invoice?.locationId}
+                initialAppliedBankAccount={s.appliedBankAccount}
               />
             ) : (
               <Badge className={`text-xs font-medium ${STATUS_CONFIG[s.status]?.className ?? STATUS_CONFIG.unpaid.className}`}>

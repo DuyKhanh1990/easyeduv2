@@ -23,6 +23,11 @@ export interface InvoiceRow {
   status: string;
   account?: string | null;
   counterAccount?: string | null;
+  appliedBankAccount?: {
+    bankName?: string;
+    bankAccount: string;
+    accountHolder?: string;
+  } | null;
   dueDate: string | null;
   creatorName: string | null;
   updaterName: string | null;
@@ -60,6 +65,7 @@ export const EINVOICE_STATUS_CONFIG: Record<string, { label: string; className: 
 
 export interface ScheduleItem {
   id: string;
+  locationId?: string | null;
   label: string;
   code?: string | null;
   baseAmount?: string | null;
@@ -72,6 +78,11 @@ export interface ScheduleItem {
   dueDate: string | null;
   sortOrder: number;
   paymentMethod?: string | null;
+  appliedBankAccount?: {
+    bankName?: string;
+    bankAccount: string;
+    accountHolder?: string;
+  } | null;
   settleCode?: string | null;
   paidAt?: string | Date | null;
   paidByName?: string | null;

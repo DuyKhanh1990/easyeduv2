@@ -58,18 +58,25 @@ export function useInvoiceSchedules(invoiceId: string) {
       account,
       counterAccount,
       paymentMethod,
+      appliedBankAccount,
     }: {
       scheduleId: string;
       status: string;
       account?: string | null;
       counterAccount?: string | null;
       paymentMethod?: string;
+      appliedBankAccount?: {
+        bankName?: string;
+        bankAccount: string;
+        accountHolder?: string;
+      } | null;
     }) =>
       apiRequest("PATCH", `/api/finance/invoice-schedules/${scheduleId}/status`, {
         status,
         account,
         counterAccount,
         paymentMethod,
+        appliedBankAccount,
       }),
     onSuccess: invalidate,
   });

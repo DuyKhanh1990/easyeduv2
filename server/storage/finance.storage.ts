@@ -2796,7 +2796,12 @@ export async function updateInvoiceScheduleStatus(
   scheduleId: string,
   status: string,
   userId?: string | null,
-  paymentDetails?: { paymentMethod?: string; account?: string | null; counterAccount?: string | null },
+  paymentDetails?: {
+    paymentMethod?: string;
+    account?: string | null;
+    counterAccount?: string | null;
+    appliedBankAccount?: { bankName?: string; bankAccount: string; accountHolder?: string } | null;
+  },
 ): Promise<any> {
   return db.transaction(async (tx) => {
     const [before] = await tx
@@ -2812,6 +2817,7 @@ export async function updateInvoiceScheduleStatus(
       .set({
         status,
         ...(paymentDetails?.paymentMethod !== undefined ? { paymentMethod: paymentDetails.paymentMethod } : {}),
+        ...(paymentDetails?.appliedBankAccount !== undefined ? { appliedBankAccount: paymentDetails.appliedBankAccount } : {}),
         paidAt,
         paidBy: nowPaid ? (wasPaid ? (before?.paidBy ?? userId ?? null) : (userId ?? null)) : null,
         updatedAt: new Date(),
@@ -2945,7 +2951,12 @@ export async function updateInvoiceStatus(
   invoiceId: string,
   status: string,
   userId?: string,
-  paymentDetails?: { paymentMethod?: string; account?: string | null; counterAccount?: string | null },
+  paymentDetails?: {
+    paymentMethod?: string;
+    account?: string | null;
+    counterAccount?: string | null;
+    appliedBankAccount?: { bankName?: string; bankAccount: string; accountHolder?: string } | null;
+  },
 ): Promise<any> {
   const [inv] = await db.select().from(invoices).where(eq(invoices.id, invoiceId));
   if (!inv) throw new Error("Không tìm thấy hoá đơn");
@@ -2955,6 +2966,7 @@ export async function updateInvoiceStatus(
   if (paymentDetails?.paymentMethod !== undefined) extraFields.paymentMethod = paymentDetails.paymentMethod;
   if (paymentDetails?.account !== undefined) extraFields.account = paymentDetails.account;
   if (paymentDetails?.counterAccount !== undefined) extraFields.counterAccount = paymentDetails.counterAccount;
+  if (paymentDetails?.appliedBankAccount !== undefined) extraFields.appliedBankAccount = paymentDetails.appliedBankAccount;
 
   if (isPaidInvoiceStatus(status)) {
     extraFields.paidAmount = grandTotal.toFixed(2);
