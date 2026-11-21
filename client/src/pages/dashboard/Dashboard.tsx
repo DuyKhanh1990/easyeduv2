@@ -706,7 +706,7 @@ const ALL_REPORTS = [
   { value: "thoi-gian-giang-day", name: "Thời gian giảng dạy",    desc: "Thống kê thời gian giảng dạy theo giáo viên",             color: "cyan" },
   { value: "hoc-vien-moi",       name: "Báo cáo Học viên mới",   desc: "Thống kê học viên / phụ huynh được tạo mới theo kỳ",      color: "sky" },
   { value: "chuyen-doi",         name: "Báo cáo Chuyển đổi",     desc: "Thống kê học viên được chuyển đổi theo mối quan hệ",      color: "indigo" },
-  { value: "lich-su-cuoc-goi",   name: "Lịch sử cuộc gọi",       desc: "Theo dõi cuộc gọi vào, gọi ra và ghi âm qua Omicall",       color: "red" },
+  { value: "lich-su-cuoc-goi",   name: "Lịch sử cuộc gọi",       desc: "Theo dõi cuộc gọi vào, gọi ra và ghi âm qua Omicall hoặc VoIP24H", color: "red" },
 ] as const;
 
 type ReportValue = typeof ALL_REPORTS[number]["value"];

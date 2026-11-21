@@ -1,4 +1,8 @@
+import { createHash } from "node:crypto";
+
 const VOIP24H_AUTH_URL = "https://api.voip24h.vn/v3/authentication";
+const VOIP24H_CALL_HISTORY_URL = "https://api.voip24h.vn/v3/call/history";
+const VOIP24H_CALL_RECORDING_URL = "https://api.voip24h.vn/v3/call/recording";
 
 export type Voip24hCredentials = {
   apiKey: string;
@@ -12,6 +16,35 @@ export type Voip24hAuthResult = {
   expiresAt: string | null;
   isLonglive: boolean;
 };
+
+type CachedToken = {
+  fingerprint: string;
+  token: string;
+  expiresAt: number;
+};
+
+export type Voip24hHistoryFilters = {
+  dateStart?: string;
+  dateEnd?: string;
+  status?: string;
+  type?: string;
+  extension?: string;
+  did?: string;
+  callid?: string;
+  id?: string;
+  caller?: string;
+  callee?: string;
+  offset: number;
+  limit: number;
+};
+
+export type Voip24hHistoryResult = {
+  items: Record<string, unknown>[];
+  totalItems: number;
+};
+
+const tokenCache = new Map<string, CachedToken>();
+const tokenRequests = new Map<string, { fingerprint: string; promise: Promise<string> }>();
 
 export async function authenticateVoip24h(
   credentials: Voip24hCredentials,
@@ -47,5 +80,100 @@ export async function authenticateVoip24h(
     isLonglive: typeof payload?.data?.isLonglive === "boolean"
       ? payload.data.isLonglive
       : credentials.isLonglive,
+  };
+}
+
+export async function getVoip24hAccessToken(
+  locationId: string,
+  credentials: Voip24hCredentials,
+  signal?: AbortSignal,
+): Promise<string> {
+  const fingerprint = createHash("sha256")
+    .update(`${credentials.apiKey}\0${credentials.apiSecret}\0${credentials.isLonglive}`)
+    .digest("hex");
+  const cached = tokenCache.get(locationId);
+  if (cached?.fingerprint === fingerprint && cached.expiresAt > Date.now()) {
+    return cached.token;
+  }
+  const pending = tokenRequests.get(locationId);
+  if (pending?.fingerprint === fingerprint) return pending.promise;
+
+  const promise = authenticateVoip24h(credentials, signal).then((result) => {
+    // Provider tokens live for one or seven days. Refresh five minutes early.
+    const lifetimeMs = credentials.isLonglive ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+    tokenCache.set(locationId, {
+      fingerprint,
+      token: result.token,
+      expiresAt: Date.now() + lifetimeMs - 5 * 60 * 1000,
+    });
+    return result.token;
+  }).finally(() => {
+    if (tokenRequests.get(locationId)?.promise === promise) tokenRequests.delete(locationId);
+  });
+  tokenRequests.set(locationId, { fingerprint, promise });
+  return promise;
+}
+
+export async function fetchVoip24hCallHistory(
+  credentials: Voip24hCredentials,
+  locationId: string,
+  filters: Voip24hHistoryFilters,
+  signal?: AbortSignal,
+): Promise<Voip24hHistoryResult> {
+  const token = await getVoip24hAccessToken(locationId, credentials, signal);
+  const url = new URL(VOIP24H_CALL_HISTORY_URL);
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== "") url.searchParams.set(key, String(value));
+  }
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+    signal,
+  });
+  const payload = await response.json().catch(() => null) as any;
+  const rawItems = Array.isArray(payload?.data)
+    ? payload.data
+    : Array.isArray(payload?.data?.items)
+      ? payload.data.items
+      : Array.isArray(payload?.items)
+        ? payload.items
+        : null;
+  if (!response.ok || Number(payload?.status) !== 200 || !rawItems) {
+    const detail = typeof payload?.message === "string" ? payload.message : "";
+    throw new Error(detail || `VOIP24H không tải được lịch sử (HTTP ${response.status}).`);
+  }
+
+  const totalItems = Number(payload?.totalData ?? payload?.data?.totalData ?? payload?.pagination?.totalData);
+  return {
+    items: rawItems.filter((item: unknown) => item && typeof item === "object") as Record<string, unknown>[],
+    totalItems: Number.isFinite(totalItems) ? Math.max(0, totalItems) : rawItems.length,
+  };
+}
+
+export async function fetchVoip24hRecordingMetadata(
+  credentials: Voip24hCredentials,
+  locationId: string,
+  callId: string,
+  signal?: AbortSignal,
+): Promise<{ wav?: string; ogg?: string }> {
+  const token = await getVoip24hAccessToken(locationId, credentials, signal);
+  const url = new URL(VOIP24H_CALL_RECORDING_URL);
+  url.searchParams.set("callId", callId);
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+    signal,
+  });
+  const payload = await response.json().catch(() => null) as any;
+  const media = payload?.data?.media;
+  if (!response.ok || Number(payload?.status) !== 200 || !media || typeof media !== "object") {
+    const detail = typeof payload?.message === "string" ? payload.message : "";
+    throw new Error(detail || "VOIP24H không có bản ghi âm cho cuộc gọi này.");
+  }
+  return {
+    wav: typeof media.wav === "string" ? media.wav : undefined,
+    ogg: typeof media.ogg === "string" ? media.ogg : undefined,
   };
 }

@@ -102,6 +102,7 @@ function statusLabel(status: string) {
 }
 
 export function CallHistoryReport({ onBack, defaultLocationId = "all" }: Props) {
+  const [provider, setProvider] = useState<"omicall" | "voip24h">("omicall");
   const defaultRange = defaultDateRange();
   const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>(defaultRange);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -112,6 +113,7 @@ export function CallHistoryReport({ onBack, defaultLocationId = "all" }: Props) 
   const [answerStatus, setAnswerStatus] = useState("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [failedRecordings, setFailedRecordings] = useState<Record<string, boolean>>({});
   const [applied, setApplied] = useState({
     search: "",
     locationId: defaultLocationId || "all",
@@ -135,10 +137,13 @@ export function CallHistoryReport({ onBack, defaultLocationId = "all" }: Props) 
     return params.toString();
   }, [applied, page, pageSize]);
 
+  const historyEndpoint = provider === "voip24h"
+    ? "/api/call-center/voip24h/call-history"
+    : "/api/call-center/omicall/call-history";
   const { data, isLoading, isFetching, isError, refetch } = useQuery<CallHistoryResponse>({
-    queryKey: ["/api/call-center/omicall/call-history", queryString],
+    queryKey: [historyEndpoint, queryString],
     queryFn: async () => {
-      const response = await fetch(`/api/call-center/omicall/call-history?${queryString}`, {
+      const response = await fetch(`${historyEndpoint}?${queryString}`, {
         credentials: "include",
         headers: getAuthHeaders(),
       });
@@ -250,13 +255,31 @@ export function CallHistoryReport({ onBack, defaultLocationId = "all" }: Props) 
         <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={onBack} aria-label="Quay lại">
           <ArrowLeft className="h-4 w-4" />
         </Button>
+        <Select
+          value={provider}
+          onValueChange={(value) => {
+            if (value !== "omicall" && value !== "voip24h") return;
+            setProvider(value);
+            setPage(1);
+            setAnswerStatus("all");
+            setApplied((current) => ({ ...current, answerStatus: "all" }));
+          }}
+        >
+          <SelectTrigger className="h-9 w-[150px] text-sm">
+            <SelectValue placeholder="Nhà cung cấp" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="omicall">Omicall</SelectItem>
+            <SelectItem value="voip24h">VoIP24H</SelectItem>
+          </SelectContent>
+        </Select>
         <div className="relative min-w-[210px] flex-1">
           <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             onKeyDown={(event) => event.key === "Enter" && applyFilters()}
-            placeholder="Tìm tên, số điện thoại..."
+            placeholder={provider === "voip24h" ? "Tìm số điện thoại hoặc máy nhánh..." : "Tìm tên, số điện thoại..."}
             className="h-9 pl-9 text-sm"
           />
         </div>
@@ -290,7 +313,7 @@ export function CallHistoryReport({ onBack, defaultLocationId = "all" }: Props) 
               Bộ lọc
               {(locationId !== "all" || direction !== "all" || answerStatus !== "all") && (
                 <span className="ml-0.5 rounded-full bg-[#1e3a5f] px-1.5 text-[10px] leading-4 text-white">
-                  {[locationId !== "all", direction !== "all", answerStatus !== "all"].filter(Boolean).length}
+                  {[locationId !== "all", direction !== "all", provider === "omicall" && answerStatus !== "all"].filter(Boolean).length}
                 </span>
               )}
             </Button>
@@ -329,19 +352,21 @@ export function CallHistoryReport({ onBack, defaultLocationId = "all" }: Props) 
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium">Trạng thái</label>
-                <Select value={answerStatus} onValueChange={setAnswerStatus}>
-                  <SelectTrigger className="h-9 text-sm">
-                    <SelectValue placeholder="Trạng thái" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tất cả trạng thái</SelectItem>
-                    <SelectItem value="answered">Đã nghe máy</SelectItem>
-                    <SelectItem value="missed">Chưa nghe máy</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {provider === "omicall" && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium">Trạng thái</label>
+                  <Select value={answerStatus} onValueChange={setAnswerStatus}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue placeholder="Trạng thái" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tất cả trạng thái</SelectItem>
+                      <SelectItem value="answered">Đã nghe máy</SelectItem>
+                      <SelectItem value="missed">Chưa nghe máy</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
             <div className="flex justify-end gap-2 border-t pt-3">
               <Button variant="outline" className="h-8 text-xs" onClick={resetFilters}>Đặt lại</Button>
@@ -400,7 +425,11 @@ export function CallHistoryReport({ onBack, defaultLocationId = "all" }: Props) 
           <div className="flex min-h-[260px] flex-col items-center justify-center gap-2 px-4 text-center">
             <PhoneCall className="h-8 w-8 text-rose-400" />
             <p className="text-sm font-medium text-rose-600">Không thể tải lịch sử cuộc gọi</p>
-            <p className="text-xs text-muted-foreground">Kiểm tra cấu hình Call History URL và API Key Omicall.</p>
+            <p className="text-xs text-muted-foreground">
+              {provider === "voip24h"
+                ? "Kiểm tra API Key và API Secret VoIP24H của cơ sở đang chọn."
+                : "Kiểm tra cấu hình Call History URL và API Key Omicall."}
+            </p>
             <Button variant="outline" size="sm" onClick={() => void refetch()}>Thử lại</Button>
           </div>
         ) : (
@@ -461,7 +490,7 @@ export function CallHistoryReport({ onBack, defaultLocationId = "all" }: Props) 
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-xs">{formatDuration(row.duration)}</TableCell>
                         <TableCell>
-                          {row.recordingUrl ? (
+                          {row.recordingUrl && !failedRecordings[`${provider}:${row.locationId}:${row.id}`] ? (
                             <div className="flex items-center gap-1.5">
                               <audio
                                 controls
@@ -469,6 +498,10 @@ export function CallHistoryReport({ onBack, defaultLocationId = "all" }: Props) 
                                 src={row.recordingUrl}
                                 className="h-8 w-[180px]"
                                 aria-label={`Nghe ghi âm cuộc gọi ${row.phoneNumber || ""}`}
+                                onError={() => setFailedRecordings((current) => ({
+                                  ...current,
+                                  [`${provider}:${row.locationId}:${row.id}`]: true,
+                                }))}
                               />
                               <a
                                 href={row.recordingUrl}
@@ -481,7 +514,9 @@ export function CallHistoryReport({ onBack, defaultLocationId = "all" }: Props) 
                                 <ExternalLink className="h-3 w-3" />
                               </a>
                             </div>
-                          ) : <span className="text-xs text-muted-foreground">—</span>}
+                          ) : failedRecordings[`${provider}:${row.locationId}:${row.id}`]
+                            ? <span className="text-xs text-muted-foreground">Không có ghi âm</span>
+                            : <span className="text-xs text-muted-foreground">—</span>}
                         </TableCell>
                       </TableRow>
                     );
