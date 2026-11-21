@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,6 +11,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { MoreHorizontal, Pencil, ReceiptText, Trash2, ChevronDown, MessageCircle, CheckCircle2, XCircle, CalendarPlus, Star, AlertTriangle, Clock, Facebook, PhoneCall, PauseCircle, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import type { ColumnConfig } from "./SortableColumnItem";
 import type { StudentResponse } from "@shared/schema";
 import { CreateTaskDialog } from "@/pages/tasks/components/CreateTaskDialog";
@@ -213,10 +215,29 @@ type OmicallCallerResponse = {
   locations: OmicallCallerLocation[];
 };
 
+type Voip24hCallerLocation = {
+  provider: "voip24h";
+  locationId: string;
+  locationName: string;
+  extension: string;
+  ready: boolean;
+};
+
+type Voip24hCallerResponse = {
+  available: boolean;
+  locations: Voip24hCallerLocation[];
+};
+
 function CustomerPhoneCallMenu({ student, compact = false }: { student: any; compact?: boolean }) {
   const [open, setOpen] = useState(false);
+  const { toast } = useToast();
   const { data: caller, isLoading } = useQuery<OmicallCallerResponse>({
     queryKey: ["/api/call-center/omicall/caller"],
+    staleTime: 30_000,
+    retry: false,
+  });
+  const { data: voip24hCaller, isLoading: isLoadingVoip24h } = useQuery<Voip24hCallerResponse>({
+    queryKey: ["/api/call-center/voip24h/caller"],
     staleTime: 30_000,
     retry: false,
   });
@@ -227,16 +248,50 @@ function CustomerPhoneCallMenu({ student, compact = false }: { student: any; com
   );
   const matchingLocations = (caller?.locations || []).filter((location) => studentLocationIds.has(location.locationId));
   const callLocations = matchingLocations.length > 0 ? matchingLocations : caller?.locations || [];
+  const matchingVoipLocations = (voip24hCaller?.locations || []).filter((location) => studentLocationIds.has(location.locationId));
+  const voipCallLocations = matchingVoipLocations.length > 0 ? matchingVoipLocations : voip24hCaller?.locations || [];
+  const callOptions = [
+    ...callLocations.map((location) => ({ provider: "omicall" as const, location })),
+    ...voipCallLocations.map((location) => ({ provider: "voip24h" as const, location })),
+  ];
 
-  const chooseCaller = (location: OmicallCallerLocation) => {
-    window.dispatchEvent(new CustomEvent("omicall:direct-call", {
-      detail: {
-        phoneNumber: student.phone,
+  const voipDialMutation = useMutation({
+    mutationFn: async (location: Voip24hCallerLocation) => {
+      const res = await apiRequest("POST", "/api/call-center/voip24h/dial", {
         locationId: location.locationId,
+        phone: student.phone,
         displayName: student.fullName,
-        autoCall: true,
-      },
-    }));
+      });
+      return res.json() as Promise<{ message?: string; callId?: string; state?: string }>;
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Đã yêu cầu gọi qua VoIP24H",
+        description: data.message || "Hãy nghe máy trên softphone đã đăng ký máy nhánh.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Không thể gọi qua VoIP24H",
+        description: error?.message || "Không thể khởi tạo cuộc gọi.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const chooseCaller = (option: (typeof callOptions)[number]) => {
+    if (option.provider === "voip24h") {
+      voipDialMutation.mutate(option.location);
+    } else {
+      window.dispatchEvent(new CustomEvent("omicall:direct-call", {
+        detail: {
+          phoneNumber: student.phone,
+          locationId: option.location.locationId,
+          displayName: student.fullName,
+          autoCall: true,
+        },
+      }));
+    }
     setOpen(false);
   };
 
@@ -269,23 +324,26 @@ function CustomerPhoneCallMenu({ student, compact = false }: { student: any; com
           <p className="text-xs font-semibold text-slate-700">Chọn số tổng đài để gọi</p>
           <p className="mt-0.5 text-xs text-slate-400">Cuộc gọi sẽ bắt đầu ngay</p>
         </div>
-        {isLoading ? (
+        {isLoading || isLoadingVoip24h ? (
           <div className="px-2.5 py-2 text-xs text-slate-400">Đang tải cấu hình gọi...</div>
-        ) : callLocations.length > 0 ? (
-          callLocations.map((location) => (
+        ) : callOptions.length > 0 ? (
+          callOptions.map((option) => (
             <button
-              key={location.locationId}
+              key={`${option.provider}-${option.location.locationId}`}
               type="button"
-              onClick={() => chooseCaller(location)}
+              onClick={() => chooseCaller(option)}
+              disabled={option.provider === "voip24h" && voipDialMutation.isPending}
               className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-emerald-50"
-              data-testid={`button-call-location-${student.id}-${location.locationId}`}
+              data-testid={`button-call-location-${student.id}-${option.provider}-${option.location.locationId}`}
             >
               <span className="min-w-0">
-                <span className="block truncate text-xs font-semibold text-slate-700">{location.locationName}</span>
-                <span className="mt-0.5 block text-xs text-slate-400">Máy lẻ {location.extension}</span>
+                <span className="block truncate text-xs font-semibold text-slate-700">{option.location.locationName}</span>
+                <span className="mt-0.5 block text-xs text-slate-400">
+                  {option.provider === "voip24h" ? "VoIP24H" : "Omicall"} · máy lẻ {option.location.extension}
+                </span>
               </span>
               <span className="shrink-0 text-xs font-semibold text-emerald-700">
-                {location.hotline || "Số mặc định"}
+                {option.provider === "omicall" ? option.location.hotline || "Số mặc định" : "Gọi"}
               </span>
             </button>
           ))

@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   authenticateVoip24h,
   fetchVoip24hCallHistory,
+  fetchVoip24hExtensionList,
   fetchVoip24hRecordingMetadata,
+  dialVoip24h,
 } from "./voip24h.service";
 
 afterEach(() => {
@@ -151,5 +153,69 @@ describe("VoIP24H call history and recording", () => {
     ]);
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("VoIP24H extension list and click-to-call", () => {
+  it("loads machine extensions with a server-side bearer token", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        status: 1000,
+        data: { token: "extensions-access-token" },
+      }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        status: 200,
+        data: ["201", { extension: "202" }, { ext: "203" }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchVoip24hExtensionList({
+      apiKey: "extensions-api-key",
+      apiSecret: "extensions-api-secret",
+      isLonglive: true,
+    }, "voip-extension-list-test-location");
+
+    expect(result).toEqual(["201", "202", "203"]);
+    const [url, request] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(url).toBe("https://api.voip24h.vn/v3/extension/list");
+    expect((request.headers as Record<string, string>).Authorization)
+      .toBe("Bearer extensions-access-token");
+  });
+
+  it("posts extension and phone to the documented dial endpoint without exposing the token", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        status: 1000,
+        data: { token: "dial-access-token" },
+      }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        status: 200,
+        data: {
+          status: 1000,
+          message: "success",
+          data: { callid: "call-456", state: "ringing", phone: "0900000000", extension: "201" },
+        },
+      }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await dialVoip24h({
+      apiKey: "dial-api-key",
+      apiSecret: "dial-api-secret",
+      isLonglive: true,
+    }, "voip-dial-test-location", { extension: "201", phone: "0900000000" });
+
+    expect(result).toEqual({
+      callId: "call-456",
+      state: "ringing",
+      phone: "0900000000",
+      extension: "201",
+    });
+    const [url, request] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(url).toBe("https://api.voip24h.vn/v3/call/dial");
+    expect(request.method).toBe("POST");
+    expect((request.headers as Record<string, string>).Authorization).toBe("Bearer dial-access-token");
+    expect((request.headers as Record<string, string>)["Content-Type"])
+      .toBe("application/x-www-form-urlencoded");
+    expect(String(request.body)).toBe("extension=201&phone=0900000000");
   });
 });

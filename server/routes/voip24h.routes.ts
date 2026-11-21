@@ -1,19 +1,22 @@
 import type { Express } from "express";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { eq, inArray, like } from "drizzle-orm";
+import { and, eq, inArray, like } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db";
-import { locations, systemSettings } from "@shared/schema";
+import { locations, staff, staffAssignments, systemSettings } from "@shared/schema";
 import { decrypt, encrypt } from "../lib/encryption";
 import { storage } from "../storage";
 import {
   authenticateVoip24h,
+  dialVoip24h,
   fetchVoip24hCallHistory,
+  fetchVoip24hExtensionList,
   fetchVoip24hRecordingMetadata,
 } from "../services/voip24h/voip24h.service";
 
 const configKey = (locationId: string) => `voip24h:${locationId}`;
+const extensionMapKey = (locationId: string) => `voip24h-extension-map:${locationId}`;
 const locationIdSchema = z.string().uuid();
 
 const saveConfigSchema = z.object({
@@ -21,6 +24,18 @@ const saveConfigSchema = z.object({
   apiKey: z.string().optional(),
   apiSecret: z.string().optional(),
   isLonglive: z.boolean().optional(),
+});
+const extensionMappingsSchema = z.object({
+  locationId: locationIdSchema,
+  mappings: z.array(z.object({
+    staffId: z.string().uuid(),
+    extension: z.string().trim().max(50),
+  })).max(1000),
+});
+const voipDialSchema = z.object({
+  locationId: locationIdSchema,
+  phone: z.string().trim().min(6).max(50),
+  displayName: z.string().trim().max(255).optional(),
 });
 
 type SavedVoip24hConfig = {
@@ -51,6 +66,46 @@ async function getSavedConfig(locationId: string): Promise<SavedVoip24hConfig | 
   } catch {
     return { apiKey: "", apiSecret: "", isLonglive: true, decryptionFailed: true };
   }
+}
+
+async function getSavedExtensionMap(locationId: string): Promise<Record<string, string>> {
+  const [row] = await db
+    .select({ value: systemSettings.value })
+    .from(systemSettings)
+    .where(eq(systemSettings.key, extensionMapKey(locationId)))
+    .limit(1);
+  if (!row) return {};
+  try {
+    const parsed = JSON.parse(decrypt(row.value)) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(parsed || {})
+        .filter(([staffId, extension]) => z.string().uuid().safeParse(staffId).success && typeof extension === "string")
+        .map(([staffId, extension]) => [staffId, String(extension).trim()]),
+    );
+  } catch {
+    return {};
+  }
+}
+
+async function getLocationStaff(locationId: string) {
+  const rows = await db
+    .select({ id: staff.id, fullName: staff.fullName })
+    .from(staffAssignments)
+    .innerJoin(staff, eq(staff.id, staffAssignments.staffId))
+    .where(and(
+      eq(staffAssignments.locationId, locationId),
+      eq(staff.status, "Hoạt động"),
+    ));
+  const unique = new Map<string, { id: string; fullName: string }>();
+  rows.forEach((row) => unique.set(row.id, row));
+  return [...unique.values()].sort((a, b) => a.fullName.localeCompare(b.fullName, "vi"));
+}
+
+function normalizeDialPhone(value: string): string {
+  const stripped = value.replace(/[^\d+]/g, "");
+  return stripped.startsWith("+")
+    ? `+${stripped.slice(1).replace(/\+/g, "")}`
+    : stripped.replace(/\+/g, "");
 }
 
 function maskCredential(value: string): string {
@@ -246,6 +301,84 @@ export function registerVoip24hRoutes(app: Express) {
     }
   });
 
+  app.get("/api/call-center/voip24h/extensions", async (req, res) => {
+    if (!req.isSuperAdmin) return res.status(403).json({ message: "Chỉ Super Admin được quản lý máy nhánh" });
+    const parsedLocationId = locationIdSchema.safeParse(req.query.locationId);
+    if (!parsedLocationId.success) return res.status(400).json({ message: "Cơ sở không hợp lệ" });
+    try {
+      const locationId = parsedLocationId.data;
+      const [staffList, mappings] = await Promise.all([
+        getLocationStaff(locationId),
+        getSavedExtensionMap(locationId),
+      ]);
+      return res.json({ locationId, staff: staffList, mappings });
+    } catch (error: any) {
+      console.error("[VoIP24H] Read extension mappings failed:", error?.message || error);
+      return res.status(500).json({ message: "Không thể đọc danh sách máy nhánh" });
+    }
+  });
+
+  app.put("/api/call-center/voip24h/extensions", async (req, res) => {
+    if (!req.isSuperAdmin) return res.status(403).json({ message: "Chỉ Super Admin được quản lý máy nhánh" });
+    const parsed = extensionMappingsSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Danh sách máy nhánh không hợp lệ" });
+    try {
+      const { locationId, mappings } = parsed.data;
+      if (!await locationExists(locationId)) {
+        return res.status(404).json({ message: "Không tìm thấy cơ sở đã chọn" });
+      }
+      const staffList = await getLocationStaff(locationId);
+      const validStaffIds = new Set(staffList.map((person) => person.id));
+      const mapEntries = mappings
+        .map((item) => [item.staffId, item.extension.trim()] as const)
+        .filter(([staffId, extension]) => validStaffIds.has(staffId) && extension);
+      const extensions = mapEntries.map(([, extension]) => extension.toLowerCase());
+      if (new Set(extensions).size !== extensions.length) {
+        return res.status(400).json({ message: "Không thể gán cùng một máy nhánh cho nhiều nhân viên tại một cơ sở." });
+      }
+      const mappingObject = Object.fromEntries(mapEntries);
+      const value = encrypt(JSON.stringify(mappingObject));
+      await db.insert(systemSettings)
+        .values({ key: extensionMapKey(locationId), value, updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: systemSettings.key,
+          set: { value, updatedAt: new Date() },
+        });
+      return res.json({ ok: true, message: "Đã lưu máy nhánh theo nhân viên." });
+    } catch (error: any) {
+      console.error("[VoIP24H] Save extension mappings failed:", error?.message || error);
+      return res.status(500).json({ message: "Không thể lưu máy nhánh" });
+    }
+  });
+
+  app.post("/api/call-center/voip24h/extension-list", async (req, res) => {
+    if (!req.isSuperAdmin) return res.status(403).json({ message: "Chỉ Super Admin được tải máy nhánh" });
+    const parsed = locationIdSchema.safeParse(req.body?.locationId);
+    if (!parsed.success) return res.status(400).json({ message: "Cơ sở không hợp lệ" });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    try {
+      const locationId = parsed.data;
+      const config = await getSavedConfig(locationId);
+      if (!config?.apiKey || !config.apiSecret || config.decryptionFailed) {
+        return res.status(400).json({ message: "Lưu API Key và API Secret trước khi tải danh sách máy nhánh." });
+      }
+      const extensions = await fetchVoip24hExtensionList({
+        apiKey: config.apiKey,
+        apiSecret: config.apiSecret,
+        isLonglive: config.isLonglive,
+      }, locationId, controller.signal);
+      return res.json({ extensions });
+    } catch (error: any) {
+      const message = error?.name === "AbortError"
+        ? "VOIP24H không phản hồi trong 15 giây."
+        : error?.message || "Không thể tải danh sách máy nhánh.";
+      return res.status(502).json({ message });
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
+
   app.post("/api/call-center/voip24h/test-connection", async (req, res) => {
     if (!req.isSuperAdmin) return res.status(403).json({ message: "Chỉ Super Admin được truy cập" });
     const parsed = saveConfigSchema.safeParse(req.body);
@@ -283,6 +416,136 @@ export function registerVoip24hRoutes(app: Express) {
       return res.status(502).json({ ok: false, message });
     } finally {
       clearTimeout(timeout);
+    }
+  });
+
+  app.get("/api/call-center/voip24h/caller", async (req, res) => {
+    const userId = (req.user as any)?.id;
+    if (!userId) return res.status(401).json({ message: "Yêu cầu đăng nhập" });
+    if (req.isStudent || !req.staffId) {
+      return res.json({ available: false, locations: [], defaultLocationId: null });
+    }
+
+    try {
+      const assignmentRows = await db
+        .select({
+          staffId: staff.id,
+          locationId: staffAssignments.locationId,
+          locationName: locations.name,
+        })
+        .from(staff)
+        .innerJoin(staffAssignments, eq(staffAssignments.staffId, staff.id))
+        .innerJoin(locations, eq(locations.id, staffAssignments.locationId))
+        .where(and(
+          eq(staff.userId, userId),
+          eq(staff.id, req.staffId),
+          eq(staff.status, "Hoạt động"),
+        ));
+      const uniqueLocations = new Map<string, typeof assignmentRows[number]>();
+      assignmentRows
+        .filter((row) => req.isSuperAdmin || (req.allowedLocationIds || []).includes(row.locationId))
+        .forEach((row) => {
+          if (!uniqueLocations.has(row.locationId)) uniqueLocations.set(row.locationId, row);
+        });
+
+      const readyLocations = (await Promise.all([...uniqueLocations.values()].map(async (row) => {
+        try {
+          const [config, mappings] = await Promise.all([
+            getSavedConfig(row.locationId),
+            getSavedExtensionMap(row.locationId),
+          ]);
+          const extension = mappings[row.staffId]?.trim();
+          if (!config?.apiKey || !config.apiSecret || config.decryptionFailed || !extension) return null;
+          return {
+            provider: "voip24h" as const,
+            locationId: row.locationId,
+            locationName: row.locationName,
+            extension,
+            ready: true,
+          };
+        } catch (error: any) {
+          console.warn("[VoIP24H] Skipping caller location:", error?.message || error);
+          return null;
+        }
+      }))).filter((row): row is NonNullable<typeof row> => row !== null);
+
+      return res.json({
+        available: readyLocations.length > 0,
+        locations: readyLocations,
+        defaultLocationId: readyLocations[0]?.locationId || null,
+      });
+    } catch (error: any) {
+      console.error("[VoIP24H] Caller lookup failed:", error?.message || error);
+      return res.status(500).json({ message: "Không thể xác định máy nhánh VoIP24H của nhân viên." });
+    }
+  });
+
+  app.post("/api/call-center/voip24h/dial", async (req, res) => {
+    const userId = (req.user as any)?.id;
+    if (!userId) return res.status(401).json({ message: "Yêu cầu đăng nhập" });
+    if (req.isStudent || !req.staffId) {
+      return res.status(403).json({ message: "Tài khoản này không được phép gọi qua VoIP24H." });
+    }
+
+    const parsed = voipDialSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Thông tin cuộc gọi không hợp lệ." });
+    const { locationId } = parsed.data;
+    const phone = normalizeDialPhone(parsed.data.phone);
+    if (!/^\+?\d{6,20}$/.test(phone)) {
+      return res.status(400).json({ message: "Số điện thoại không hợp lệ." });
+    }
+    if (!req.isSuperAdmin && !(req.allowedLocationIds || []).includes(locationId)) {
+      return res.status(403).json({ message: "Bạn không có quyền gọi qua cơ sở này." });
+    }
+
+    try {
+      const [assignment] = await db
+        .select({ id: staffAssignments.id })
+        .from(staffAssignments)
+        .innerJoin(staff, eq(staff.id, staffAssignments.staffId))
+        .where(and(
+          eq(staffAssignments.staffId, req.staffId),
+          eq(staffAssignments.locationId, locationId),
+          eq(staff.userId, userId),
+          eq(staff.status, "Hoạt động"),
+        ))
+        .limit(1);
+      if (!assignment) return res.status(403).json({ message: "Bạn chưa được phân công tại cơ sở này." });
+
+      const [config, mappings] = await Promise.all([
+        getSavedConfig(locationId),
+        getSavedExtensionMap(locationId),
+      ]);
+      const extension = mappings[req.staffId]?.trim();
+      if (!config?.apiKey || !config.apiSecret || config.decryptionFailed) {
+        return res.status(400).json({ message: "Cơ sở chưa có cấu hình xác thực VoIP24H hợp lệ." });
+      }
+      if (!extension) {
+        return res.status(400).json({ message: "Nhân viên chưa được gán máy nhánh VoIP24H tại cơ sở này." });
+      }
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20_000);
+      try {
+        const result = await dialVoip24h({
+          apiKey: config.apiKey,
+          apiSecret: config.apiSecret,
+          isLonglive: config.isLonglive,
+        }, locationId, { extension, phone }, controller.signal);
+        return res.json({
+          ok: true,
+          message: "VoIP24H đã nhận yêu cầu gọi. Hãy nghe máy trên softphone hoặc điện thoại dùng máy nhánh này.",
+          ...result,
+          displayName: parsed.data.displayName || "",
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (error: any) {
+      const message = error?.name === "AbortError"
+        ? "VOIP24H không phản hồi trong 20 giây."
+        : error?.message || "Không thể khởi tạo cuộc gọi VoIP24H.";
+      return res.status(502).json({ message });
     }
   });
 

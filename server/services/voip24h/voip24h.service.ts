@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 const VOIP24H_AUTH_URL = "https://api.voip24h.vn/v3/authentication";
 const VOIP24H_CALL_HISTORY_URL = "https://api.voip24h.vn/v3/call/history";
 const VOIP24H_CALL_RECORDING_URL = "https://api.voip24h.vn/v3/call/recording";
+const VOIP24H_EXTENSION_LIST_URL = "https://api.voip24h.vn/v3/extension/list";
+const VOIP24H_CALL_DIAL_URL = "https://api.voip24h.vn/v3/call/dial";
 
 export type Voip24hCredentials = {
   apiKey: string;
@@ -41,6 +43,13 @@ export type Voip24hHistoryFilters = {
 export type Voip24hHistoryResult = {
   items: Record<string, unknown>[];
   totalItems: number;
+};
+
+export type Voip24hDialResult = {
+  callId: string;
+  state: string;
+  phone: string;
+  extension: string;
 };
 
 const tokenCache = new Map<string, CachedToken>();
@@ -175,5 +184,82 @@ export async function fetchVoip24hRecordingMetadata(
   return {
     wav: typeof media.wav === "string" ? media.wav : undefined,
     ogg: typeof media.ogg === "string" ? media.ogg : undefined,
+  };
+}
+
+export async function fetchVoip24hExtensionList(
+  credentials: Voip24hCredentials,
+  locationId: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const token = await getVoip24hAccessToken(locationId, credentials, signal);
+  const response = await fetch(VOIP24H_EXTENSION_LIST_URL, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+    signal,
+  });
+  const payload = await response.json().catch(() => null) as any;
+  const rawItems = Array.isArray(payload?.data)
+    ? payload.data
+    : Array.isArray(payload?.data?.extensions)
+      ? payload.data.extensions
+      : [];
+  if (!response.ok || Number(payload?.status) !== 200) {
+    const detail = typeof payload?.message === "string" ? payload.message : "";
+    throw new Error(detail || `VOIP24H không tải được danh sách máy nhánh (HTTP ${response.status}).`);
+  }
+  const extensions: string[] = rawItems.map((item: unknown) => {
+    if (typeof item === "string" || typeof item === "number") return String(item).trim();
+    if (item && typeof item === "object") {
+      const record = item as Record<string, unknown>;
+      return String(record.extension || record.ext || "").trim();
+    }
+    return "";
+  }).filter((extension: string) => extension.length > 0);
+  return [...new Set<string>(extensions)];
+}
+
+export async function dialVoip24h(
+  credentials: Voip24hCredentials,
+  locationId: string,
+  input: { extension: string; phone: string },
+  signal?: AbortSignal,
+): Promise<Voip24hDialResult> {
+  const token = await getVoip24hAccessToken(locationId, credentials, signal);
+  const body = new URLSearchParams({
+    extension: input.extension,
+    phone: input.phone,
+  });
+  const response = await fetch(VOIP24H_CALL_DIAL_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+    signal,
+  });
+  const payload = await response.json().catch(() => null) as any;
+  const operation = payload?.data;
+  const call = operation?.data;
+  if (
+    !response.ok ||
+    Number(payload?.status) !== 200 ||
+    Number(operation?.status) !== 1000 ||
+    !call ||
+    typeof call !== "object"
+  ) {
+    const detail = typeof operation?.message === "string"
+      ? operation.message
+      : typeof payload?.message === "string"
+        ? payload.message
+        : "";
+    throw new Error(detail || `VOIP24H không khởi tạo được cuộc gọi (HTTP ${response.status}).`);
+  }
+  return {
+    callId: String(call.callid || ""),
+    state: String(call.state || ""),
+    phone: String(call.phone || input.phone),
+    extension: String(call.extension || input.extension),
   };
 }
