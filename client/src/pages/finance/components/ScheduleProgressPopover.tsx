@@ -21,6 +21,7 @@ import {
   InvoicePaymentStatusDialog,
   type InvoicePaymentStatusDetails,
 } from "./InvoicePaymentStatusDialog";
+import { ConfirmReturnToUnpaidDialog } from "./ConfirmReturnToUnpaidDialog";
 
 /* ─── Status badge (display only) ────────────────────────── */
 function StatusLabel({ status, dueDate }: { status: string; dueDate?: string | null }) {
@@ -50,6 +51,11 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets, c
   const [paymentStatusTarget, setPaymentStatusTarget] = useState<
     | { kind: "invoice"; status: string }
     | { kind: "schedule"; scheduleId: string; status: string }
+    | null
+  >(null);
+  const [returnToUnpaidTarget, setReturnToUnpaidTarget] = useState<
+    | { kind: "invoice" }
+    | { kind: "schedule"; scheduleId: string }
     | null
   >(null);
 
@@ -437,6 +443,12 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets, c
                                     : { kind: "schedule", scheduleId: sch.id, status });
                                   return;
                                 }
+                                if ((sch.status === "paid" || sch.status === "confirmed") && status === "unpaid") {
+                                  setReturnToUnpaidTarget(sch.isSynthetic
+                                    ? { kind: "invoice" }
+                                    : { kind: "schedule", scheduleId: sch.id });
+                                  return;
+                                }
                                 if (sch.isSynthetic) {
                                   updateInvoiceMutation.mutate({ status });
                                 } else {
@@ -527,6 +539,25 @@ export function ScheduleProgressPopover({ inv, children, allowedStatusTargets, c
             updateStatusMutation.mutate(
               { scheduleId: paymentStatusTarget.scheduleId, status: paymentStatusTarget.status, ...details },
               options,
+            );
+          }
+        }}
+      />
+      <ConfirmReturnToUnpaidDialog
+        open={returnToUnpaidTarget !== null}
+        onOpenChange={open => {
+          if (!open) setReturnToUnpaidTarget(null);
+        }}
+        isPending={updateStatusMutation.isPending || updateInvoiceMutation.isPending}
+        onConfirm={() => {
+          if (!returnToUnpaidTarget) return;
+          const onSuccess = () => setReturnToUnpaidTarget(null);
+          if (returnToUnpaidTarget.kind === "invoice") {
+            updateInvoiceMutation.mutate({ status: "unpaid" }, { onSuccess });
+          } else {
+            updateStatusMutation.mutate(
+              { scheduleId: returnToUnpaidTarget.scheduleId, status: "unpaid" },
+              { onSuccess },
             );
           }
         }}

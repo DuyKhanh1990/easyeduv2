@@ -54,6 +54,7 @@ import {
   InvoicePaymentStatusDialog,
   type InvoicePaymentStatusDetails,
 } from "./components/InvoicePaymentStatusDialog";
+import { ConfirmReturnToUnpaidDialog } from "./components/ConfirmReturnToUnpaidDialog";
 import { DebtInvoiceRow } from "./components/DebtInvoiceRow";
 import { DebtScheduleLoader } from "./components/DebtScheduleLoader";
 import { StudentNameLink } from "@/components/ui/StudentNameLink";
@@ -1632,6 +1633,7 @@ export default function Invoices() {
   const [selectedIds, setSelectedIds]   = useState<Set<string>>(new Set());
   const [selectedSchedules, setSelectedSchedules] = useState<Map<string, ScheduleItem>>(new Map());
   const [bulkPaymentStatus, setBulkPaymentStatus] = useState<"paid" | "confirmed" | null>(null);
+  const [confirmBulkReturnToUnpaidOpen, setConfirmBulkReturnToUnpaidOpen] = useState(false);
   const [expandedIds, setExpandedIds]   = useState<Set<string>>(new Set());
   const [dialogOpen, setDialogOpen]     = useState(() => !!urlInvoiceId);
   const [bulkEntryOpen, setBulkEntryOpen] = useState(false);
@@ -2205,6 +2207,13 @@ export default function Invoices() {
     const hasUnpaidSelection =
       invoices.some(invoice => selectedIds.has(invoice.id) && invoice.status === "unpaid") ||
       Array.from(selectedSchedules.values()).some(schedule => schedule.status === "unpaid");
+    const hasPaidSelection =
+      invoices.some(invoice => selectedIds.has(invoice.id) && (invoice.status === "paid" || invoice.status === "confirmed")) ||
+      Array.from(selectedSchedules.values()).some(schedule => schedule.status === "paid" || schedule.status === "confirmed");
+    if (status === "unpaid" && hasPaidSelection) {
+      setConfirmBulkReturnToUnpaidOpen(true);
+      return;
+    }
     if ((status === "paid" || status === "confirmed") && hasUnpaidSelection) {
       setBulkPaymentStatus(status);
       return;
@@ -2688,11 +2697,7 @@ export default function Invoices() {
                       <ActionMenuItem
                         className="flex items-center gap-3 py-2 cursor-pointer rounded-lg hover:bg-accent"
                         disabled={bulkUpdateStatusMutation.isPending}
-                        onClick={() => bulkUpdateStatusMutation.mutate({
-                          invoiceIds: Array.from(selectedIds),
-                          scheduleIds: Array.from(selectedSchedules.keys()),
-                          status: "unpaid",
-                        })}
+                        onClick={() => requestBulkStatusChange("unpaid")}
                       >
                         <CreditCard className="w-4 h-4 text-yellow-600" /><span>{t("finance.tab.unpaid")}</span>
                       </ActionMenuItem>
@@ -3903,6 +3908,18 @@ export default function Invoices() {
             onSuccess: () => setBulkPaymentStatus(null),
           });
         }}
+      />
+      <ConfirmReturnToUnpaidDialog
+        open={confirmBulkReturnToUnpaidOpen}
+        onOpenChange={setConfirmBulkReturnToUnpaidOpen}
+        isPending={bulkUpdateStatusMutation.isPending}
+        onConfirm={() => bulkUpdateStatusMutation.mutate({
+          invoiceIds: Array.from(selectedIds),
+          scheduleIds: Array.from(selectedSchedules.keys()),
+          status: "unpaid",
+        }, {
+          onSuccess: () => setConfirmBulkReturnToUnpaidOpen(false),
+        })}
       />
     </DashboardLayout>
   );

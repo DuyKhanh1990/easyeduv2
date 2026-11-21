@@ -8,6 +8,7 @@ import {
   InvoicePaymentStatusDialog,
   type InvoicePaymentStatusDetails,
 } from "./InvoicePaymentStatusDialog";
+import { ConfirmReturnToUnpaidDialog } from "./ConfirmReturnToUnpaidDialog";
 
 interface UpdateStatusMutation {
   mutate: (
@@ -38,6 +39,7 @@ export function ScheduleStatusDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const [quickPaymentOpen, setQuickPaymentOpen] = useState(false);
+  const [returnToUnpaidConfirmOpen, setReturnToUnpaidConfirmOpen] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<string | null>(null);
   const { toast } = useToast();
   const { t } = useLanguage();
@@ -52,6 +54,10 @@ export function ScheduleStatusDropdown({
     if (currentStatus === "unpaid" && (status === "paid" || status === "confirmed")) {
       setPendingStatus(status);
       setQuickPaymentOpen(true);
+      return;
+    }
+    if ((currentStatus === "paid" || currentStatus === "confirmed") && status === "unpaid") {
+      setReturnToUnpaidConfirmOpen(true);
       return;
     }
     updateStatusMutation.mutate(
@@ -117,6 +123,18 @@ export function ScheduleStatusDropdown({
             },
           );
         }}
+      />
+      <ConfirmReturnToUnpaidDialog
+        open={returnToUnpaidConfirmOpen}
+        onOpenChange={setReturnToUnpaidConfirmOpen}
+        isPending={updateStatusMutation.isPending}
+        onConfirm={() => updateStatusMutation.mutate(
+          { scheduleId, status: "unpaid" },
+          {
+            onSuccess: () => setReturnToUnpaidConfirmOpen(false),
+            onError: () => toast({ title: t("finance.updateError"), variant: "destructive" }),
+          },
+        )}
       />
     </>
   );
