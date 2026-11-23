@@ -133,13 +133,25 @@ export function AssignmentSubmitDialog({
   const hasExistingGrade = row.score != null || Boolean(row.comment?.trim());
   const canModifyGrade = hasExistingGrade ? canEditGrade : canCreateGrade;
 
-  const uploadFilesApi = async (files: File[]): Promise<{ name: string; url: string }[]> => {
-    const formData = new FormData();
-    files.forEach((f) => formData.append("files", f));
-    const res = await fetch("/api/upload", { method: "POST", body: formData, headers: getAuthHeaders(), credentials: "include" });
-    if (!res.ok) throw new Error(t("mySpace.assignments.uploadImageError"));
-    const data = await res.json();
-    return data.files as { name: string; url: string }[];
+  const uploadFilesApi = async (files: File[]): Promise<AttachedFile[]> => {
+    const uploaded: AttachedFile[] = [];
+    for (const file of files) {
+      const res = await fetch("/api/my-space/assignments/student/upload", {
+        method: "POST",
+        body: file,
+        headers: {
+          ...getAuthHeaders(),
+          "Content-Type": "application/octet-stream",
+          "X-Upload-File-Size": String(file.size),
+          "X-Upload-File-Name": encodeURIComponent(file.name),
+          "X-Upload-Content-Type": file.type || "application/octet-stream",
+        },
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(t("mySpace.assignments.uploadImageError"));
+      uploaded.push(await res.json() as AttachedFile);
+    }
+    return uploaded;
   };
 
   const submitHomework = useMutation({
@@ -551,6 +563,8 @@ export function AssignmentSubmitDialog({
                 value={attachments}
                 onChange={setAttachments}
                 disabled={isPending}
+                uploadFiles={uploadFilesApi}
+                onUploadingChange={setIsUploading}
               />
             </div>
           </div>

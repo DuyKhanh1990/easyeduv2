@@ -72,6 +72,8 @@ import {
 } from "@shared/schema";
 import { storage } from "../storage";
 import { eq, and, gte, lte, sql, inArray, isNotNull, isNull, or, desc } from "drizzle-orm";
+import { uploadFileToS3FromStream } from "../lib/s3";
+import { addS3Bytes, recordFileUpload } from "../lib/storage-usage";
 import { updateStudentAttendance } from "../storage/attendance.storage";
 import { getTeacherIdsForTimeRange } from "@shared/teacher-time-assignments";
 import { canViewClass } from "../lib/class-access";
@@ -3429,6 +3431,60 @@ export function registerMySpaceRoutes(app: Express): void {
     } catch (err: any) {
       console.error("Student assignments error:", err);
       res.status(500).json({ message: err.message || "Lỗi khi tải bài tập học viên" });
+    }
+  });
+
+  app.post("/api/my-space/assignments/student/upload", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      const studentRecord = await getStudentForUser(user.id);
+      if (!studentRecord) return res.status(403).json({ message: "Tài khoản không phải học viên" });
+
+      const fileSize = Number(req.headers["x-upload-file-size"]);
+      const maxFileSize = 100 * 1024 * 1024;
+      if (!Number.isSafeInteger(fileSize) || fileSize < 0) {
+        return res.status(400).json({ message: "Kích thước file không hợp lệ" });
+      }
+      if (fileSize > maxFileSize) {
+        return res.status(413).json({ message: "File vượt quá giới hạn 100 MB" });
+      }
+
+      const contentLength = req.headers["content-length"];
+      if (contentLength && Number(contentLength) !== fileSize) {
+        return res.status(400).json({ message: "Kích thước nội dung tải lên không khớp" });
+      }
+
+      const encodedName = req.headers["x-upload-file-name"];
+      if (typeof encodedName !== "string" || !encodedName) {
+        return res.status(400).json({ message: "Thiếu tên file" });
+      }
+
+      let filename: string;
+      try {
+        filename = decodeURIComponent(encodedName).trim();
+      } catch {
+        return res.status(400).json({ message: "Tên file không hợp lệ" });
+      }
+      if (!filename || filename.length > 255) {
+        return res.status(400).json({ message: "Tên file không hợp lệ" });
+      }
+
+      const requestedMimeType = req.headers["x-upload-content-type"];
+      const mimetype = typeof requestedMimeType === "string" && requestedMimeType.length <= 200
+        ? requestedMimeType
+        : "application/octet-stream";
+
+      const url = await uploadFileToS3FromStream(req, fileSize, filename, mimetype);
+      addS3Bytes(fileSize).catch(() => {});
+      recordFileUpload(url, fileSize).catch(() => {});
+      return res.json({ name: filename, url, size: fileSize, mimetype });
+    } catch (err: any) {
+      console.error("Student assignment streaming upload error:", err);
+      if (!res.headersSent) {
+        return res.status(502).json({ message: "Không thể tải file lên kho lưu trữ" });
+      }
     }
   });
 

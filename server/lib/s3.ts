@@ -1,5 +1,5 @@
 import { DeleteObjectCommand, GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { Readable } from "stream";
+import { Readable, Transform } from "stream";
 import { pipeline } from "node:stream/promises";
 import crypto from "crypto";
 import https from "https";
@@ -321,6 +321,128 @@ export async function uploadFileToS3FromDisk(
 
   const fileUrl = `${protocol}://${aliasHost}/${bucket}/${key}`;
   return fileUrl;
+}
+
+/**
+ * Stream an incoming upload directly to S3 without staging it on local disk.
+ * The upstream stream is backpressured while the S3 request is being written.
+ */
+async function putObjectRawIncomingStream(
+  key: string,
+  body: Readable,
+  fileSize: number,
+  contentType: string,
+): Promise<void> {
+  const endpointUrl = new URL(endpoint);
+  const host = endpointUrl.hostname;
+  const basePath = endpointUrl.pathname.replace(/\/$/, "");
+  const path = `${basePath}/${bucket}/${key}`;
+  const acl = "public-read" as const;
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "").slice(0, 15) + "Z";
+  const dateStamp = amzDate.slice(0, 8);
+  const payloadHash = "UNSIGNED-PAYLOAD";
+  const headers: Record<string, string> = {
+    "host": host,
+    "x-amz-date": amzDate,
+    "x-amz-content-sha256": payloadHash,
+    "x-amz-acl": acl,
+    "content-type": contentType,
+    "content-length": String(fileSize),
+  };
+  const signedHeaders = Object.keys(headers).sort().join(";");
+  const canonicalHeaders = Object.keys(headers).sort()
+    .map((name) => `${name}:${headers[name]}\n`)
+    .join("");
+  const canonicalRequest = [
+    "PUT",
+    path,
+    "",
+    canonicalHeaders,
+    signedHeaders,
+    payloadHash,
+  ].join("\n");
+  const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    sha256hex(canonicalRequest),
+  ].join("\n");
+  const signingKey = hmac(
+    hmac(hmac(hmac(`AWS4${secretAccessKey}`, dateStamp), region), "s3"),
+    "aws4_request",
+  );
+  const signature = hmac(signingKey, stringToSign).toString("hex");
+  const authorization =
+    `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, ` +
+    `SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  let receivedBytes = 0;
+  const sizeGuard = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      receivedBytes += chunk.length;
+      if (receivedBytes > fileSize) {
+        callback(new Error("Uploaded file exceeded its declared size"));
+        return;
+      }
+      callback(null, chunk);
+    },
+    flush(callback) {
+      if (receivedBytes !== fileSize) {
+        callback(new Error("Uploaded file size did not match its declaration"));
+        return;
+      }
+      callback();
+    },
+  });
+
+  const transport = endpointUrl.protocol === "https:" ? https : http;
+  const port = endpointUrl.port
+    ? Number(endpointUrl.port)
+    : endpointUrl.protocol === "https:" ? 443 : 80;
+
+  await new Promise<void>((resolve, reject) => {
+    const request = transport.request({
+      hostname: host,
+      port,
+      path,
+      method: "PUT",
+      headers: { ...headers, Authorization: authorization },
+    }, (response) => {
+      let responseBody = "";
+      response.on("data", (chunk) => {
+        if (responseBody.length < 4096) responseBody += chunk.toString();
+      });
+      response.on("end", () => {
+        if (response.statusCode && response.statusCode >= 200 && response.statusCode < 300) {
+          resolve();
+        } else {
+          reject(new Error(`S3 streaming PUT failed: HTTP ${response.statusCode} ${responseBody}`));
+        }
+      });
+    });
+
+    request.on("error", reject);
+    pipeline(body, sizeGuard, request).catch(reject);
+  });
+}
+
+export async function uploadFileToS3FromStream(
+  body: Readable,
+  fileSize: number,
+  filename: string,
+  mimetype: string,
+): Promise<string> {
+  const timestamp = Date.now();
+  const key = buildPortalUploadKey(filename, timestamp);
+  try {
+    await putObjectRawIncomingStream(key, body, fileSize, mimetype);
+  } catch (err) {
+    console.error("[S3 Streaming Upload Error]", err);
+    throw new Error("Failed to stream file to S3");
+  }
+  return `${protocol}://${aliasHost}/${bucket}/${key}`;
 }
 
 export async function deletePortalUploadFromUrl(fileUrl: string): Promise<void> {

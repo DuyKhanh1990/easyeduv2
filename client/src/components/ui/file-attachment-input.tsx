@@ -20,6 +20,8 @@ interface FileAttachmentInputProps {
   maxSizeMb?: number;
   accept?: string;
   description?: string;
+  uploadFiles?: (files: File[]) => Promise<AttachedFile[]>;
+  onUploadingChange?: (isUploading: boolean) => void;
 }
 
 export function FileAttachmentInput({
@@ -29,6 +31,8 @@ export function FileAttachmentInput({
   maxSizeMb = MAX_FILE_SIZE_MB,
   accept = ACCEPTED_FILE_TYPES,
   description,
+  uploadFiles,
+  onUploadingChange,
 }: FileAttachmentInputProps) {
   const { toast } = useToast();
   const canDownload = useCanDownloadFiles();
@@ -50,13 +54,19 @@ export function FileAttachmentInput({
       return;
     }
     setIsUploading(true);
+    onUploadingChange?.(true);
     try {
-      const formData = new FormData();
-      files.forEach((f) => formData.append("files", f));
-      const res = await fetch("/api/upload", { method: "POST", body: formData, headers: getAuthHeaders(), credentials: "include" });
-      if (!res.ok) throw new Error("Upload thất bại");
-      const data = await res.json();
-      const uploaded: AttachedFile[] = data.files as { name: string; url: string }[];
+      let uploaded: AttachedFile[];
+      if (uploadFiles) {
+        uploaded = await uploadFiles(files);
+      } else {
+        const formData = new FormData();
+        files.forEach((f) => formData.append("files", f));
+        const res = await fetch("/api/upload", { method: "POST", body: formData, headers: getAuthHeaders(), credentials: "include" });
+        if (!res.ok) throw new Error("Upload thất bại");
+        const data = await res.json();
+        uploaded = data.files as AttachedFile[];
+      }
       onChange([...value, ...uploaded]);
     } catch {
       toast({
@@ -66,6 +76,7 @@ export function FileAttachmentInput({
       });
     } finally {
       setIsUploading(false);
+      onUploadingChange?.(false);
       e.target.value = "";
     }
   };
