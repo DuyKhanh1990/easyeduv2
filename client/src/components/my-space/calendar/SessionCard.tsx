@@ -548,6 +548,7 @@ function SessionCardDetail({ session, sessionDate, onlineRule }: SessionCardDeta
         onOpenChange={(open) => { if (!open) { setViewingContentId(null); setViewingFallbackContent(null); } }}
         contentId={viewingContentId}
         fallbackContent={viewingFallbackContent}
+        includeMkvPlayback
       />
       <ExamViewerFromId
         examId={viewingExamId || ""}

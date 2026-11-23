@@ -1088,6 +1088,7 @@ export function StaffSessionDetailSheet({ session, onClose }: StaffSessionDetail
         }}
         contentId={viewingContentId}
         fallbackContent={viewingFallbackContent}
+        includeMkvPlayback
       />
     </>
   );

@@ -630,6 +630,7 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
           }}
           contentId={viewingContentId}
           fallbackContent={viewingFallbackContent}
+          includeMkvPlayback
         />
       </>
     );
@@ -836,6 +837,7 @@ export function StaffSessionCard({ session, onViewDetail, onOpenTestDetail, onAd
         onOpenChange={(open) => { if (!open) { setViewingContentId(null); setViewingFallbackContent(null); } }}
         contentId={viewingContentId}
         fallbackContent={viewingFallbackContent}
+        includeMkvPlayback
       />
 
       <Dialog open={isSessionNoteDialogOpen} onOpenChange={setIsSessionNoteDialogOpen}>

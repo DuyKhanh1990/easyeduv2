@@ -940,7 +940,21 @@ async function getSessionContents(classSessionId: string, studentId?: string) {
     });
   }
 
-  return { general, personal };
+  const contentRows = await enrichAssignmentRowsWithMkv(
+    [...general, ...personal].map((content) => ({
+      homeworkAttachments: content.attachments,
+    })),
+  );
+  const enrichedGeneral = general.map((content, index) => ({
+    ...content,
+    attachments: contentRows[index]?.homeworkAttachments ?? content.attachments,
+  }));
+  const enrichedPersonal = personal.map((content, index) => ({
+    ...content,
+    attachments: contentRows[general.length + index]?.homeworkAttachments ?? content.attachments,
+  }));
+
+  return { general: enrichedGeneral, personal: enrichedPersonal };
 }
 
 function parseReviewData(rawReviewData: any): { teacherName: string; criteria: { criteriaName: string; rating?: number; items: { groupName?: string; subCriteriaName: string; comment: string; inputType?: "text" | "checkbox"; checked?: boolean }[] }[] }[] {

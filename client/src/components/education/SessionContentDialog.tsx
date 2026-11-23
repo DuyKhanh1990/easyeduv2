@@ -68,7 +68,7 @@ interface CourseContent {
   title: string;
   type: string;
   content: string;
-  attachments: string[];
+  attachments: Array<string | ViewableAttachment>;
   allowDownload?: boolean | null;
   createdAt: string;
   updatedAt: string;
@@ -111,7 +111,16 @@ function translateContentType(t: (key: string) => string, type: string) {
   return type;
 }
 
-function parseAttachment(att: string): { name: string; url: string | null } {
+type ViewableAttachment = {
+  name: string;
+  url: string | null;
+  playbackUrl?: string | null;
+  posterUrl?: string | null;
+  mediaProcessingStatus?: "queued" | "processing" | "ready" | "failed";
+};
+
+function parseAttachment(att: string | ViewableAttachment): ViewableAttachment {
+  if (typeof att !== "string") return att;
   if (att.includes("||")) {
     const sepIdx = att.indexOf("||");
     return { name: att.slice(0, sepIdx), url: att.slice(sepIdx + 2) };
@@ -172,11 +181,18 @@ interface ContentViewDialogProps {
   onOpenChange: (open: boolean) => void;
   contentId: string | null;
   fallbackContent?: { title: string; type: string; content?: string | null; sessionNumber?: number | null } | null;
+  includeMkvPlayback?: boolean;
 }
 
-export function ContentViewDialog({ isOpen, onOpenChange, contentId, fallbackContent }: ContentViewDialogProps) {
+export function ContentViewDialog({
+  isOpen,
+  onOpenChange,
+  contentId,
+  fallbackContent,
+  includeMkvPlayback = false,
+}: ContentViewDialogProps) {
   const { t } = useLanguage();
-  const [viewerFile, setViewerFile] = useState<{ url: string; name: string } | null>(null);
+  const [viewerFile, setViewerFile] = useState<ViewableAttachment | null>(null);
   const roleCanDownload = useCanDownloadFiles();
   const [fetchedContent, setFetchedContent] = useState<CourseContent | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -192,7 +208,8 @@ export function ContentViewDialog({ isOpen, onOpenChange, contentId, fallbackCon
     setIsLoading(true);
     setFetchedContent(null);
     setFetchError(false);
-    fetch(`/api/course-program-contents/${contentId}`, {
+    const contentUrl = `/api/course-program-contents/${contentId}${includeMkvPlayback ? "?includeMkvPlayback=1" : ""}`;
+    fetch(contentUrl, {
       credentials: "include",
       headers: getAuthHeaders(),
     })
@@ -214,7 +231,7 @@ export function ContentViewDialog({ isOpen, onOpenChange, contentId, fallbackCon
         }
       });
     return () => { cancelled = true; };
-  }, [contentId, isOpen]);
+  }, [contentId, isOpen, includeMkvPlayback]);
 
   const fallbackObj: CourseContent | undefined = fallbackContent ? {
     id: contentId ?? "",
@@ -237,7 +254,7 @@ export function ContentViewDialog({ isOpen, onOpenChange, contentId, fallbackCon
         {fetchError ? (
           <div className="flex flex-col items-center justify-center flex-1 gap-2 text-muted-foreground">
             <span className="text-sm">Không thể tải nội dung. Vui lòng thử lại.</span>
-            <Button variant="outline" size="sm" onClick={() => { setFetchError(false); setIsLoading(true); fetch(`/api/course-program-contents/${contentId}`, { credentials: "include", headers: getAuthHeaders() }).then(r => r.ok ? r.json() : null).then(d => { setFetchedContent(d); setIsLoading(false); }).catch(() => { setFetchError(true); setIsLoading(false); }); }}>Thử lại</Button>
+            <Button variant="outline" size="sm" onClick={() => { setFetchError(false); setIsLoading(true); const url = `/api/course-program-contents/${contentId}${includeMkvPlayback ? "?includeMkvPlayback=1" : ""}`; fetch(url, { credentials: "include", headers: getAuthHeaders() }).then(r => r.ok ? r.json() : null).then(d => { setFetchedContent(d); setIsLoading(false); }).catch(() => { setFetchError(true); setIsLoading(false); }); }}>Thử lại</Button>
           </div>
         ) : isLoading || !content ? (
           <div className="flex items-center justify-center flex-1">
@@ -283,7 +300,11 @@ export function ContentViewDialog({ isOpen, onOpenChange, contentId, fallbackCon
                           )}
                           onClick={() => {
                             if (canView && url) {
-                              setViewerFile({ url, name });
+                               setViewerFile({
+                                 ...parseAttachment(att),
+                                 url,
+                                 name,
+                               });
                             }
                           }}
                         >
@@ -319,6 +340,8 @@ export function ContentViewDialog({ isOpen, onOpenChange, contentId, fallbackCon
       onClose={() => setViewerFile(null)}
       url={viewerFile?.url ?? ""}
       name={viewerFile?.name ?? ""}
+      playbackUrl={viewerFile?.playbackUrl}
+      posterUrl={viewerFile?.posterUrl}
       canDownload={resolveCanDownload(content?.allowDownload, roleCanDownload)}
     />
     </>
