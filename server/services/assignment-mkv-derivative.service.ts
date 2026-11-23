@@ -35,10 +35,11 @@ type AssignmentRowWithAttachments = {
   submissionAttachments?: AssignmentMediaAttachment[];
 };
 
-function getVideoKind(name: string, url: string): "mkv" | "mp4" | null {
+function getVideoKind(name: string, url: string): "mkv" | "mp4" | "mov" | null {
   const candidates = [name, url].map((value) => (value || "").split(/[?#]/, 1)[0]);
   if (candidates.some((value) => /\.mkv$/i.test(value))) return "mkv";
   if (candidates.some((value) => /\.mp4$/i.test(value))) return "mp4";
+  if (candidates.some((value) => /\.mov$/i.test(value))) return "mov";
   return null;
 }
 
@@ -77,7 +78,7 @@ export async function queueAssignmentVideoDerivative(
 
 /**
  * Adds optional preview fields to My Space video attachments.
- * MKV attachments receive an iOS MP4 derivative and poster; existing MP4s
+ * MKV attachments receive an iOS MP4 derivative and poster; MP4/MOV files
  * receive a poster only. Original URLs and non-video files stay unchanged.
  */
 export async function enrichAssignmentRowsWithVideo<T extends AssignmentRowWithAttachments>(
@@ -248,14 +249,14 @@ async function markFailed(jobId: string, message: string): Promise<void> {
 async function processJob(job: ClaimedJob): Promise<void> {
   const workDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "assignment-mkv-"));
   const videoKind = getVideoKind(job.sourceName, job.sourceUrl);
-  const inputPath = path.join(workDir, videoKind === "mp4" ? "source.mp4" : "source.mkv");
+  const inputPath = path.join(workDir, `source.${videoKind || "video"}`);
   const mp4Path = path.join(workDir, "playback.mp4");
   const posterPath = path.join(workDir, "poster.jpg");
   let playbackUrl: string | null = null;
   let posterUrl: string | null = null;
 
   try {
-    if (!videoKind) throw new Error("Chỉ hỗ trợ tạo ảnh xem trước cho file MKV hoặc MP4.");
+    if (!videoKind) throw new Error("Chỉ hỗ trợ tạo ảnh xem trước cho file MKV, MP4 hoặc MOV.");
     await downloadPortalUploadToDisk(job.sourceUrl, inputPath);
 
     const safeStem = path.basename(job.sourceName, path.extname(job.sourceName))
@@ -294,8 +295,8 @@ async function processJob(job: ClaimedJob): Promise<void> {
       await addS3Bytes(posterSize);
       await recordFileUpload(posterUrl, posterSize);
     } catch (error: any) {
-      // A poster is an optional preview; a playable MP4 is the required result.
-      if (videoKind === "mp4") throw error;
+      // A poster is optional for MKV, but is the only derivative for MP4/MOV.
+      if (videoKind !== "mkv") throw error;
       console.warn("[Assignment MKV] Poster generation skipped:", error?.message || error);
     }
 
@@ -323,7 +324,7 @@ async function processJob(job: ClaimedJob): Promise<void> {
     }
     const message = error?.message || (videoKind === "mkv"
       ? "Không thể tạo bản MP4 cho video MKV."
-      : "Không thể tạo ảnh xem trước cho video MP4.");
+      : `Không thể tạo ảnh xem trước cho video ${videoKind?.toUpperCase() || "video"}.`);
     await markFailed(job.id, message);
     console.error("[Assignment MKV] Conversion failed", { jobId: job.id, message });
   } finally {
