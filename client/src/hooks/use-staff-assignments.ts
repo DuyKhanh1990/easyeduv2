@@ -15,5 +15,14 @@ export function useStaffAssignments(params: { month?: string; dateFrom?: string;
       if (!res.ok) throw new Error("Lỗi tải bài tập nhân viên");
       return res.json();
     },
+    refetchInterval: (query) => {
+      const rows = query.state.data?.rows ?? [];
+      const hasPendingVideoPreview = rows.some((row) =>
+        [...(row.homeworkAttachments ?? []), ...(row.submissionAttachments ?? [])].some((attachment) =>
+          attachment.mediaProcessingStatus === "queued" || attachment.mediaProcessingStatus === "processing",
+        ),
+      );
+      return hasPendingVideoPreview ? 15_000 : false;
+    },
   });
 }

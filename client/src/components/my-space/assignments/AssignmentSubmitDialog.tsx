@@ -4,7 +4,7 @@ import { FileAttachmentInput, type AttachedFile } from "@/components/ui/file-att
 import { useCanDownloadFiles } from "@/hooks/use-can-download-files";
 import {
   X, Send, FileText, Eye, CheckCircle2, Loader2,
-  Image, FileSpreadsheet, FileVideo, FileAudio, FileType2, File, Star,
+  Image, FileSpreadsheet, FileVideo, FileAudio, FileType2, File, Star, Play,
   ImageIcon, Link as LinkIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -648,20 +648,44 @@ function AttachmentGrid({ urls, testIdPrefix }: { urls: Array<string | Assignmen
         const attachment = typeof entry === "string" ? { name, url } : { ...entry, name, url };
         const cat = getCategory(name);
         const style = CATEGORY_STYLE[cat];
+        const hasVideoPoster = cat === "video" && !!attachment.posterUrl;
         return (
           <button
             key={i}
             type="button"
             onClick={() => setViewerFile(attachment)}
-            className="relative flex flex-col items-center gap-2 p-3 rounded-xl border border-border overflow-hidden transition-colors group text-center"
+            className="relative flex flex-col items-center gap-2 p-3 rounded-xl border border-border overflow-hidden transition-colors group text-center hover:bg-muted/40"
             data-testid={`link-submission-attachment-${testIdPrefix}-${i}`}
           >
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all duration-200 flex items-center justify-center rounded-xl">
-              <Eye className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-            </div>
-            <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center shrink-0", style.bg)}>
-              {style.icon}
-            </div>
+            {!hasVideoPoster && (
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all duration-200 flex items-center justify-center rounded-xl">
+                <Eye className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+              </div>
+            )}
+            {hasVideoPoster ? (
+              <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-muted shrink-0">
+                <div className={cn("absolute inset-0 flex items-center justify-center", style.bg)}>
+                  {style.icon}
+                </div>
+                <img
+                  src={attachment.posterUrl!}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  className="absolute inset-0 h-full w-full object-cover transition group-hover:brightness-75"
+                  onError={(event) => event.currentTarget.remove()}
+                />
+                <span className="absolute inset-0 flex items-center justify-center">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white shadow-sm">
+                    <Play className="ml-0.5 h-5 w-5 fill-current" aria-hidden="true" />
+                  </span>
+                </span>
+              </div>
+            ) : (
+              <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center shrink-0", style.bg)}>
+                {style.icon}
+              </div>
+            )}
             <span className="text-xs text-foreground leading-tight break-all line-clamp-2">{name}</span>
           </button>
         );
