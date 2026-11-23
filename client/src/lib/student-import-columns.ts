@@ -1,28 +1,31 @@
 export const STUDENT_EXPORT_HEADERS = [
-  "Mã số", "Họ và tên (*)", "Cơ sở", "Phân loại (*)", "SĐT", "Ngày sinh", "Email",
+  "Mã số", "Họ và tên (*)", "Cơ sở", "Phân loại (*)", "Giới tính", "SĐT", "Ngày sinh", "Email",
   "PH 1", "SĐT PH 1", "PH 2", "SĐT PH 2", "PH 3", "SĐT PH 3",
   "Mối quan hệ (*)", "Nguồn", "Lý do từ chối", "Sale", "Quản lý", "Giáo viên",
   "Mã lớp", "Địa chỉ", "Zalo/FB", "Trình độ", "Ghi chú",
 ] as const;
 
 export const STUDENT_UPLOAD_HEADERS = [
-  ...STUDENT_EXPORT_HEADERS.slice(0, 4),
+  ...STUDENT_EXPORT_HEADERS.slice(0, 5),
   "Tài khoản",
   "Mật khẩu",
-  ...STUDENT_EXPORT_HEADERS.slice(4),
+  ...STUDENT_EXPORT_HEADERS.slice(5),
 ];
 
 const normalizeHeader = (header: unknown) =>
   String(header ?? "").trim().toLocaleLowerCase();
 
 /**
- * Returns rows in the original import field order, with account/password
- * appended. This keeps all existing row indexes stable while allowing the
- * upload template to place the new columns after "Phân loại".
+ * Returns rows in the original import field order, with account/password and
+ * gender appended. This keeps established indexes stable even though gender
+ * appears after "Phân loại" in the spreadsheet.
  */
 export function mapStudentImportRows(rows: unknown[][]): unknown[][] {
   const headers = rows[0] ?? [];
   const sourceColumnIndexes = new Map<string, number>();
+  const baseHeaders = STUDENT_EXPORT_HEADERS.filter(
+    (header) => normalizeHeader(header) !== normalizeHeader("Giới tính"),
+  );
 
   headers.forEach((header, index) => {
     sourceColumnIndexes.set(normalizeHeader(header), index);
@@ -40,7 +43,9 @@ export function mapStudentImportRows(rows: unknown[][]): unknown[][] {
   const passwordIndex = sourceColumnIndexes.get("mật khẩu");
 
   return rows.slice(1).map((sourceRow) => {
-    const originalFields = STUDENT_EXPORT_HEADERS.map((header, index) => {
+    // Keep the established internal row indexes stable. Gender is appended
+    // after credentials so adding it after column D won't shift other fields.
+    const originalFields = baseHeaders.map((header, index) => {
       const mappedIndex = sourceColumnIndexes.get(normalizeHeader(header));
       if (mappedIndex !== undefined) return sourceRow[mappedIndex];
       if (hasRecognizedHeaders) return "";
@@ -54,6 +59,9 @@ export function mapStudentImportRows(rows: unknown[][]): unknown[][] {
       ...originalFields,
       accountIndex === undefined ? "" : sourceRow[accountIndex],
       passwordIndex === undefined ? "" : sourceRow[passwordIndex],
+      sourceColumnIndexes.has(normalizeHeader("Giới tính"))
+        ? sourceRow[sourceColumnIndexes.get(normalizeHeader("Giới tính"))!]
+        : "",
     ];
   });
 }

@@ -8,12 +8,13 @@ import {
 } from "./student-import-columns";
 
 describe("student Excel upload column mapping", () => {
-  it("keeps all previous fields in place with the new account and password columns", () => {
+  it("keeps imported field indexes stable when gender is added after classification", () => {
     const values = STUDENT_UPLOAD_HEADERS.map((header) => `value:${header}`);
     const [row] = mapStudentImportRows([STUDENT_UPLOAD_HEADERS, values]);
 
     expect(row[0]).toBe("value:Mã số");
     expect(row[3]).toBe("value:Phân loại (*)");
+    expect(STUDENT_UPLOAD_HEADERS[4]).toBe("Giới tính");
     expect(row[4]).toBe("value:SĐT");
     expect(row[13]).toBe("value:Mối quan hệ (*)");
     expect(row[19]).toBe("value:Mã lớp");
@@ -21,11 +22,13 @@ describe("student Excel upload column mapping", () => {
     expect(row[23]).toBe("value:Ghi chú");
     expect(row[24]).toBe("value:Tài khoản");
     expect(row[25]).toBe("value:Mật khẩu");
+    expect(row[26]).toBe("value:Giới tính");
   });
 
-  it("continues to read old files without the two new columns", () => {
-    const values = STUDENT_EXPORT_HEADERS.map((header) => `value:${header}`);
-    const [row] = mapStudentImportRows([STUDENT_EXPORT_HEADERS, values]);
+  it("continues to read legacy export files without gender or credentials", () => {
+    const legacyHeaders = STUDENT_EXPORT_HEADERS.filter((header) => header !== "Giới tính");
+    const values = legacyHeaders.map((header) => `value:${header}`);
+    const [row] = mapStudentImportRows([legacyHeaders, values]);
 
     expect(row[4]).toBe("value:SĐT");
     expect(row[13]).toBe("value:Mối quan hệ (*)");
@@ -33,13 +36,33 @@ describe("student Excel upload column mapping", () => {
     expect(row[23]).toBe("value:Ghi chú");
     expect(row[24]).toBe("");
     expect(row[25]).toBe("");
+    expect(row[26]).toBe("");
+  });
+
+  it("continues to read legacy upload templates with credentials after classification", () => {
+    const legacyHeaders = STUDENT_EXPORT_HEADERS.filter((header) => header !== "Giới tính");
+    const uploadHeaders = [
+      ...legacyHeaders.slice(0, 4),
+      "Tài khoản",
+      "Mật khẩu",
+      ...legacyHeaders.slice(4),
+    ];
+    const values = uploadHeaders.map((header) => `value:${header}`);
+    const [row] = mapStudentImportRows([uploadHeaders, values]);
+
+    expect(row[4]).toBe("value:SĐT");
+    expect(row[13]).toBe("value:Mối quan hệ (*)");
+    expect(row[24]).toBe("value:Tài khoản");
+    expect(row[25]).toBe("value:Mật khẩu");
+    expect(row[26]).toBe("");
   });
 
   it("still maps older files with the extra class-name column", () => {
+    const legacyHeaders = STUDENT_EXPORT_HEADERS.filter((header) => header !== "Giới tính");
     const headers = [
-      ...STUDENT_EXPORT_HEADERS.slice(0, 20),
+      ...legacyHeaders.slice(0, 20),
       "Tên lớp",
-      ...STUDENT_EXPORT_HEADERS.slice(20),
+      ...legacyHeaders.slice(20),
     ];
     const values = headers.map((header) => `value:${header}`);
     const [row] = mapStudentImportRows([headers, values]);
@@ -49,13 +72,14 @@ describe("student Excel upload column mapping", () => {
     expect(row[23]).toBe("value:Ghi chú");
     expect(row[24]).toBe("");
     expect(row[25]).toBe("");
+    expect(row[26]).toBe("");
   });
 
   it("does not shift later fields when a recognized header is missing", () => {
     const headers = [...STUDENT_UPLOAD_HEADERS];
     const values = headers.map((header) => `value:${header}`);
-    headers.splice(6, 1);
-    values.splice(6, 1);
+    headers.splice(7, 1);
+    values.splice(7, 1);
     const [row] = mapStudentImportRows([headers, values]);
 
     expect(row[4]).toBe("");
@@ -98,7 +122,7 @@ describe("student import location matching", () => {
       { id: "two", name: "Cơ sở A Quận 1" },
     ];
 
-    expect(matchStudentImportLocation("Cơ sở A Quận 1", ambiguousLocations)).toEqual({
+    expect(matchStudentImportLocation("Cơ sở A,  Quận 1", ambiguousLocations)).toEqual({
       location: null,
       ambiguous: true,
     });

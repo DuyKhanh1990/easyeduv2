@@ -68,6 +68,7 @@ const INITIAL_COLUMNS: ColumnConfig[] = [
   { id: "type", label: "Phân loại", visible: true },
   { id: "phone", label: "SĐT", visible: true },
   { id: "dob", label: "Ngày sinh", visible: true },
+  { id: "gender", label: "Giới tính", visible: true },
   { id: "email", label: "Email", visible: true },
   { id: "parent1", label: "PH 1", visible: true },
   { id: "phone1", label: "SĐT PH 1", visible: true },
@@ -448,7 +449,15 @@ export function CustomersList() {
         const parsed = JSON.parse(saved) as ColumnConfig[];
         const savedIds = new Set(parsed.map((c) => c.id));
         const newCols = INITIAL_COLUMNS.filter((c) => !savedIds.has(c.id));
-        return [...parsed, ...newCols];
+        const merged = [...parsed, ...newCols];
+        const genderIndex = merged.findIndex((column) => column.id === "gender");
+        if (genderIndex >= 0 && !savedIds.has("gender")) {
+          const [genderColumn] = merged.splice(genderIndex, 1);
+          const dobIndex = merged.findIndex((column) => column.id === "dob");
+          const emailIndex = merged.findIndex((column) => column.id === "email");
+          merged.splice(dobIndex >= 0 ? dobIndex + 1 : emailIndex >= 0 ? emailIndex : merged.length, 0, genderColumn);
+        }
+        return merged;
       }
     } catch {}
     return INITIAL_COLUMNS;

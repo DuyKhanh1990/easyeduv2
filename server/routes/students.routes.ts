@@ -42,7 +42,7 @@ const CRM_CONFIG_BASE = "/customers/crm-config";
 const CUSTOMER_EXPORT_MAX_ROWS = 50_000;
 const CUSTOMER_EXPORT_BATCH_SIZE = 1_000;
 const CUSTOMER_EXPORT_COLUMNS = new Set([
-  "code", "fullName", "location", "school", "type", "phone", "dob", "email",
+  "code", "fullName", "location", "school", "type", "phone", "dob", "gender", "email",
   "parent1", "phone1", "parent2", "phone2", "parent3", "phone3", "parentAccounts",
   "pipeline", "source", "reject", "sale", "manager", "teacher", "classes",
   "accountStatus", "learningStatus", "address", "social", "zaloOA", "level", "note",
@@ -560,6 +560,7 @@ export function registerStudentsRoutes(app: Express): void {
               case "type": return student.type || "Học viên";
               case "phone": return student.phone || "";
               case "dob": return formatDate(student.dateOfBirth);
+              case "gender": return student.gender || "";
               case "email": return student.email || "";
               case "parent1": return student.parentName || "";
               case "phone1": return student.parentPhone || "";

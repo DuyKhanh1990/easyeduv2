@@ -884,6 +884,11 @@ export function CustomersTable({
           ? <span className="text-xs text-slate-600">{new Date(student.dateOfBirth).toLocaleDateString("vi-VN")}</span>
           : <span className="text-slate-300">—</span>;
 
+      case "gender":
+        return student.gender
+          ? <span className="text-xs text-slate-600">{student.gender}</span>
+          : <span className="text-slate-300">—</span>;
+
       case "email":
         return student.email
           ? <span className="max-w-[150px] truncate block text-xs text-slate-600">{student.email}</span>

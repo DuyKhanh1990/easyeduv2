@@ -96,6 +96,7 @@ export function useExcelImportExport({
           student.fullName,
           student.location?.name || "",
           student.type || "Học viên",
+          student.gender || "",
           student.phone || "",
           student.dateOfBirth ? new Date(student.dateOfBirth).toLocaleDateString("vi-VN") : "",
           student.email || "",
@@ -194,28 +195,28 @@ export function useExcelImportExport({
         name: "StudentImportRelationships",
         label: "Mối quan hệ",
         values: cleanList(sortedRelationships?.filter((r: any) => !r.isParentGroup).map((r: any) => r.name) || ["Lead", "Học thử"]),
-        inputColumn: "P",
+        inputColumn: "Q",
       },
       {
         column: "D",
         name: "StudentImportSources",
         label: "Nguồn",
         values: cleanList(crmSources?.map((s: any) => s.name) || ["Facebook", "Google"]),
-        inputColumn: "Q",
+        inputColumn: "R",
       },
       {
         column: "E",
         name: "StudentImportRejectReasons",
         label: "Lý do từ chối",
         values: cleanList(crmReasons?.map((r: any) => r.reason) || ["Không có nhu cầu"]),
-        inputColumn: "R",
+        inputColumn: "S",
       },
       {
         column: "F",
         name: "StudentImportSales",
         label: "Sale",
         values: finalSaleNames,
-        inputColumn: "S",
+        inputColumn: "T",
         optional: true,
       },
       {
@@ -223,7 +224,7 @@ export function useExcelImportExport({
         name: "StudentImportManagers",
         label: "Quản lý",
         values: finalManagerNames,
-        inputColumn: "T",
+        inputColumn: "U",
         optional: true,
       },
       {
@@ -231,8 +232,15 @@ export function useExcelImportExport({
         name: "StudentImportTeachers",
         label: "Giáo viên",
         values: finalTeacherNames,
-        inputColumn: "U",
+        inputColumn: "V",
         optional: true,
+      },
+      {
+        column: "I",
+        name: "StudentImportGenders",
+        label: "Giới tính",
+        values: ["Nam", "Nữ"],
+        inputColumn: "E",
       },
     ];
 
@@ -281,7 +289,7 @@ export function useExcelImportExport({
         };
       });
 
-      [2, 4, 16].forEach((index) => {
+      [2, 4, 17].forEach((index) => {
         const cell = headerRow.getCell(index);
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFF00" } };
         cell.font = { bold: true, color: { argb: "FF000000" } };
@@ -444,12 +452,14 @@ export function useExcelImportExport({
       errorRows.forEach((errRow) => {
         const rawData = errRow.rawData || [];
         const errorCols = new Set((errRow.errorColumns || []).map((index) => {
-          if (index === 24) return 4;
-          if (index === 25) return 5;
-          return index >= 4 && index < 24 ? index + 2 : index;
+          if (index === 24) return 5;
+          if (index === 25) return 6;
+          if (index === 26) return 4;
+          return index >= 4 && index < 24 ? index + 3 : index;
         }));
         const uploadRow = [
           ...rawData.slice(0, 4),
+          rawData[26] ?? "",
           rawData[24] ?? "",
           rawData[25] ?? "",
           ...rawData.slice(4, 24),
@@ -673,7 +683,7 @@ export function useExcelImportExport({
         const validationErrors: string[] = [];
         const errorColumns: number[] = [];
 
-        // Validate col D: Phân loại (required, must be "Học viên" or "Phụ huynh")
+        // Phân loại is required; internal indexes stay independent of file column positions.
         const rawType = row[3] ? String(row[3]).trim() : "";
         if (!rawType) {
           validationErrors.push("Thiếu cột D (Phân loại): bắt buộc nhập");
@@ -683,15 +693,27 @@ export function useExcelImportExport({
           errorColumns.push(3);
         }
 
-        // Validate col N: Mối quan hệ (required, must match a valid relationship)
+        const rawGender = row[26] == null ? "" : String(row[26]).trim();
+        const normalizedGender = rawGender.toLocaleLowerCase("vi");
+        let gender = "";
+        if (normalizedGender === "nam") {
+          gender = "Nam";
+        } else if (normalizedGender === "nữ" || normalizedGender === "nu") {
+          gender = "Nữ";
+        } else if (rawGender) {
+          validationErrors.push(`Cột E (Giới tính) không hợp lệ: "${rawGender}". Chỉ chấp nhận "Nam" hoặc "Nữ"`);
+          errorColumns.push(26);
+        }
+
+        // Mối quan hệ is required and resolved from the stable internal row index.
         const rawRelationship = row[13] ? String(row[13]).trim() : "";
         const matchedRelationship = sortedRelationships?.find((r: any) => !r.isParentGroup && r.name === rawRelationship);
         if (!rawRelationship) {
-          validationErrors.push("Thiếu cột N (Mối quan hệ): bắt buộc nhập");
+          validationErrors.push("Thiếu Mối quan hệ: bắt buộc nhập");
           errorColumns.push(13);
         } else if (!matchedRelationship) {
           const validNames = sortedRelationships?.filter((r: any) => !r.isParentGroup).map((r: any) => r.name).join(", ") || "";
-          validationErrors.push(`Cột N (Mối quan hệ) không hợp lệ: "${rawRelationship}". Các giá trị hợp lệ: ${validNames}`);
+          validationErrors.push(`Mối quan hệ không hợp lệ: "${rawRelationship}". Các giá trị hợp lệ: ${validNames}`);
           errorColumns.push(13);
         }
 
@@ -716,31 +738,31 @@ export function useExcelImportExport({
           errorColumns.push(2);
         }
 
-        // Validate col O: Nguồn (optional, but if provided must match a known source)
+        // Nguồn is optional, but if provided must match a known source.
         if (row[14]) {
           const rawSource = String(row[14]).trim();
           const matchedSource = crmSources?.find((s: any) => s.name === rawSource);
           if (!matchedSource) {
             const validSources = crmSources?.map((s: any) => s.name).join(", ") || "";
-            validationErrors.push(`Cột O (Nguồn) không hợp lệ: "${rawSource}". Các giá trị hợp lệ: ${validSources || "chưa có dữ liệu"}`);
+            validationErrors.push(`Nguồn không hợp lệ: "${rawSource}". Các giá trị hợp lệ: ${validSources || "chưa có dữ liệu"}`);
             errorColumns.push(14);
           }
         }
 
-        // Validate col E: SĐT duplicate check (unless allowed)
+        // Check phone duplicates (unless allowed).
         if (!options.allowDuplicatePhone && row[4]) {
           const phone = String(row[4]).trim();
           if (phone && existingPhones.has(phone)) {
-            validationErrors.push(`Cột E (SĐT) bị trùng: "${phone}" đã tồn tại trong hệ thống`);
+            validationErrors.push(`SĐT bị trùng: "${phone}" đã tồn tại trong hệ thống`);
             errorColumns.push(4);
           }
         }
 
-        // Validate col G: Email duplicate check (unless allowed)
+        // Check email duplicates (unless allowed).
         if (!options.allowDuplicateEmail && row[6]) {
           const email = String(row[6]).trim().toLowerCase();
           if (email && existingEmails.has(email)) {
-            validationErrors.push(`Cột G (Email) bị trùng: "${String(row[6]).trim()}" đã tồn tại trong hệ thống`);
+            validationErrors.push(`Email bị trùng: "${String(row[6]).trim()}" đã tồn tại trong hệ thống`);
             errorColumns.push(6);
           }
         }
@@ -757,6 +779,7 @@ export function useExcelImportExport({
           __activityLogSource: "excel_import",
           fullName: String(row[1] || ""),
           type: rawType === "Phụ huynh" ? "Phụ huynh" : "Học viên",
+          gender: gender || undefined,
           locationIds: [rowLocationId],
           phone: row[4] ? String(row[4]) : undefined,
           email: row[6] ? String(row[6]) : undefined,
