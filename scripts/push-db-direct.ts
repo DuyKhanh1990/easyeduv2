@@ -98,6 +98,20 @@ async function main() {
   // ── Phase 1: CREATE TABLE cho bảng mới ──────────────────────────────────
   console.log("\n[push-db] Phase 1: Tạo bảng mới...");
   const targetSnapshot = generateDrizzleJson(schema as any, undefined, ["public"], undefined);
+  const onlyTableArg = process.argv.find((arg) => arg.startsWith("--only-table="));
+  const onlyTable = onlyTableArg?.slice("--only-table=".length);
+  if (onlyTable) {
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(onlyTable)) {
+      throw new Error("Tên bảng --only-table không hợp lệ.");
+    }
+    const matchingTables = Object.entries(targetSnapshot.tables || {})
+      .filter(([, table]: [string, any]) => table.name === onlyTable);
+    if (matchingTables.length !== 1) {
+      throw new Error(`Không tìm thấy duy nhất bảng "${onlyTable}" trong shared/schema.ts.`);
+    }
+    targetSnapshot.tables = Object.fromEntries(matchingTables);
+    console.log(`[push-db] Chế độ giới hạn: chỉ đồng bộ bảng "${onlyTable}" và index của bảng này.`);
+  }
   console.log(`[push-db] Schema có ${Object.keys(targetSnapshot.tables || {}).length} bảng`);
 
   const statements = await generateMigration(EMPTY_SNAPSHOT as any, targetSnapshot);
