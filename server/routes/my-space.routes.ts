@@ -3513,7 +3513,7 @@ export function registerMySpaceRoutes(app: Express): void {
       const url = await uploadFileToS3FromStream(req, fileSize, filename, mimetype);
       addS3Bytes(fileSize).catch(() => {});
       recordFileUpload(url, fileSize).catch(() => {});
-      if (/\.(mkv|mp4)$/i.test(filename)) {
+      if (/\.(mkv|mp4|mov)$/i.test(filename)) {
         void queueAssignmentVideoDerivative(url, filename);
       }
       return res.json({ name: filename, url, size: fileSize, mimetype });
