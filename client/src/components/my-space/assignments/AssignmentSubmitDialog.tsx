@@ -15,6 +15,10 @@ import { useMutation } from "@tanstack/react-query";
 import { RichEditor } from "@/components/ui/rich-editor";
 import { RichContentRenderer } from "@/components/ui/rich-content-renderer";
 import { useLanguage } from "@/hooks/use-language";
+import {
+  ASSIGNMENT_UPLOAD_MAX_BATCH_BYTES,
+  ASSIGNMENT_UPLOAD_MAX_FILE_BYTES,
+} from "@shared/my-space-assignment-upload";
 
 const WEEKDAY_LABELS: Record<number, string> = {
   0: "Chủ Nhật", 1: "Thứ Hai", 2: "Thứ Ba", 3: "Thứ Tư",
@@ -134,6 +138,14 @@ export function AssignmentSubmitDialog({
   const canModifyGrade = hasExistingGrade ? canEditGrade : canCreateGrade;
 
   const uploadFilesApi = async (files: File[]): Promise<AttachedFile[]> => {
+    const batchTotalSize = files.reduce((sum, file) => sum + file.size, 0);
+    if (
+      files.some((file) => file.size > ASSIGNMENT_UPLOAD_MAX_FILE_BYTES) ||
+      batchTotalSize > ASSIGNMENT_UPLOAD_MAX_BATCH_BYTES
+    ) {
+      throw new Error("Tối đa 200 MB mỗi file và 300 MB mỗi lượt tải");
+    }
+
     const uploaded: AttachedFile[] = [];
     for (const file of files) {
       const res = await fetch("/api/my-space/assignments/student/upload", {
@@ -143,6 +155,7 @@ export function AssignmentSubmitDialog({
           ...getAuthHeaders(),
           "Content-Type": "application/octet-stream",
           "X-Upload-File-Size": String(file.size),
+          "X-Upload-Batch-Total-Size": String(batchTotalSize),
           "X-Upload-File-Name": encodeURIComponent(file.name),
           "X-Upload-Content-Type": file.type || "application/octet-stream",
         },
@@ -563,6 +576,8 @@ export function AssignmentSubmitDialog({
                 value={attachments}
                 onChange={setAttachments}
                 disabled={isPending}
+                maxSizeMb={ASSIGNMENT_UPLOAD_MAX_FILE_BYTES / (1024 * 1024)}
+                maxTotalSizeMb={ASSIGNMENT_UPLOAD_MAX_BATCH_BYTES / (1024 * 1024)}
                 uploadFiles={uploadFilesApi}
                 onUploadingChange={setIsUploading}
               />

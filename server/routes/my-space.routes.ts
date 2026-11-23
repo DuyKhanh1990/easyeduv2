@@ -74,6 +74,10 @@ import { storage } from "../storage";
 import { eq, and, gte, lte, sql, inArray, isNotNull, isNull, or, desc } from "drizzle-orm";
 import { uploadFileToS3FromStream } from "../lib/s3";
 import { addS3Bytes, recordFileUpload } from "../lib/storage-usage";
+import {
+  ASSIGNMENT_UPLOAD_MAX_BATCH_BYTES,
+  ASSIGNMENT_UPLOAD_MAX_FILE_BYTES,
+} from "@shared/my-space-assignment-upload";
 import { updateStudentAttendance } from "../storage/attendance.storage";
 import { getTeacherIdsForTimeRange } from "@shared/teacher-time-assignments";
 import { canViewClass } from "../lib/class-access";
@@ -3443,12 +3447,23 @@ export function registerMySpaceRoutes(app: Express): void {
       if (!studentRecord) return res.status(403).json({ message: "Tài khoản không phải học viên" });
 
       const fileSize = Number(req.headers["x-upload-file-size"]);
-      const maxFileSize = 100 * 1024 * 1024;
       if (!Number.isSafeInteger(fileSize) || fileSize < 0) {
         return res.status(400).json({ message: "Kích thước file không hợp lệ" });
       }
-      if (fileSize > maxFileSize) {
-        return res.status(413).json({ message: "File vượt quá giới hạn 100 MB" });
+      if (fileSize > ASSIGNMENT_UPLOAD_MAX_FILE_BYTES) {
+        return res.status(413).json({ message: "File vượt quá giới hạn 200 MB" });
+      }
+
+      const rawBatchSize = req.headers["x-upload-batch-total-size"];
+      if (typeof rawBatchSize !== "string") {
+        return res.status(400).json({ message: "Thiếu tổng dung lượng lượt tải lên" });
+      }
+      const declaredBatchSize = Number(rawBatchSize);
+      if (!Number.isSafeInteger(declaredBatchSize) || declaredBatchSize < fileSize) {
+        return res.status(400).json({ message: "Tổng dung lượng lượt tải lên không hợp lệ" });
+      }
+      if (declaredBatchSize > ASSIGNMENT_UPLOAD_MAX_BATCH_BYTES) {
+        return res.status(413).json({ message: "Tổng dung lượng mỗi lượt tải không được vượt quá 300 MB" });
       }
 
       const contentLength = req.headers["content-length"];

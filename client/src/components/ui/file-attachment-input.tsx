@@ -18,6 +18,7 @@ interface FileAttachmentInputProps {
   onChange: (value: AttachedFile[]) => void;
   disabled?: boolean;
   maxSizeMb?: number;
+  maxTotalSizeMb?: number;
   accept?: string;
   description?: string;
   uploadFiles?: (files: File[]) => Promise<AttachedFile[]>;
@@ -29,6 +30,7 @@ export function FileAttachmentInput({
   onChange,
   disabled,
   maxSizeMb = MAX_FILE_SIZE_MB,
+  maxTotalSizeMb,
   accept = ACCEPTED_FILE_TYPES,
   description,
   uploadFiles,
@@ -48,6 +50,16 @@ export function FileAttachmentInput({
       toast({
         title: "File quá lớn",
         description: `Tối đa ${maxSizeMb}MB/file`,
+        variant: "destructive",
+      });
+      e.target.value = "";
+      return;
+    }
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+    if (maxTotalSizeMb !== undefined && totalSize > maxTotalSizeMb * 1024 * 1024) {
+      toast({
+        title: "Tổng dung lượng quá lớn",
+        description: `Tổng dung lượng tối đa ${maxTotalSizeMb}MB mỗi lượt tải`,
         variant: "destructive",
       });
       e.target.value = "";
