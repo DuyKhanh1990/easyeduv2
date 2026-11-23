@@ -8,7 +8,7 @@ import {
   ImageIcon, Link as LinkIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AssignmentRow } from "@/types/my-assignments";
+import { AssignmentAttachment, AssignmentRow } from "@/types/my-assignments";
 import { apiRequest, queryClient, getAuthHeaders } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
@@ -105,7 +105,7 @@ export function AssignmentSubmitDialog({
 }: Props) {
   const { toast } = useToast();
   const { t } = useLanguage();
-  const [viewerFile, setViewerFile] = useState<{ url: string; name: string } | null>(null);
+  const [viewerFile, setViewerFile] = useState<AssignmentAttachment | null>(null);
   const canDownload = useCanDownloadFiles();
   const [submissionText, setSubmissionText] = useState(row.submissionContent ?? "");
   const [attachments, setAttachments] = useState<AttachedFile[]>(
@@ -118,7 +118,7 @@ export function AssignmentSubmitDialog({
       const name: string = item.name && !item.name.startsWith("http")
         ? item.name
         : decodeURIComponent(url.split("/").pop() || url);
-      return { name, url };
+      return { ...item, name, url };
     })
   );
   const imgInputRef = useRef<HTMLInputElement>(null);
@@ -356,7 +356,7 @@ export function AssignmentSubmitDialog({
                     <button
                       key={i}
                       type="button"
-                      onClick={() => setViewerFile({ url: att.url, name: att.name })}
+                      onClick={() => setViewerFile(att)}
                       className="relative flex flex-col items-center gap-2 p-3 rounded-xl border border-border overflow-hidden transition-colors group text-center"
                       data-testid={`link-homework-attachment-${i}`}
                     >
@@ -591,6 +591,8 @@ export function AssignmentSubmitDialog({
       onClose={() => setViewerFile(null)}
       url={viewerFile?.url ?? ""}
       name={viewerFile?.name ?? ""}
+      playbackUrl={viewerFile?.playbackUrl}
+      posterUrl={viewerFile?.posterUrl}
       canDownload={canDownload}
     />
     </>
@@ -634,8 +636,8 @@ function SubmissionContentDisplay({ content, imageAlt }: { content: string; imag
   );
 }
 
-function AttachmentGrid({ urls, testIdPrefix }: { urls: Array<string | { name: string; url: string }>; testIdPrefix: string }) {
-  const [viewerFile, setViewerFile] = useState<{ url: string; name: string } | null>(null);
+function AttachmentGrid({ urls, testIdPrefix }: { urls: Array<string | AssignmentAttachment>; testIdPrefix: string }) {
+  const [viewerFile, setViewerFile] = useState<AssignmentAttachment | null>(null);
   const canDownload = useCanDownloadFiles();
   return (
     <>
@@ -643,13 +645,14 @@ function AttachmentGrid({ urls, testIdPrefix }: { urls: Array<string | { name: s
       {urls.map((entry, i) => {
         const url: string = typeof entry === "string" ? entry : (entry.url ?? "");
         const name: string = typeof entry === "string" ? getFileName(entry) : (entry.name && !entry.name.startsWith("http") ? entry.name : getFileName(url));
+        const attachment = typeof entry === "string" ? { name, url } : { ...entry, name, url };
         const cat = getCategory(name);
         const style = CATEGORY_STYLE[cat];
         return (
           <button
             key={i}
             type="button"
-            onClick={() => setViewerFile({ url, name })}
+            onClick={() => setViewerFile(attachment)}
             className="relative flex flex-col items-center gap-2 p-3 rounded-xl border border-border overflow-hidden transition-colors group text-center"
             data-testid={`link-submission-attachment-${testIdPrefix}-${i}`}
           >
@@ -669,6 +672,8 @@ function AttachmentGrid({ urls, testIdPrefix }: { urls: Array<string | { name: s
       onClose={() => setViewerFile(null)}
       url={viewerFile?.url ?? ""}
       name={viewerFile?.name ?? ""}
+      playbackUrl={viewerFile?.playbackUrl}
+      posterUrl={viewerFile?.posterUrl}
       canDownload={canDownload}
     />
     </>

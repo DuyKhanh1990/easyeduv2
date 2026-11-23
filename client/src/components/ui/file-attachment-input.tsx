@@ -11,6 +11,9 @@ import { getFileTypeInfo, MAX_FILE_SIZE_MB, ACCEPTED_FILE_TYPES } from "@/lib/fi
 export interface AttachedFile {
   name: string;
   url: string;
+  playbackUrl?: string | null;
+  posterUrl?: string | null;
+  mediaProcessingStatus?: "queued" | "processing" | "ready" | "failed";
 }
 
 interface FileAttachmentInputProps {
@@ -165,6 +168,8 @@ export function FileAttachmentInput({
         onClose={() => setViewerFile(null)}
         url={viewerFile?.url ?? ""}
         name={viewerFile?.name ?? ""}
+        playbackUrl={viewerFile?.playbackUrl}
+        posterUrl={viewerFile?.posterUrl}
         canDownload={canDownload}
       />
     </div>

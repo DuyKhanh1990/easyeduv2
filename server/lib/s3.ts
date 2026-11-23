@@ -324,6 +324,54 @@ export async function uploadFileToS3FromDisk(
 }
 
 /**
+ * Download one of this center's uploaded objects to a temporary file.
+ * The source URL must resolve to this configured S3 bucket and upload folder.
+ */
+export async function downloadPortalUploadToDisk(fileUrl: string, outputPath: string): Promise<void> {
+  let parsed: URL;
+  try {
+    parsed = new URL(fileUrl);
+  } catch {
+    throw new Error("URL nguồn không hợp lệ.");
+  }
+
+  const aliasBase = new URL(`${protocol}://${aliasHost}`);
+  const endpointBase = new URL(endpoint);
+  const candidates = [aliasBase, endpointBase];
+  let key: string | null = null;
+
+  for (const base of candidates) {
+    const basePath = base.pathname.replace(/\/+$/, "");
+    const objectPrefix = `${basePath}/${bucket}/`;
+    if (
+      parsed.protocol === base.protocol &&
+      parsed.hostname === base.hostname &&
+      parsed.port === base.port &&
+      parsed.pathname.startsWith(objectPrefix)
+    ) {
+      try {
+        key = decodeURIComponent(parsed.pathname.slice(objectPrefix.length));
+      } catch {
+        throw new Error("Đường dẫn file nguồn không hợp lệ.");
+      }
+      break;
+    }
+  }
+
+  if (
+    !key ||
+    !key.startsWith(`${folder}/`) ||
+    key.split("/").some((part) => part === "." || part === "..")
+  ) {
+    throw new Error("File nguồn không thuộc kho upload của hệ thống.");
+  }
+
+  const response = await s3Client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  if (!response.Body) throw new Error("Kho lưu trữ không trả nội dung file nguồn.");
+  await pipeline(response.Body as Readable, fs.createWriteStream(outputPath));
+}
+
+/**
  * Stream an incoming upload directly to S3 without staging it on local disk.
  * The upstream stream is backpressured while the S3 request is being written.
  */

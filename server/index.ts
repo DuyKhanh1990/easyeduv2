@@ -213,6 +213,14 @@ app.use((req, res, next) => {
     console.warn("[AutoCheckout] Job startup failed:", err);
   }
 
+  // Convert only MKV attachments referenced by My Space assignments.
+  try {
+    const { startAssignmentMkvDerivativeWorker } = await import("./services/assignment-mkv-derivative.service");
+    startAssignmentMkvDerivativeWorker();
+  } catch (err) {
+    console.warn("[Assignment MKV] Worker startup failed:", err);
+  }
+
   // Ensure crm_pipeline_groups table + new crm_relationships columns exist in production DB
   try {
     const { storage: migrationStorage } = await import("./storage");

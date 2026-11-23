@@ -1,6 +1,9 @@
 export interface AssignmentAttachment {
   name: string;
   url: string;
+  playbackUrl?: string | null;
+  posterUrl?: string | null;
+  mediaProcessingStatus?: "queued" | "processing" | "ready" | "failed";
 }
 
 export interface AssignmentRow {

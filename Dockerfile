@@ -37,13 +37,14 @@ ENV PORT=5000
 ENV APP_VERSION=$APP_VERSION
 
 # Install only production + skip optional native modules (bufferutil, etc.).
-# The backup/restore service invokes pg_dump, pg_restore and psql at runtime.
+# The backup/restore service invokes PostgreSQL clients; My Space uses ffmpeg
+# only for background conversion of MKV attachments to iOS-compatible MP4.
 COPY package*.json ./
 # Replit's internal npm proxy rewrites resolved URLs in package-lock.json to
 # package-firewall.replit.local or package-firewall.replit.internal — addresses
 # that only exist inside Replit. Strip both forms so Harbor can run npm ci.
 RUN sed -i -E 's#http://package-firewall\.replit\.(local|internal)/npm/#https://registry.npmjs.org/#g' package-lock.json && \
-    apk add --no-cache postgresql16-client && \
+    apk add --no-cache postgresql16-client ffmpeg && \
     npm ci --omit=dev --omit=optional --registry=https://registry.npmjs.org && \
     npm cache clean --force
 

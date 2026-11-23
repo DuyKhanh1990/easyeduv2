@@ -12,6 +12,8 @@ export interface FileViewerProps {
   url: string;
   name: string;
   canDownload?: boolean;
+  playbackUrl?: string | null;
+  posterUrl?: string | null;
 }
 
 type FileCategory = "image" | "pdf" | "video" | "audio" | "word" | "excel" | "ppt" | "other";
@@ -71,7 +73,15 @@ function getViewerUrl(category: FileCategory, url: string): string {
   return absoluteUrl;
 }
 
-export function FileViewer({ open, onClose, url, name, canDownload = true }: FileViewerProps) {
+export function FileViewer({
+  open,
+  onClose,
+  url,
+  name,
+  canDownload = true,
+  playbackUrl,
+  posterUrl,
+}: FileViewerProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [docxHtml, setDocxHtml] = useState("");
   const [docxLoading, setDocxLoading] = useState(false);
@@ -79,6 +89,12 @@ export function FileViewer({ open, onClose, url, name, canDownload = true }: Fil
   const category = getFileCategory(name, url);
   const CategoryIcon = getCategoryIcon(category);
   const absoluteUrl = url.startsWith("http") ? url : `${window.location.origin}${url}`;
+  const absolutePlaybackUrl = playbackUrl
+    ? (playbackUrl.startsWith("http") ? playbackUrl : `${window.location.origin}${playbackUrl}`)
+    : absoluteUrl;
+  const absolutePosterUrl = posterUrl
+    ? (posterUrl.startsWith("http") ? posterUrl : `${window.location.origin}${posterUrl}`)
+    : undefined;
   const isDocx = name.split(".").pop()?.toLowerCase() === "docx";
   useEffect(() => {
     if (!open) setIsFullscreen(false);
@@ -205,7 +221,8 @@ export function FileViewer({ open, onClose, url, name, canDownload = true }: Fil
           {category === "video" && (
             <div className={`w-full flex items-center justify-center p-4 ${isFullscreen ? "h-full min-h-0" : "min-h-[60vh]"}`}>
               <video
-                src={absoluteUrl}
+                src={playbackUrl ? absolutePlaybackUrl : absoluteUrl}
+                poster={absolutePosterUrl}
                 controls
                 controlsList={canDownload ? undefined : "nodownload"}
                 className={`max-w-full ${isFullscreen ? "max-h-full" : "max-h-[75vh]"} rounded`}

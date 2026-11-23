@@ -1400,6 +1400,24 @@ export const studentSessionContents = pgTable("student_session_contents", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Original MKV attachments stay untouched; this table tracks the optional
+// iOS-friendly MP4/poster derivatives generated for My Space assignments.
+export const assignmentMkvDerivatives = pgTable("assignment_mkv_derivatives", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  sourceUrl: text("source_url").notNull(),
+  sourceName: varchar("source_name", { length: 255 }).notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("queued"),
+  playbackUrl: text("playback_url"),
+  posterUrl: text("poster_url"),
+  error: text("error"),
+  attempts: integer("attempts").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  sourceUnique: uniqueIndex("assignment_mkv_derivatives_source_uidx").on(table.sourceUrl),
+  statusCreatedIdx: index("assignment_mkv_derivatives_status_created_idx").on(table.status, table.createdAt),
+}));
+
 // Relations are handled by foreign keys, no need for explicit Drizzle relations
 // to avoid circular dependency issues
 
