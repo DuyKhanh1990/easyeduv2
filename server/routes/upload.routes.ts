@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import type { Request, Response } from "express";
 import multer from "multer";
 import { uploadFileToS3FromDisk } from "../lib/s3";
 import { addS3Bytes, recordFileUpload } from "../lib/storage-usage";
@@ -31,33 +32,95 @@ function getMobileBaseUrl(req: any): string {
 }
 export { getMobileBaseUrl as getUploadBaseUrl };
 
-export function registerUploadRoutes(app: Express) {
-  /** Proxy S3 objects through the server so private buckets are accessible */
-  app.get("/api/media/proxy", async (req, res) => {
-    const url = req.query.url as string;
-    if (!url) return res.status(400).send("Missing url");
+function proxyMedia(req: Request, res: Response): void {
+  const url = req.query.url as string;
+  if (!url) {
+    res.status(400).send("Missing url");
+    return;
+  }
 
-    // Only allow proxying our own S3 bucket
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      return res.status(400).send("Invalid url");
-    }
-    if (!parsed.hostname.includes(S3_HOSTNAME) && S3_HOSTNAME) {
-      return res.status(403).send("Forbidden");
-    }
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    res.status(400).send("Invalid url");
+    return;
+  }
 
-    const transport = parsed.protocol === "https:" ? https : http;
-    transport.get(url, (s3Res) => {
-      res.set("Content-Type", s3Res.headers["content-type"] || "application/octet-stream");
-      res.set("Cache-Control", "public, max-age=86400");
-      s3Res.pipe(res);
-    }).on("error", (err) => {
-      console.error("[Media Proxy Error]", err);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    res.status(400).send("Invalid url protocol");
+    return;
+  }
+  if (!parsed.hostname.includes(S3_HOSTNAME) && S3_HOSTNAME) {
+    res.status(403).send("Forbidden");
+    return;
+  }
+
+  const transport = parsed.protocol === "https:" ? https : http;
+  const requestHeaders: Record<string, string> = {};
+  for (const headerName of ["range", "if-range"] as const) {
+    const headerValue = req.headers[headerName];
+    if (typeof headerValue === "string") requestHeaders[headerName] = headerValue;
+  }
+
+  const upstreamReq = transport.request(
+    parsed,
+    { method: req.method === "HEAD" ? "HEAD" : "GET", headers: requestHeaders },
+    (upstreamRes) => {
+      res.status(upstreamRes.statusCode || 502);
+
+      // Forward range and representation metadata so browsers can seek within
+      // large video files without downloading the entire object first.
+      for (const headerName of [
+        "accept-ranges",
+        "content-length",
+        "content-range",
+        "content-type",
+        "etag",
+        "last-modified",
+      ]) {
+        const headerValue = upstreamRes.headers[headerName];
+        if (headerValue !== undefined) res.setHeader(headerName, headerValue);
+      }
+      if (!res.hasHeader("content-type")) {
+        res.setHeader("content-type", "application/octet-stream");
+      }
+      if (!res.hasHeader("cache-control")) {
+        res.setHeader("cache-control", "public, max-age=86400");
+      }
+      if (upstreamRes.statusCode === 206 && !res.hasHeader("accept-ranges")) {
+        res.setHeader("accept-ranges", "bytes");
+      }
+
+      if (req.method === "HEAD") {
+        upstreamRes.resume();
+        res.end();
+        return;
+      }
+      upstreamRes.pipe(res);
+    },
+  );
+
+  const abortUpstream = () => {
+    if (!upstreamReq.destroyed) upstreamReq.destroy();
+  };
+  res.once("close", abortUpstream);
+  upstreamReq.once("error", (err) => {
+    res.off("close", abortUpstream);
+    console.error("[Media Proxy Error]", err);
+    if (!res.headersSent) {
       res.status(502).send("Failed to fetch from S3");
-    });
+    } else {
+      res.destroy(err);
+    }
   });
+  upstreamReq.end();
+}
+
+export function registerUploadRoutes(app: Express) {
+  /** Proxy S3 objects through the server so private buckets are accessible. */
+  app.get("/api/media/proxy", proxyMedia);
+  app.head("/api/media/proxy", proxyMedia);
 
   app.post("/api/upload", upload.array("files"), async (req, res) => {
     const files = req.files as Express.Multer.File[];
