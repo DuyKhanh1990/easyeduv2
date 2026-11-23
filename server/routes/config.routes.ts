@@ -63,7 +63,7 @@ import { manualStudentIdInFilter } from "../lib/manual-score-sheet-sql";
 import * as courseStorage from "../storage/course.storage";
 import { createCourseAuditLog, getCourseAuditLogs } from "../storage/course-audit-log.storage";
 import { createActivityLog, getStaffHistory } from "../storage/activity-log.storage";
-import { enrichAssignmentRowsWithMkv } from "../services/assignment-mkv-derivative.service";
+import { enrichAssignmentRowsWithVideo } from "../services/assignment-mkv-derivative.service";
 import {
   AUTO_INVOICE_POLICY_SETTINGS_KEY,
   canOverrideAutoInvoice,
@@ -1700,24 +1700,24 @@ export function registerConfigRoutes(app: Express): void {
       const content = await courseStorage.getCourseProgramContentById(req.params.id);
       if (!content) return res.status(404).json({ message: "Not found" });
       if (req.query.includeMkvPlayback === "1" && content.attachments?.length) {
-        const mkvAttachments: { name: string; url: string }[] = [];
-        const mkvIndexes: number[] = [];
+        const videoAttachments: { name: string; url: string }[] = [];
+        const videoIndexes: number[] = [];
         content.attachments.forEach((entry, index) => {
           const separatorIndex = entry.indexOf("||");
           const url = separatorIndex < 0 ? entry : entry.slice(separatorIndex + 2);
           const name = separatorIndex < 0
             ? (url.split("/").pop()?.split("?")[0] || url)
             : entry.slice(0, separatorIndex);
-          if (/\.mkv(?:[?#].*)?$/i.test(name) || /\.mkv(?:[?#].*)?$/i.test(url)) {
-            mkvIndexes.push(index);
-            mkvAttachments.push({ name, url });
+          if (/\.(mkv|mp4)(?:[?#].*)?$/i.test(name) || /\.(mkv|mp4)(?:[?#].*)?$/i.test(url)) {
+            videoIndexes.push(index);
+            videoAttachments.push({ name, url });
           }
         });
-        const [enriched] = mkvAttachments.length
-          ? await enrichAssignmentRowsWithMkv([{ homeworkAttachments: mkvAttachments }])
+        const [enriched] = videoAttachments.length
+          ? await enrichAssignmentRowsWithVideo([{ homeworkAttachments: videoAttachments }])
           : [{ homeworkAttachments: [] }];
         const responseAttachments = [...content.attachments];
-        mkvIndexes.forEach((originalIndex, index) => {
+        videoIndexes.forEach((originalIndex, index) => {
           const attachment = enriched?.homeworkAttachments?.[index];
           if (attachment) responseAttachments[originalIndex] = attachment as any;
         });

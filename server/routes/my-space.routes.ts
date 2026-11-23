@@ -87,8 +87,8 @@ import { canScheduleWrite } from "@shared/schedule-access";
 import { isStaffAssignedToEffectiveFreeClassStudent } from "@shared/my-space-calendar-permissions";
 import { hasMySpaceAssignmentsWritePermission } from "../lib/my-space-assignments-permissions";
 import {
-  enrichAssignmentRowsWithMkv,
-  queueAssignmentMkvDerivative,
+  enrichAssignmentRowsWithVideo,
+  queueAssignmentVideoDerivative,
 } from "../services/assignment-mkv-derivative.service";
 import {
   formatEvaluationExclusionViolation,
@@ -940,7 +940,7 @@ async function getSessionContents(classSessionId: string, studentId?: string) {
     });
   }
 
-  const contentRows = await enrichAssignmentRowsWithMkv(
+  const contentRows = await enrichAssignmentRowsWithVideo(
     [...general, ...personal].map((content) => ({
       homeworkAttachments: content.attachments,
     })),
@@ -3448,7 +3448,7 @@ export function registerMySpaceRoutes(app: Express): void {
       const pageSize = Math.min(100, Math.max(1, parseInt(qPageSize ?? "50", 10)));
       const totalPages = Math.ceil(total / pageSize);
       const rows = allRows.slice((page - 1) * pageSize, page * pageSize);
-      const enrichedRows = await enrichAssignmentRowsWithMkv(rows);
+      const enrichedRows = await enrichAssignmentRowsWithVideo(rows);
 
       res.json({ rows: enrichedRows, total, page, pageSize, totalPages, month: monthStr });
     } catch (err: any) {
@@ -3513,8 +3513,8 @@ export function registerMySpaceRoutes(app: Express): void {
       const url = await uploadFileToS3FromStream(req, fileSize, filename, mimetype);
       addS3Bytes(fileSize).catch(() => {});
       recordFileUpload(url, fileSize).catch(() => {});
-      if (/\.mkv$/i.test(filename)) {
-        void queueAssignmentMkvDerivative(url, filename);
+      if (/\.(mkv|mp4)$/i.test(filename)) {
+        void queueAssignmentVideoDerivative(url, filename);
       }
       return res.json({ name: filename, url, size: fileSize, mimetype });
     } catch (err: any) {
@@ -3815,7 +3815,7 @@ export function registerMySpaceRoutes(app: Express): void {
         return a.startTime.localeCompare(b.startTime);
       });
 
-      const enrichedRows = await enrichAssignmentRowsWithMkv(result);
+      const enrichedRows = await enrichAssignmentRowsWithVideo(result);
       res.json({ rows: enrichedRows, month: monthStr });
     } catch (err: any) {
       console.error("Staff assignments error:", err);

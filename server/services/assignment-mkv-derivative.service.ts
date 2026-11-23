@@ -35,10 +35,17 @@ type AssignmentRowWithAttachments = {
   submissionAttachments?: AssignmentMediaAttachment[];
 };
 
-function isMkvAttachment(attachment: AssignmentMediaAttachment): boolean {
+function getVideoKind(name: string, url: string): "mkv" | "mp4" | null {
+  const candidates = [name, url].map((value) => (value || "").split(/[?#]/, 1)[0]);
+  if (candidates.some((value) => /\.mkv$/i.test(value))) return "mkv";
+  if (candidates.some((value) => /\.mp4$/i.test(value))) return "mp4";
+  return null;
+}
+
+function isVideoAttachment(attachment: AssignmentMediaAttachment): boolean {
   const name = (attachment.name || "").split(/[?#]/, 1)[0];
   const urlPath = (attachment.url || "").split(/[?#]/, 1)[0];
-  return /\.mkv$/i.test(name) || /\.mkv$/i.test(urlPath);
+  return getVideoKind(name, urlPath) !== null;
 }
 
 function isMissingDerivativeTable(error: any): boolean {
@@ -47,17 +54,14 @@ function isMissingDerivativeTable(error: any): boolean {
 
 let missingTableWarningLogged = false;
 
-export async function queueAssignmentMkvDerivative(
+export async function queueAssignmentVideoDerivative(
   sourceUrl: string,
   sourceName: string,
 ): Promise<void> {
-  if (
-    !sourceUrl ||
-    (!/\.mkv(?:[?#].*)?$/i.test(sourceName) && !/\.mkv(?:[?#].*)?$/i.test(sourceUrl))
-  ) return;
+  if (!sourceUrl || !getVideoKind(sourceName, sourceUrl)) return;
   try {
     await db.insert(assignmentMkvDerivatives)
-      .values({ sourceUrl, sourceName: sourceName || "video.mkv" })
+      .values({ sourceUrl, sourceName: sourceName || "video" })
       .onConflictDoNothing({ target: assignmentMkvDerivatives.sourceUrl });
   } catch (error: any) {
     if (isMissingDerivativeTable(error)) {
@@ -72,10 +76,11 @@ export async function queueAssignmentMkvDerivative(
 }
 
 /**
- * Adds optional derivative fields to My Space assignment attachment objects.
- * Existing attachment URLs and all non-MKV files pass through unchanged.
+ * Adds optional preview fields to My Space video attachments.
+ * MKV attachments receive an iOS MP4 derivative and poster; existing MP4s
+ * receive a poster only. Original URLs and non-video files stay unchanged.
  */
-export async function enrichAssignmentRowsWithMkv<T extends AssignmentRowWithAttachments>(
+export async function enrichAssignmentRowsWithVideo<T extends AssignmentRowWithAttachments>(
   rows: T[],
 ): Promise<T[]> {
   const candidates = new Map<string, AssignmentMediaAttachment>();
@@ -84,7 +89,7 @@ export async function enrichAssignmentRowsWithMkv<T extends AssignmentRowWithAtt
       ...(row.homeworkAttachments ?? []),
       ...(row.submissionAttachments ?? []),
     ]) {
-      if (attachment?.url && isMkvAttachment(attachment)) {
+      if (attachment?.url && isVideoAttachment(attachment)) {
         candidates.set(attachment.url, attachment);
       }
     }
@@ -99,7 +104,7 @@ export async function enrichAssignmentRowsWithMkv<T extends AssignmentRowWithAtt
       await db.insert(assignmentMkvDerivatives)
         .values(batch.map(([sourceUrl, attachment]) => ({
           sourceUrl,
-          sourceName: attachment.name || "video.mkv",
+           sourceName: attachment.name || "video",
         })))
         .onConflictDoNothing({ target: assignmentMkvDerivatives.sourceUrl });
     }
@@ -115,7 +120,7 @@ export async function enrichAssignmentRowsWithMkv<T extends AssignmentRowWithAtt
 
     const byUrl = new Map(records.map((record) => [record.sourceUrl, record]));
     const enrich = (attachment: AssignmentMediaAttachment): AssignmentMediaAttachment => {
-      if (!attachment?.url || !isMkvAttachment(attachment)) return attachment;
+       if (!attachment?.url || !isVideoAttachment(attachment)) return attachment;
       const record = byUrl.get(attachment.url);
       if (!record) return attachment;
       return {
@@ -242,32 +247,38 @@ async function markFailed(jobId: string, message: string): Promise<void> {
 
 async function processJob(job: ClaimedJob): Promise<void> {
   const workDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "assignment-mkv-"));
-  const inputPath = path.join(workDir, "source.mkv");
+  const videoKind = getVideoKind(job.sourceName, job.sourceUrl);
+  const inputPath = path.join(workDir, videoKind === "mp4" ? "source.mp4" : "source.mkv");
   const mp4Path = path.join(workDir, "playback.mp4");
   const posterPath = path.join(workDir, "poster.jpg");
   let playbackUrl: string | null = null;
   let posterUrl: string | null = null;
 
   try {
+    if (!videoKind) throw new Error("Chỉ hỗ trợ tạo ảnh xem trước cho file MKV hoặc MP4.");
     await downloadPortalUploadToDisk(job.sourceUrl, inputPath);
-    await createIosMp4(inputPath, mp4Path);
 
     const safeStem = path.basename(job.sourceName, path.extname(job.sourceName))
       .replace(/[^a-zA-Z0-9._-]/g, "_")
       .slice(0, 180) || "assignment-video";
-    const mp4Size = (await fs.promises.stat(mp4Path)).size;
-    playbackUrl = await uploadFileToS3FromDisk(
-      mp4Path,
-      mp4Size,
-      `${safeStem}.mp4`,
-      "video/mp4",
-    );
-    await addS3Bytes(mp4Size);
-    await recordFileUpload(playbackUrl, mp4Size);
+    let posterSourcePath = inputPath;
+    if (videoKind === "mkv") {
+      await createIosMp4(inputPath, mp4Path);
+      const mp4Size = (await fs.promises.stat(mp4Path)).size;
+      playbackUrl = await uploadFileToS3FromDisk(
+        mp4Path,
+        mp4Size,
+        `${safeStem}.mp4`,
+        "video/mp4",
+      );
+      await addS3Bytes(mp4Size);
+      await recordFileUpload(playbackUrl, mp4Size);
+      posterSourcePath = mp4Path;
+    }
 
     try {
       await runFfmpeg([
-        "-i", mp4Path,
+        "-i", posterSourcePath,
         "-frames:v", "1",
         "-vf", "scale='min(640,iw)':-2",
         "-q:v", "5",
@@ -284,6 +295,7 @@ async function processJob(job: ClaimedJob): Promise<void> {
       await recordFileUpload(posterUrl, posterSize);
     } catch (error: any) {
       // A poster is an optional preview; a playable MP4 is the required result.
+      if (videoKind === "mp4") throw error;
       console.warn("[Assignment MKV] Poster generation skipped:", error?.message || error);
     }
 
@@ -293,7 +305,12 @@ async function processJob(job: ClaimedJob): Promise<void> {
        WHERE id = $1`,
       [job.id, playbackUrl, posterUrl],
     );
-    console.log("[Assignment MKV] Converted assignment video", { jobId: job.id });
+    console.log(
+      videoKind === "mkv"
+        ? "[Assignment MKV] Converted assignment video"
+        : "[Assignment MP4] Created video poster",
+      { jobId: job.id },
+    );
   } catch (error: any) {
     for (const derivativeUrl of [posterUrl, playbackUrl]) {
       if (!derivativeUrl) continue;
@@ -304,7 +321,9 @@ async function processJob(job: ClaimedJob): Promise<void> {
         console.warn("[Assignment MKV] Could not clean incomplete derivative:", cleanupError?.message || cleanupError);
       }
     }
-    const message = error?.message || "Không thể tạo bản MP4 cho video MKV.";
+    const message = error?.message || (videoKind === "mkv"
+      ? "Không thể tạo bản MP4 cho video MKV."
+      : "Không thể tạo ảnh xem trước cho video MP4.");
     await markFailed(job.id, message);
     console.error("[Assignment MKV] Conversion failed", { jobId: job.id, message });
   } finally {
