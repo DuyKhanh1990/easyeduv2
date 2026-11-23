@@ -201,7 +201,9 @@ export function registerEInvoiceRoutes(app: Express) {
         ? items.flatMap(it => {
             const price = parseFloat(it.unitPrice ?? "0");
             const qty = it.quantity ?? 1;
-            const base = price * qty;
+            const isCoursePackage = it.packageType === "khoá";
+            const exportQty = isCoursePackage ? 1 : qty;
+            const base = price * exportQty;
             const isSurchargeLine = String(it.category ?? "").toLowerCase() === "phụ thu";
             const taxRate = it.packageType === "buổi" || it.packageType === "Kho" || isSurchargeLine
               ? Number(it.vatRate ?? 0)
@@ -225,9 +227,8 @@ export function registerEInvoiceRoutes(app: Express) {
             const itemLine = {
               name: it.packageName,
               price,
-              quantity: qty,
+              quantity: exportQty,
               unit: isSurchargeLine ? "Khoản" : it.packageType === "buổi" ? "Buổi" : "Khóa",
-              // Course-package quantity semantics are still under review.
               taxRate,
               promotions: distributeAdjustments(it.promotionKeys, "promotion", parseFloat(it.promotionAmount ?? "0"), base),
             };
