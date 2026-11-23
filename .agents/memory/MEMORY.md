@@ -159,3 +159,4 @@
 - [Renewal course-package pricing](renewal-course-package-pricing.md) — fixed-price course packages charge the full package amount in renewals; session count is reference quantity, while session records retain per-session accounting price.
 - [BIDV QR short transfer memo](bidv-qr-short-memo.md) — keep the VA first, then a concise payment label and invoice code within VietQR's 50-character memo limit.
 - [BIDV shared-gateway forwarding](bidv-shared-gateway-forwarding.md) — keep the common callback host, route by service_id, and authenticate internal forwards with a shared signature.
+- [CMC S3 streaming uploads](cmc-s3-streaming.md) — CMC accepted server-side SigV4 streaming with UNSIGNED-PAYLOAD; browser presigned PUT returned AccessDenied in the tested configuration.
