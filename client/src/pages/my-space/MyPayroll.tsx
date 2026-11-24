@@ -619,11 +619,16 @@ function SalaryTableGrid({
     : "";
 
   const numDateCols = dateRange.length > 0 ? dateRange.length : 8;
+  const tableWidth = COL_CLASS + COL_PKG + COL_ROLE + numDateCols * DATE_COL + COL_TONG_SO + COL_TONG_LUONG;
+  const stickyHeaderBackground = "hsl(var(--muted))";
 
   return (
     <>
       {/* Group info header — scrolls with content, not sticky */}
-      <div className="px-4 py-2.5 bg-muted/40 border-b border-border flex items-center gap-2 shrink-0">
+      <div
+        className="px-4 py-2.5 bg-muted/40 border-b border-border flex items-center gap-2 shrink-0"
+        style={{ width: tableWidth, minWidth: tableWidth }}
+      >
         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-foreground">{meta.salaryTableName}</p>
@@ -644,8 +649,8 @@ function SalaryTableGrid({
       <table
         className="text-sm"
         style={{
-          width: `${COL_CLASS + COL_PKG + COL_ROLE + numDateCols * DATE_COL + COL_TONG_SO + COL_TONG_LUONG}px`,
-          minWidth: `${COL_CLASS + COL_PKG + COL_ROLE + numDateCols * DATE_COL + COL_TONG_SO + COL_TONG_LUONG}px`,
+          width: tableWidth,
+          minWidth: tableWidth,
           tableLayout: "fixed",
           borderCollapse: "separate",
           borderSpacing: 0,
@@ -661,23 +666,23 @@ function SalaryTableGrid({
           <col style={{ width: COL_TONG_SO }} />
           <col style={{ width: COL_TONG_LUONG }} />
         </colgroup>
-        <thead>
+        <thead style={{ position: "sticky", top: 0, zIndex: 20 }}>
           <tr className="bg-muted/40" style={{ boxShadow: "0 1px 0 0 hsl(var(--border))" }}>
               <th
-                className="sticky left-0 top-0 z-40 text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap bg-muted/40"
-                style={{ width: COL_CLASS, minWidth: COL_CLASS, boxShadow: "1px 0 0 0 hsl(var(--border))" }}
+                className="text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap"
+                style={{ position: "sticky", left: 0, top: 0, zIndex: 40, width: COL_CLASS, minWidth: COL_CLASS, backgroundColor: stickyHeaderBackground, boxShadow: "1px 0 0 0 hsl(var(--border))" }}
               >
                  {t("mySpace.payroll.className")}
               </th>
               <th
-                className="sticky top-0 z-20 text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap bg-muted/40"
-                style={{ width: COL_PKG, minWidth: COL_PKG, boxShadow: "1px 0 0 0 hsl(var(--border))" }}
+                className="text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap"
+                style={{ position: "sticky", top: 0, zIndex: 21, width: COL_PKG, minWidth: COL_PKG, backgroundColor: stickyHeaderBackground, boxShadow: "1px 0 0 0 hsl(var(--border))" }}
               >
                  {t("mySpace.payroll.salaryPackage")}
               </th>
               <th
-                className="sticky top-0 z-20 text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap bg-muted/40"
-                style={{ width: COL_ROLE, minWidth: COL_ROLE, boxShadow: "1px 0 0 0 hsl(var(--border))" }}
+                className="text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap"
+                style={{ position: "sticky", top: 0, zIndex: 21, width: COL_ROLE, minWidth: COL_ROLE, backgroundColor: stickyHeaderBackground, boxShadow: "1px 0 0 0 hsl(var(--border))" }}
               >
                  {t("mySpace.payroll.role")}
               </th>
@@ -692,10 +697,10 @@ function SalaryTableGrid({
                       <th
                         key={date.toISOString()}
                         className={cn(
-                          "sticky top-0 z-20 px-0 py-2 text-center text-xs font-semibold whitespace-nowrap border-l border-border bg-muted/40",
+                          "px-0 py-2 text-center text-xs font-semibold whitespace-nowrap border-l border-border",
                           isWeekend ? "text-red-500" : "text-muted-foreground"
                         )}
-                        style={{ width: DATE_COL, minWidth: DATE_COL }}
+                        style={{ position: "sticky", top: 0, zIndex: 21, width: DATE_COL, minWidth: DATE_COL, backgroundColor: stickyHeaderBackground }}
                       >
                         <div className="text-[10px] font-semibold">{label} {dayStr}</div>
                       </th>
@@ -704,22 +709,22 @@ function SalaryTableGrid({
                 : Array.from({ length: 8 }).map((_, i) => (
                     <th
                       key={i}
-                      className="sticky top-0 z-20 px-0 py-2 text-center text-xs font-semibold whitespace-nowrap border-l border-border text-muted-foreground bg-muted/40"
-                      style={{ width: DATE_COL, minWidth: DATE_COL }}
+                      className="px-0 py-2 text-center text-xs font-semibold whitespace-nowrap border-l border-border text-muted-foreground"
+                      style={{ position: "sticky", top: 0, zIndex: 21, width: DATE_COL, minWidth: DATE_COL, backgroundColor: stickyHeaderBackground }}
                     >
                       <div className="text-[10px]">--/--</div>
                     </th>
                   ))}
 
               <th
-                className="sticky top-0 right-[110px] z-40 text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap bg-muted/40"
-                style={{ width: COL_TONG_SO, minWidth: COL_TONG_SO, boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
+                className="text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap"
+                style={{ position: "sticky", top: 0, right: COL_TONG_LUONG, zIndex: 40, width: COL_TONG_SO, minWidth: COL_TONG_SO, backgroundColor: stickyHeaderBackground, boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
               >
                  {t("mySpace.payroll.totalCount")}
               </th>
               <th
-                className="sticky top-0 right-0 z-40 text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap bg-muted/40"
-                style={{ width: COL_TONG_LUONG, minWidth: COL_TONG_LUONG, boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
+                className="text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap"
+                style={{ position: "sticky", top: 0, right: 0, zIndex: 40, width: COL_TONG_LUONG, minWidth: COL_TONG_LUONG, backgroundColor: stickyHeaderBackground, boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
               >
                  {t("mySpace.payroll.totalSalary")}
               </th>
