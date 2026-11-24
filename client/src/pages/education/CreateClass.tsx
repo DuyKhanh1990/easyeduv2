@@ -1535,7 +1535,13 @@ export function CreateClass() {
               </Button>
               
               {step < 3 ? (
-                <Button type="button" onClick={nextStep} className="gap-2" disabled={isCheckingStep2} data-testid="button-next-step">
+                <Button
+                  type="button"
+                  onClick={nextStep}
+                  className="gap-2"
+                  disabled={isCheckingStep2 || (step === 2 && liveConflicts.some((conflict: any) => conflict.type === "availability"))}
+                  data-testid="button-next-step"
+                >
                   {isCheckingStep2 ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChevronRight className="h-4 w-4" />}
                   {isCheckingStep2 ? "Đang kiểm tra..." : "Tiếp tục"}
                 </Button>
