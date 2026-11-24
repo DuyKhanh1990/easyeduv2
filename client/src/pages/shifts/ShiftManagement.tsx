@@ -46,6 +46,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { SearchableMultiSelect } from "@/components/ui/searchable-multi-select";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -63,8 +64,8 @@ const weekdays = [
 
 const formSchema = z.object({
   locationId: z.string().min(1, "Vui lòng chọn cơ sở"),
-  teacherId: z.string().min(1, "Vui lòng chọn giáo viên"),
-  shiftTemplateId: z.string().min(1, "Vui lòng chọn ca"),
+  teacherIds: z.array(z.string()).min(1, "Vui lòng chọn ít nhất một giáo viên"),
+  shiftTemplateIds: z.array(z.string()).min(1, "Vui lòng chọn ít nhất một ca"),
   weekdays: z.array(z.number()).min(1, "Vui lòng chọn ít nhất một thứ"),
   effectiveFrom: z.string().optional(),
   effectiveTo: z.string().optional(),
@@ -180,10 +181,9 @@ export function ShiftManagement() {
   );
 
   const { data: staff = [] } = useQuery<any[]>({
-    queryKey: ["/api/staff", "minimal", filters.locationId !== "all" ? filters.locationId : undefined],
+    queryKey: ["/api/staff", "minimal"],
     queryFn: async () => {
       const params = new URLSearchParams({ minimal: "true" });
-      if (filters.locationId !== "all") params.append("locationId", filters.locationId);
       const res = await fetch(`/api/staff?${params.toString()}`, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
@@ -227,15 +227,44 @@ export function ShiftManagement() {
 
   const createMutation = useMutation({
     mutationFn: async (values: z.infer<typeof formSchema>) => {
-      await apiRequest("POST", "/api/teacher-availability", values);
+      let createdCount = 0;
+      const failures: string[] = [];
+      for (const teacherId of values.teacherIds) {
+        for (const shiftTemplateId of values.shiftTemplateIds) {
+          try {
+            const response = await apiRequest("POST", "/api/teacher-availability", {
+              locationId: values.locationId,
+              teacherId,
+              shiftTemplateId,
+              weekdays: values.weekdays,
+              effectiveFrom: values.effectiveFrom || null,
+              effectiveTo: values.effectiveTo || null,
+            });
+            const created = await response.json();
+            createdCount += Array.isArray(created) ? created.length : 0;
+          } catch (error: any) {
+            const teacherName = filteredTeachersForForm.find((teacher: any) => teacher.id === teacherId)?.fullName ?? "Giáo viên";
+            const shiftName = filteredShiftsForForm.find((shift: any) => shift.id === shiftTemplateId)?.name ?? "ca học";
+            failures.push(`${teacherName} — ${shiftName}: ${error?.message || "không lưu được"}`);
+          }
+        }
+      }
+      if (failures.length > 0) {
+        throw new Error(`Đã lưu ${createdCount} dòng; ${failures.length} tổ hợp chưa lưu được. ${failures[0]}`);
+      }
+      return createdCount;
     },
-    onSuccess: () => {
+    onSuccess: (createdCount) => {
       queryClient.invalidateQueries({ queryKey: ["/api/teacher-availability"] });
-      toast({ title: "Thành công", description: "Đã đăng ký ca dạy mới" });
+      toast({
+        title: "Thành công",
+        description: createdCount > 0 ? `Đã tạo ${createdCount} dòng đăng ký ca dạy` : "Các ca đã chọn đã được đăng ký trước đó",
+      });
       setIsDialogOpen(false);
       form.reset();
     },
     onError: (error: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/teacher-availability"] });
       toast({
         title: "Lỗi",
         description: error.message || "Không thể đăng ký ca dạy",
@@ -258,8 +287,8 @@ export function ShiftManagement() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       locationId: "",
-      teacherId: "",
-      shiftTemplateId: "",
+      teacherIds: [],
+      shiftTemplateIds: [],
       weekdays: [],
       effectiveFrom: format(new Date(), "yyyy-MM-dd"),
     },
@@ -1013,7 +1042,7 @@ export function ShiftManagement() {
                       Đăng ký mới
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="max-w-md">
+                  <DialogContent className="w-[85vw] max-w-[85vw] max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle>Đăng ký ca rảnh giáo viên</DialogTitle>
                     </DialogHeader>
@@ -1025,7 +1054,15 @@ export function ShiftManagement() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>Cơ sở</FormLabel>
-                              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <Select
+                                value={field.value}
+                                onValueChange={(locationId) => {
+                                  field.onChange(locationId);
+                                  form.setValue("teacherIds", []);
+                                  form.setValue("shiftTemplateIds", []);
+                                  form.clearErrors(["teacherIds", "shiftTemplateIds"]);
+                                }}
+                              >
                                 <FormControl>
                                   <SelectTrigger><SelectValue placeholder="Chọn cơ sở" /></SelectTrigger>
                                 </FormControl>
@@ -1040,22 +1077,28 @@ export function ShiftManagement() {
 
                         <FormField
                           control={form.control}
-                          name="teacherId"
+                          name="teacherIds"
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>Giáo viên</FormLabel>
-                              <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!selectedLocationId}>
-                                <FormControl>
-                                  <SelectTrigger><SelectValue placeholder="Chọn giáo viên" /></SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {[...filteredTeachersForForm].sort((a: any, b: any) => a.fullName.localeCompare(b.fullName, "vi")).map((t: any) => (
-                                    <SelectItem key={t.id} value={t.id} disabled={t.status === "Không hoạt động"}>
-                                      {t.fullName}{t.status === "Không hoạt động" ? " — Không hoạt động" : ""}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <FormControl>
+                                <SearchableMultiSelect
+                                  options={[...filteredTeachersForForm]
+                                    .sort((a: any, b: any) => a.fullName.localeCompare(b.fullName, "vi"))
+                                    .map((teacher: any) => ({
+                                      value: teacher.id,
+                                      label: teacher.fullName,
+                                      isActive: teacher.status !== "Không hoạt động",
+                                    }))}
+                                  value={field.value}
+                                  onChange={field.onChange}
+                                  placeholder={selectedLocationId ? "Chọn giáo viên" : "Chọn cơ sở trước"}
+                                  searchPlaceholder="Tìm giáo viên..."
+                                  compactSelectionLabel="giáo viên"
+                                  disabled={!selectedLocationId}
+                                  data-testid="select-register-teachers"
+                                />
+                              </FormControl>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -1063,20 +1106,25 @@ export function ShiftManagement() {
 
                         <FormField
                           control={form.control}
-                          name="shiftTemplateId"
+                          name="shiftTemplateIds"
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>Ca học</FormLabel>
-                              <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!selectedLocationId}>
-                                <FormControl>
-                                  <SelectTrigger><SelectValue placeholder="Chọn ca" /></SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {filteredShiftsForForm.map((s: any) => (
-                                    <SelectItem key={s.id} value={s.id}>{s.name} ({s.startTime} - {s.endTime})</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <FormControl>
+                                <SearchableMultiSelect
+                                  options={filteredShiftsForForm.map((shift: any) => ({
+                                    value: shift.id,
+                                    label: `${shift.name} (${shift.startTime} - ${shift.endTime})`,
+                                  }))}
+                                  value={field.value}
+                                  onChange={field.onChange}
+                                  placeholder={selectedLocationId ? "Chọn một hoặc nhiều ca" : "Chọn cơ sở trước"}
+                                  searchPlaceholder="Tìm ca học..."
+                                  compactSelectionLabel="ca học"
+                                  disabled={!selectedLocationId}
+                                  data-testid="select-register-shifts"
+                                />
+                              </FormControl>
                               <FormMessage />
                             </FormItem>
                           )}
