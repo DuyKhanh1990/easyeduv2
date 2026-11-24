@@ -8,6 +8,11 @@
 export const mySpaceCalendarTranslations = {
   vi: {
     "mySpace.calendar.title": "Lịch cá nhân",
+    "mySpace.calendar.registerSchedule": "Đăng ký lịch",
+    "mySpace.calendar.chooseScheduleType": "Chọn hình thức đăng ký",
+    "mySpace.calendar.registerExistingSchedule": "Đăng ký lịch học có sẵn",
+    "mySpace.calendar.registerFreeTeacherSchedule": "Đăng ký lịch – Giáo viên tự do",
+    "mySpace.calendar.comingSoon": "Sắp có",
     "mySpace.calendar.dayView": "Lịch ngày",
     "mySpace.calendar.monthView": "Tháng",
     "mySpace.calendar.today": "Hôm nay",
@@ -265,6 +270,11 @@ export const mySpaceCalendarTranslations = {
   },
   en: {
     "mySpace.calendar.title": "My Calendar",
+    "mySpace.calendar.registerSchedule": "Register schedule",
+    "mySpace.calendar.chooseScheduleType": "Choose a registration type",
+    "mySpace.calendar.registerExistingSchedule": "Register for an existing class schedule",
+    "mySpace.calendar.registerFreeTeacherSchedule": "Register a schedule with a free-choice teacher",
+    "mySpace.calendar.comingSoon": "Coming soon",
     "mySpace.calendar.dayView": "Day",
     "mySpace.calendar.monthView": "Month",
     "mySpace.calendar.today": "Today",

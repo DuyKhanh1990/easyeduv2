@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { CalendarDays, ChevronLeft, ChevronRight, List, Calendar, Eye, Loader2 } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronDown, List, Calendar, Eye, Loader2 } from "lucide-react";
 import { useLanguage } from "@/hooks/use-language";
 import { CalendarStrip } from "@/components/my-space/calendar/CalendarStrip";
 import { CalendarMonthGrid } from "@/components/my-space/calendar/CalendarMonthGrid";
@@ -21,6 +21,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -647,47 +655,71 @@ export function StudentCalendar() {
           <h1 className="text-xl font-bold text-foreground">{t("mySpace.calendar.title")}</h1>
         </div>
 
-        {/* View toggle */}
-        <div className="flex w-full items-center gap-1 rounded-lg border border-border bg-secondary p-1 sm:w-auto">
-          <button
-            onClick={() => setView("list")}
-            data-testid="btn-view-list"
-            className={cn(
-              "flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:min-h-0 sm:flex-none",
-              view === "list"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <List className="h-3.5 w-3.5" />
-             {t("mySpace.calendar.listView")}
-          </button>
-          <button
-            onClick={() => setView("calendar")}
-            data-testid="btn-view-calendar"
-            className={cn(
-              "flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:min-h-0 sm:flex-none",
-              view === "calendar"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Calendar className="h-3.5 w-3.5" />
-             {t("mySpace.calendar.calendarView")}
-          </button>
-          <button
-            onClick={() => setView("month")}
-            data-testid="btn-view-month"
-            className={cn(
-              "flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:min-h-0 sm:flex-none",
-              view === "month"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <CalendarDays className="h-3.5 w-3.5" />
-             {t("mySpace.calendar.monthView")}
-          </button>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button className="w-full gap-2 sm:w-auto" data-testid="btn-register-schedule">
+                <CalendarDays className="h-4 w-4" />
+                {t("mySpace.calendar.registerSchedule")}
+                <ChevronDown className="h-4 w-4 opacity-75" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-80 max-w-[calc(100vw-2rem)]">
+              <DropdownMenuLabel>{t("mySpace.calendar.chooseScheduleType")}</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled className="justify-between gap-4">
+                <span>{t("mySpace.calendar.registerExistingSchedule")}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{t("mySpace.calendar.comingSoon")}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled className="justify-between gap-4">
+                <span>{t("mySpace.calendar.registerFreeTeacherSchedule")}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{t("mySpace.calendar.comingSoon")}</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* View toggle */}
+          <div className="flex w-full items-center gap-1 rounded-lg border border-border bg-secondary p-1 sm:w-auto">
+            <button
+              onClick={() => setView("list")}
+              data-testid="btn-view-list"
+              className={cn(
+                "flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:min-h-0 sm:flex-none",
+                view === "list"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <List className="h-3.5 w-3.5" />
+              {t("mySpace.calendar.listView")}
+            </button>
+            <button
+              onClick={() => setView("calendar")}
+              data-testid="btn-view-calendar"
+              className={cn(
+                "flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:min-h-0 sm:flex-none",
+                view === "calendar"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Calendar className="h-3.5 w-3.5" />
+              {t("mySpace.calendar.calendarView")}
+            </button>
+            <button
+              onClick={() => setView("month")}
+              data-testid="btn-view-month"
+              className={cn(
+                "flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:min-h-0 sm:flex-none",
+                view === "month"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <CalendarDays className="h-3.5 w-3.5" />
+              {t("mySpace.calendar.monthView")}
+            </button>
+          </div>
         </div>
       </div>
 
