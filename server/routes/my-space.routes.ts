@@ -181,14 +181,17 @@ async function isMySpaceAvailabilityEnabled() {
 
 async function getAvailabilityStaff(userId: string, staffId?: string | null) {
   const staffRecord = await getStaffForUser(userId);
-  if (staffRecord) return staffRecord;
-  if (!staffId) return null;
-  const [staffById] = await db
-    .select({ id: staff.id, code: staff.code, fullName: staff.fullName })
-    .from(staff)
-    .where(eq(staff.id, staffId))
-    .limit(1);
-  return staffById ?? null;
+  let resolvedStaff = staffRecord;
+  if (!resolvedStaff && staffId) {
+    const [staffById] = await db
+      .select({ id: staff.id, code: staff.code, fullName: staff.fullName })
+      .from(staff)
+      .where(eq(staff.id, staffId))
+      .limit(1);
+    resolvedStaff = staffById ?? null;
+  }
+  if (!resolvedStaff || !(await isStaffInDaotaoDept(resolvedStaff.id))) return null;
+  return resolvedStaff;
 }
 
 async function getScoreSheetAssessmentScoringConfig(assessmentId: string, queryable: any = db) {
@@ -1329,7 +1332,7 @@ export function registerMySpaceRoutes(app: Express): void {
       }
       const user = req.user as any;
       const staffRecord = await getAvailabilityStaff(String(user.id), req.staffId);
-      if (!staffRecord?.id) return res.status(403).json({ message: "Chỉ nhân sự mới có thể đăng ký lịch rảnh." });
+      if (!staffRecord?.id) return res.status(403).json({ message: "Chỉ nhân sự thuộc Phòng Đào tạo mặc định mới có thể đăng ký lịch rảnh." });
 
       const [assignedLocations, legacyAvailabilities, timeWindows] = await Promise.all([
         db
@@ -1367,7 +1370,7 @@ export function registerMySpaceRoutes(app: Express): void {
       }
       const user = req.user as any;
       const staffRecord = await getAvailabilityStaff(String(user.id), req.staffId);
-      if (!staffRecord?.id) return res.status(403).json({ message: "Chỉ nhân sự mới có thể đăng ký lịch rảnh." });
+      if (!staffRecord?.id) return res.status(403).json({ message: "Chỉ nhân sự thuộc Phòng Đào tạo mặc định mới có thể đăng ký lịch rảnh." });
 
       const body = z.object({
         locationId: z.string().uuid(),
@@ -1416,7 +1419,7 @@ export function registerMySpaceRoutes(app: Express): void {
       }
       const user = req.user as any;
       const staffRecord = await getAvailabilityStaff(String(user.id), req.staffId);
-      if (!staffRecord?.id) return res.status(403).json({ message: "Chỉ nhân sự mới có thể đăng ký lịch rảnh." });
+      if (!staffRecord?.id) return res.status(403).json({ message: "Chỉ nhân sự thuộc Phòng Đào tạo mặc định mới có thể đăng ký lịch rảnh." });
       const { date, mode } = z.object({
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         mode: z.enum(["single", "future"]),
@@ -1446,7 +1449,7 @@ export function registerMySpaceRoutes(app: Express): void {
       }
       const user = req.user as any;
       const staffRecord = await getAvailabilityStaff(String(user.id), req.staffId);
-      if (!staffRecord?.id) return res.status(403).json({ message: "Chỉ nhân sự mới có thể đăng ký lịch rảnh." });
+      if (!staffRecord?.id) return res.status(403).json({ message: "Chỉ nhân sự thuộc Phòng Đào tạo mặc định mới có thể đăng ký lịch rảnh." });
       const { date, mode } = z.object({
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         mode: z.enum(["single", "future"]),

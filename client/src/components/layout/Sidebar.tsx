@@ -115,7 +115,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps = {}) {
   const isSuperAdmin = myPerms?.isSuperAdmin ?? false;
   const isStudent = myPerms?.isStudent ?? false;
   const systemDepartmentNames = myPerms?.systemDepartmentNames ?? [];
-  const isSystemTrainingDept = systemDepartmentNames.some(n => n.toLowerCase().includes("đào tạo"));
+  const isSystemTrainingDept = systemDepartmentNames.some(n => n === "Phòng Đào tạo");
   const isInSystemDept = systemDepartmentNames.length > 0;
 
   const hasItemAccess = (href: string): boolean => {
@@ -150,7 +150,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps = {}) {
       if (href === "/my-space/invoices") return true; // permission check in getVisibleItems
       return false;
     }
-    if (href === "/my-space/availability") return mySpaceAvailabilitySetting?.enabled === true;
+    if (href === "/my-space/availability") return mySpaceAvailabilitySetting?.enabled === true && isSystemTrainingDept;
     // Nếu admin đã lưu sidebar visibility settings, tôn trọng cài đặt đó — bỏ qua restriction phòng ban
     if (hasServerData) return true;
     // Chỉ nhân viên thuộc Phòng ban hệ thống (is_system=true) mới có quyền mặc định
@@ -172,7 +172,9 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps = {}) {
 
   const getVisibleItems = (item: NavModule) =>
     item.items.filter(sub => {
-      if (sub.href === "/my-space/availability" && mySpaceAvailabilitySetting?.enabled !== true) return false;
+      if (sub.href === "/my-space/availability" && (
+        mySpaceAvailabilitySetting?.enabled !== true || !isSystemTrainingDept
+      )) return false;
       if (!isItemVisible(sub.href, item.module)) return false;
       if (!hasDefaultAccess(sub.href, item.module)) return false;
       if (item.module === "MY SPACE") {
