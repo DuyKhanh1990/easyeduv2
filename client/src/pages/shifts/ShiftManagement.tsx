@@ -1199,14 +1199,14 @@ export function ShiftManagement() {
                           render={() => (
                             <FormItem>
                               <FormLabel>Ngày trong tuần</FormLabel>
-                              <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-xl border bg-muted/20 px-5 py-4">
+                              <div className="grid grid-cols-7 items-center gap-1 rounded-xl border bg-muted/20 px-2 py-3">
                                 {weekdays.map((w) => (
                                   <FormField
                                     key={w.id}
                                     control={form.control}
                                     name="weekdays"
                                     render={({ field }) => (
-                                      <FormItem className="flex min-w-[88px] items-center gap-2 space-y-0">
+                                      <FormItem className="flex min-w-0 items-center justify-center gap-1 space-y-0">
                                         <FormControl>
                                           <Checkbox
                                             checked={field.value?.includes(w.id)}
@@ -1232,7 +1232,7 @@ export function ShiftManagement() {
                                             }}
                                           />
                                         </FormControl>
-                                        <FormLabel className="cursor-pointer text-sm font-medium">
+                                        <FormLabel className="cursor-pointer whitespace-nowrap text-xs font-medium sm:text-sm">
                                           {w.label === "Chủ Nhật" ? "CN" : w.label.replace("Thứ ", "T")}
                                         </FormLabel>
                                       </FormItem>
@@ -1253,7 +1253,8 @@ export function ShiftManagement() {
                               .sort((a, b) => weekdays.findIndex((day) => day.id === a) - weekdays.findIndex((day) => day.id === b));
                             const windowsByDay = field.value ?? {};
                             const updateDay = (weekday: number, rows: Array<{ startTime: string; endTime: string }>) => {
-                              field.onChange({ ...windowsByDay, [String(weekday)]: rows });
+                              const nextWindows = { ...windowsByDay, [String(weekday)]: rows };
+                              form.setValue("dayWindows", nextWindows, { shouldValidate: true, shouldDirty: true });
                             };
                             return (
                               <FormItem>
@@ -1320,12 +1321,12 @@ export function ShiftManagement() {
                                                   </div>
                                                   <div className="grid grid-cols-2 gap-2">
                                                     {(form.formState.errors as any).dayWindows?.[dayKey]?.[index]?.startTime?.message && (
-                                                      <p className="text-xs text-destructive">
+                                                      <p className="text-[10px] leading-3 text-destructive">
                                                         {(form.formState.errors as any).dayWindows[dayKey][index].startTime.message}
                                                       </p>
                                                     )}
                                                     {(form.formState.errors as any).dayWindows?.[dayKey]?.[index]?.endTime?.message && (
-                                                      <p className="text-xs text-destructive">
+                                                      <p className="text-[10px] leading-3 text-destructive">
                                                         {(form.formState.errors as any).dayWindows[dayKey][index].endTime.message}
                                                       </p>
                                                     )}
