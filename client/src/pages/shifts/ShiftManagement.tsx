@@ -170,7 +170,6 @@ export function ShiftManagement() {
   const [filters, setFilters] = useState({
     locationId: "all",
     teacherId: "all",
-    weekday: "all",
   });
 
   const { data: locations = [] } = useQuery<any[]>({
@@ -211,7 +210,6 @@ export function ShiftManagement() {
       const params = new URLSearchParams();
       if (filters.locationId !== "all") params.append("locationId", filters.locationId);
       if (filters.teacherId !== "all") params.append("teacherId", filters.teacherId);
-      if (filters.weekday !== "all") params.append("weekday", filters.weekday);
       const res = await fetch(`/api/teacher-availability?${params.toString()}`);
       return res.json();
     }
@@ -758,6 +756,51 @@ export function ShiftManagement() {
     return { date: d, day: i + 1, dow, key: String(dow), isWeekend: dow === 0 || dow === 6 };
   });
   const dayOfWeekShort: Record<number, string> = { 1: "T2", 2: "T3", 3: "T4", 4: "T5", 5: "T6", 6: "T7", 0: "CN" };
+  const registerRows = useMemo(() => {
+    const rowsByKey = new Map<string, {
+      teacherId: string;
+      teacherName: string;
+      teacherCode: string;
+      locationId: string;
+      perDay: any[][];
+    }>();
+    const dateKey = (value: unknown) => String(value ?? "").slice(0, 10);
+
+    for (const item of filteredAvailabilities as any[]) {
+      const effectiveFrom = dateKey(item.effectiveFrom);
+      const effectiveTo = dateKey(item.effectiveTo);
+      const teacherId = String(item.teacherId ?? item.teacher?.id ?? "");
+      const locationId = String(item.locationId ?? item.location?.id ?? "");
+      if (!teacherId || !locationId) continue;
+
+      for (const day of boardDays) {
+        if (day.dow !== Number(item.weekday)) continue;
+        const currentDate = format(day.date, "yyyy-MM-dd");
+        if (effectiveFrom && currentDate < effectiveFrom) continue;
+        if (effectiveTo && currentDate > effectiveTo) continue;
+
+        const key = `${teacherId}:${locationId}`;
+        let row = rowsByKey.get(key);
+        if (!row) {
+          const staffMember = (staff as any[]).find((person) => person.id === teacherId);
+          row = {
+            teacherId,
+            teacherName: item.teacher?.fullName ?? staffMember?.fullName ?? "Giáo viên",
+            teacherCode: item.teacher?.code ?? staffMember?.code ?? "",
+            locationId,
+            perDay: Array.from({ length: daysInBoardMonth }, () => []),
+          };
+          rowsByKey.set(key, row);
+        }
+        row.perDay[day.day - 1].push(item);
+      }
+    }
+
+    return [...rowsByKey.values()].sort((a, b) =>
+      a.teacherName.localeCompare(b.teacherName, "vi") ||
+      getLocationName(a.locationId).localeCompare(getLocationName(b.locationId), "vi")
+    );
+  }, [filteredAvailabilities, boardDays, daysInBoardMonth, staff, locations]);
 
   const goPrevMonth = () => {
     if (boardMonth === 1) {
@@ -922,263 +965,286 @@ export function ShiftManagement() {
           </div>
 
           <TabsContent value="register">
-            <div className="bg-white border border-border rounded-xl p-4 grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+            <div className="bg-white border border-border rounded-xl p-4 flex flex-wrap items-center gap-3 mb-4">
               <Select value={filters.locationId} onValueChange={(v) => setFilters(f => ({ ...f, locationId: v }))}>
-                <SelectTrigger data-testid="select-filter-location"><SelectValue placeholder="Cơ sở" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[190px]" data-testid="select-filter-location"><SelectValue placeholder="Cơ sở" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Tất cả cơ sở</SelectItem>
-                  {locations.map((l: any) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
+                  {accessibleLocations.map((l: any) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
                 </SelectContent>
               </Select>
 
               <Select value={filters.teacherId} onValueChange={(v) => setFilters(f => ({ ...f, teacherId: v }))}>
-                <SelectTrigger data-testid="select-filter-teacher"><SelectValue placeholder="Giáo viên" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[210px]" data-testid="select-filter-teacher"><SelectValue placeholder="Giáo viên" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Tất cả giáo viên</SelectItem>
-                  {[...teachers].sort((a: any, b: any) => {
-                    const aActive = a.status !== "Không hoạt động";
-                    const bActive = b.status !== "Không hoạt động";
-                    if (aActive === bActive) return 0;
-                    return aActive ? -1 : 1;
-                  }).map((t: any) => {
-                    const isInactive = t.status === "Không hoạt động";
-                    return (
-                      <SelectItem key={t.id} value={t.id} disabled={isInactive} className={isInactive ? "opacity-40" : ""}>
-                        <span className="flex items-center gap-1.5">
-                          <span>{t.fullName}</span>
-                          {isInactive && <span className="text-amber-500 text-[10px] font-medium">⚠ Không hoạt động</span>}
-                        </span>
-                      </SelectItem>
-                    );
-                  })}
+                  {[...teachers].sort((a: any, b: any) => a.fullName.localeCompare(b.fullName, "vi")).map((t: any) => (
+                    <SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
 
-              <Select value={filters.weekday} onValueChange={(v) => setFilters(f => ({ ...f, weekday: v }))}>
-                <SelectTrigger data-testid="select-filter-weekday"><SelectValue placeholder="Thứ" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tất cả các thứ</SelectItem>
-                  {weekdays.map(w => <SelectItem key={w.id} value={w.id.toString()}>{w.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" onClick={goPrevMonth} aria-label="Tháng trước" data-testid="button-register-prev-month">
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Select value={String(boardMonth)} onValueChange={(v) => setBoardMonth(Number(v))}>
+                  <SelectTrigger className="w-[110px]" data-testid="select-register-month"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {monthOptions.map((m) => <SelectItem key={m} value={String(m)}>Tháng {m}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={String(boardYear)} onValueChange={(v) => setBoardYear(Number(v))}>
+                  <SelectTrigger className="w-[95px]" data-testid="select-register-year"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {yearOptions.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="icon" onClick={goNextMonth} aria-label="Tháng sau" data-testid="button-register-next-month">
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
 
               {shiftCan.create("register") && (
-              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button className="gap-2" data-testid="button-register-shift">
-                    <Plus className="h-4 w-4" />
-                    Đăng ký mới
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>Đăng ký ca rảnh giáo viên</DialogTitle>
-                  </DialogHeader>
-                  <Form {...form}>
-                    <form onSubmit={form.handleSubmit((v) => createMutation.mutate(v))} className="space-y-4">
-                      <FormField
-                        control={form.control}
-                        name="locationId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Cơ sở</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                              <FormControl>
-                                <SelectTrigger><SelectValue placeholder="Chọn cơ sở" /></SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {locations.map((l: any) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="gap-2 sm:ml-auto" data-testid="button-register-shift">
+                      <Plus className="h-4 w-4" />
+                      Đăng ký mới
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>Đăng ký ca rảnh giáo viên</DialogTitle>
+                    </DialogHeader>
+                    <Form {...form}>
+                      <form onSubmit={form.handleSubmit((v) => createMutation.mutate(v))} className="space-y-4">
+                        <FormField
+                          control={form.control}
+                          name="locationId"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Cơ sở</FormLabel>
+                              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <FormControl>
+                                  <SelectTrigger><SelectValue placeholder="Chọn cơ sở" /></SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {accessibleLocations.map((l: any) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
-                      <FormField
-                        control={form.control}
-                        name="teacherId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Giáo viên</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!selectedLocationId}>
-                              <FormControl>
-                                <SelectTrigger><SelectValue placeholder="Chọn giáo viên" /></SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {[...filteredTeachersForForm].sort((a: any, b: any) => {
-                                  const aActive = a.status !== "Không hoạt động";
-                                  const bActive = b.status !== "Không hoạt động";
-                                  if (aActive === bActive) return 0;
-                                  return aActive ? -1 : 1;
-                                }).map((t: any) => {
-                                  const isInactive = t.status === "Không hoạt động";
-                                  return (
-                                    <SelectItem key={t.id} value={t.id} disabled={isInactive} className={isInactive ? "opacity-40" : ""}>
-                                      <span className="flex items-center gap-1.5">
-                                        <span>{t.fullName}</span>
-                                        {isInactive && <span className="text-amber-500 text-[10px] font-medium">⚠ Không hoạt động</span>}
-                                      </span>
+                        <FormField
+                          control={form.control}
+                          name="teacherId"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Giáo viên</FormLabel>
+                              <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!selectedLocationId}>
+                                <FormControl>
+                                  <SelectTrigger><SelectValue placeholder="Chọn giáo viên" /></SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {[...filteredTeachersForForm].sort((a: any, b: any) => a.fullName.localeCompare(b.fullName, "vi")).map((t: any) => (
+                                    <SelectItem key={t.id} value={t.id} disabled={t.status === "Không hoạt động"}>
+                                      {t.fullName}{t.status === "Không hoạt động" ? " — Không hoạt động" : ""}
                                     </SelectItem>
-                                  );
-                                })}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
-                      <FormField
-                        control={form.control}
-                        name="shiftTemplateId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Ca học</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!selectedLocationId}>
-                              <FormControl>
-                                <SelectTrigger><SelectValue placeholder="Chọn ca" /></SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {filteredShiftsForForm.map((s: any) => (
-                                  <SelectItem key={s.id} value={s.id}>{s.name} ({s.startTime} - {s.endTime})</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                        <FormField
+                          control={form.control}
+                          name="shiftTemplateId"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Ca học</FormLabel>
+                              <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!selectedLocationId}>
+                                <FormControl>
+                                  <SelectTrigger><SelectValue placeholder="Chọn ca" /></SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {filteredShiftsForForm.map((s: any) => (
+                                    <SelectItem key={s.id} value={s.id}>{s.name} ({s.startTime} - {s.endTime})</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
-                      <FormField
-                        control={form.control}
-                        name="weekdays"
-                        render={() => (
-                          <FormItem>
-                            <FormLabel>Thứ trong tuần</FormLabel>
-                            <div className="grid grid-cols-4 gap-2">
-                              {weekdays.map((w) => (
-                                <FormField
-                                  key={w.id}
-                                  control={form.control}
-                                  name="weekdays"
-                                  render={({ field }) => (
-                                    <FormItem className="flex items-center space-x-2 space-y-0">
-                                      <FormControl>
-                                        <Checkbox
-                                          checked={field.value?.includes(w.id)}
-                                          onCheckedChange={(checked) => {
-                                            return checked
+                        <FormField
+                          control={form.control}
+                          name="weekdays"
+                          render={() => (
+                            <FormItem>
+                              <FormLabel>Thứ trong tuần</FormLabel>
+                              <div className="grid grid-cols-4 gap-2">
+                                {weekdays.map((w) => (
+                                  <FormField
+                                    key={w.id}
+                                    control={form.control}
+                                    name="weekdays"
+                                    render={({ field }) => (
+                                      <FormItem className="flex items-center space-x-2 space-y-0">
+                                        <FormControl>
+                                          <Checkbox
+                                            checked={field.value?.includes(w.id)}
+                                            onCheckedChange={(checked) => checked
                                               ? field.onChange([...field.value, w.id])
-                                              : field.onChange(field.value?.filter((value) => value !== w.id));
-                                          }}
-                                        />
-                                      </FormControl>
-                                      <FormLabel className="text-xs font-normal cursor-pointer">{w.label}</FormLabel>
-                                    </FormItem>
-                                  )}
-                                />
-                              ))}
-                            </div>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <FormField
-                          control={form.control}
-                          name="effectiveFrom"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Từ ngày</FormLabel>
-                              <FormControl><Input type="date" {...field} /></FormControl>
+                                              : field.onChange(field.value?.filter((value) => value !== w.id))}
+                                          />
+                                        </FormControl>
+                                        <FormLabel className="text-xs font-normal cursor-pointer">{w.label}</FormLabel>
+                                      </FormItem>
+                                    )}
+                                  />
+                                ))}
+                              </div>
                               <FormMessage />
                             </FormItem>
                           )}
                         />
-                        <FormField
-                          control={form.control}
-                          name="effectiveTo"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Đến ngày</FormLabel>
-                              <FormControl><Input type="date" {...field} /></FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
 
-                      <DialogFooter>
-                        <Button type="submit" disabled={createMutation.isPending}>
-                          {createMutation.isPending ? "Đang lưu..." : "Lưu đăng ký"}
-                        </Button>
-                      </DialogFooter>
-                    </form>
-                  </Form>
-                </DialogContent>
-              </Dialog>
+                        <div className="grid grid-cols-2 gap-4">
+                          <FormField
+                            control={form.control}
+                            name="effectiveFrom"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Từ ngày</FormLabel>
+                                <FormControl><Input type="date" {...field} /></FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="effectiveTo"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Đến ngày</FormLabel>
+                                <FormControl><Input type="date" {...field} /></FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+
+                        <DialogFooter>
+                          <Button type="submit" disabled={createMutation.isPending}>
+                            {createMutation.isPending ? "Đang lưu..." : "Lưu đăng ký"}
+                          </Button>
+                        </DialogFooter>
+                      </form>
+                    </Form>
+                  </DialogContent>
+                </Dialog>
               )}
             </div>
 
             <Card>
+              <CardHeader className="py-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <CalendarRange className="h-4 w-4" />
+                  Lịch ca rảnh — Tháng {boardMonth}/{boardYear}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Ô trống là ngày không có ca đăng ký. Giáo viên chỉ hiện khi có ca hiệu lực trong tháng.
+                </p>
+              </CardHeader>
               <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Giáo viên</TableHead>
-                      <TableHead>Cơ sở</TableHead>
-                      <TableHead>Thứ</TableHead>
-                      <TableHead>Ca</TableHead>
-                      <TableHead>Hiệu lực</TableHead>
-                      {shiftCan.delete("register") && <TableHead className="text-right">Thao tác</TableHead>}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {isLoading ? (
-                      <TableRow><TableCell colSpan={6} className="text-center py-8">Đang tải...</TableCell></TableRow>
-                    ) : filteredAvailabilities.length === 0 ? (
-                      <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Không tìm thấy đăng ký nào.</TableCell></TableRow>
-                    ) : (
-                      filteredAvailabilities.map((item: any) => (
-                        <TableRow key={item.id}>
-                          <TableCell className="font-medium">{item.teacher?.fullName}</TableCell>
-                          <TableCell>{item.location?.name}</TableCell>
-                          <TableCell>{weekdays.find(w => w.id === item.weekday)?.label}</TableCell>
-                          <TableCell>
-                            <div>{item.shiftTemplate?.name}</div>
-                            <div className="text-xs text-muted-foreground">{item.shiftTemplate?.startTime} - {item.shiftTemplate?.endTime}</div>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="sticky left-0 z-20 min-w-[180px] bg-background">Giáo viên</TableHead>
+                        <TableHead className="sticky left-[180px] z-20 min-w-[150px] bg-background">Cơ sở</TableHead>
+                        {boardDays.map((day) => (
+                          <TableHead
+                            key={day.day}
+                            className={cn("min-w-[112px] px-2 text-center", day.isWeekend && "bg-orange-50 text-orange-700")}
+                          >
+                            <div className="text-xs font-normal">{dayOfWeekShort[day.dow]}</div>
+                            <div className="text-sm font-semibold">{day.day}</div>
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {isLoading ? (
+                        <TableRow><TableCell colSpan={boardDays.length + 2} className="py-10 text-center">Đang tải...</TableCell></TableRow>
+                      ) : registerRows.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={boardDays.length + 2} className="py-10 text-center text-muted-foreground">
+                            Tháng này chưa có ca dạy nào được đăng ký.
                           </TableCell>
-                          <TableCell>
-                            <div className="text-xs">
-                              {item.effectiveFrom ? format(new Date(item.effectiveFrom), "dd/MM/yyyy") : "---"}
-                              {" → "}
-                              {item.effectiveTo ? format(new Date(item.effectiveTo), "dd/MM/yyyy") : "Không thời hạn"}
-                            </div>
-                          </TableCell>
-                          {shiftCan.delete("register") && (
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                              data-testid={`button-delete-availability-${item.id}`}
-                              onClick={() => {
-                                if (confirm("Bạn có chắc chắn muốn xoá đăng ký này?")) {
-                                  deleteMutation.mutate(item.id);
-                                }
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                          )}
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+                      ) : (
+                        registerRows.map((row) => (
+                          <TableRow key={`${row.teacherId}-${row.locationId}`} data-testid={`row-register-${row.teacherId}-${row.locationId}`}>
+                            <TableCell className="sticky left-0 z-10 bg-background font-medium">
+                              <div className="text-sm">{row.teacherName}</div>
+                              {row.teacherCode && <div className="text-xs text-muted-foreground">{row.teacherCode}</div>}
+                            </TableCell>
+                            <TableCell className="sticky left-[180px] z-10 bg-background">{getLocationName(row.locationId)}</TableCell>
+                            {row.perDay.map((items, index) => (
+                              <TableCell
+                                key={index}
+                                className={cn("px-2 align-top", boardDays[index].isWeekend && "bg-orange-50/40")}
+                              >
+                                <div className="flex min-h-7 flex-col gap-1">
+                                  {[...items].sort((a: any, b: any) =>
+                                    String(a.shiftTemplate?.startTime ?? "").localeCompare(String(b.shiftTemplate?.startTime ?? ""))
+                                  ).map((item: any) => {
+                                    const start = String(item.shiftTemplate?.startTime ?? "").slice(0, 5);
+                                    const end = String(item.shiftTemplate?.endTime ?? "").slice(0, 5);
+                                    const time = start && end
+                                      ? `${start} - ${end}`
+                                      : item.shiftTemplate?.name || "Ca đã đăng ký";
+                                    return (
+                                      <div key={item.id} className="flex items-center justify-between gap-1">
+                                        <span className="whitespace-nowrap rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800">
+                                          {time}
+                                        </span>
+                                        {shiftCan.delete("register") && (
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                            data-testid={`button-delete-availability-${item.id}-${index}`}
+                                            aria-label="Xóa ca đăng ký"
+                                            title="Xóa ca đăng ký"
+                                            onClick={() => {
+                                              if (confirm("Xóa đăng ký ca lặp lại này? Ca sẽ bị xóa ở mọi ngày tương ứng trong thời hạn đăng ký.")) {
+                                                deleteMutation.mutate(item.id);
+                                              }
+                                            }}
+                                          >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                          </Button>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
