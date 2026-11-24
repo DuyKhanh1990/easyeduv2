@@ -2462,6 +2462,20 @@ export function registerConfigRoutes(app: Express): void {
     }
   });
 
+  app.post("/api/teacher-availability/:id/remove-from-date", async (req, res) => {
+    try {
+      const { date, mode } = req.body ?? {};
+      if (typeof date !== "string" || (mode !== "single" && mode !== "future")) {
+        return res.status(400).json({ message: "Cần chọn ngày và kiểu xóa hợp lệ." });
+      }
+      await storage.removeTeacherAvailabilityFromDate(req.params.id, date, mode);
+      res.status(204).send();
+    } catch (err) {
+      const statusCode = Number((err as any)?.statusCode) || 500;
+      res.status(statusCode).json({ message: (err as any)?.message || "Không thể xóa ca đăng ký." });
+    }
+  });
+
   app.delete("/api/teacher-availability/:id", async (req, res) => {
     await storage.deleteTeacherAvailability(req.params.id);
     res.status(204).send();

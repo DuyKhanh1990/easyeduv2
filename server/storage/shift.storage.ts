@@ -101,6 +101,90 @@ export async function deleteTeacherAvailability(id: string): Promise<void> {
   await db.delete(teacherAvailability).where(eq(teacherAvailability.id, id));
 }
 
+export async function removeTeacherAvailabilityFromDate(
+  id: string,
+  date: string,
+  mode: "single" | "future",
+): Promise<void> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw Object.assign(new Error("Ngày xóa không hợp lệ."), { statusCode: 400 });
+  }
+  const selectedDate = new Date(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(selectedDate.getTime()) || selectedDate.toISOString().slice(0, 10) !== date) {
+    throw Object.assign(new Error("Ngày xóa không hợp lệ."), { statusCode: 400 });
+  }
+  const weekday = selectedDate.getUTCDay();
+  const addDays = (value: string, amount: number) => {
+    const day = new Date(`${value}T00:00:00.000Z`);
+    day.setUTCDate(day.getUTCDate() + amount);
+    return day.toISOString().slice(0, 10);
+  };
+  const previousDate = addDays(date, -1);
+  const nextDate = addDays(date, 1);
+
+  await db.transaction(async (tx) => {
+    const [availability] = await tx
+      .select()
+      .from(teacherAvailability)
+      .where(eq(teacherAvailability.id, id))
+      .limit(1);
+    if (!availability) {
+      throw Object.assign(new Error("Không tìm thấy đăng ký ca."), { statusCode: 404 });
+    }
+    if (availability.weekday !== weekday) {
+      throw Object.assign(new Error("Ngày đã chọn không thuộc thứ của ca đăng ký này."), { statusCode: 400 });
+    }
+
+    const effectiveFrom = availability.effectiveFrom ? String(availability.effectiveFrom).slice(0, 10) : null;
+    const effectiveTo = availability.effectiveTo ? String(availability.effectiveTo).slice(0, 10) : null;
+    if ((effectiveFrom && date < effectiveFrom) || (effectiveTo && date > effectiveTo)) {
+      throw Object.assign(new Error("Ngày đã chọn nằm ngoài khoảng hiệu lực của đăng ký."), { statusCode: 400 });
+    }
+
+    if (mode === "future") {
+      if (effectiveFrom && date <= effectiveFrom) {
+        await tx.delete(teacherAvailability).where(eq(teacherAvailability.id, id));
+      } else {
+        await tx
+          .update(teacherAvailability)
+          .set({ effectiveTo: previousDate, updatedAt: new Date() })
+          .where(eq(teacherAvailability.id, id));
+      }
+      return;
+    }
+
+    const hasPreviousRange = !effectiveFrom || effectiveFrom <= previousDate;
+    const hasNextRange = !effectiveTo || nextDate <= effectiveTo;
+
+    if (hasPreviousRange && hasNextRange) {
+      await tx
+        .update(teacherAvailability)
+        .set({ effectiveTo: previousDate, updatedAt: new Date() })
+        .where(eq(teacherAvailability.id, id));
+      await tx.insert(teacherAvailability).values({
+        teacherId: availability.teacherId,
+        locationId: availability.locationId,
+        shiftTemplateId: availability.shiftTemplateId,
+        weekday: availability.weekday,
+        effectiveFrom: nextDate,
+        effectiveTo: availability.effectiveTo,
+      });
+    } else if (hasPreviousRange) {
+      await tx
+        .update(teacherAvailability)
+        .set({ effectiveTo: previousDate, updatedAt: new Date() })
+        .where(eq(teacherAvailability.id, id));
+    } else if (hasNextRange) {
+      await tx
+        .update(teacherAvailability)
+        .set({ effectiveFrom: nextDate, updatedAt: new Date() })
+        .where(eq(teacherAvailability.id, id));
+    } else {
+      await tx.delete(teacherAvailability).where(eq(teacherAvailability.id, id));
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 // checkTeacherAtLocation
 // ---------------------------------------------------------------------------

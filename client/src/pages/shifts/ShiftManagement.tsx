@@ -168,6 +168,11 @@ export function ShiftManagement() {
     }
   }, [visibleTabs.map(t => t.key).join(","), activeTab]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [availabilityDeleteTarget, setAvailabilityDeleteTarget] = useState<{
+    id: string;
+    date: string;
+    time: string;
+  } | null>(null);
   const [filters, setFilters] = useState({
     locationId: "all",
     teacherId: "all",
@@ -274,12 +279,28 @@ export function ShiftManagement() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/teacher-availability/${id}`);
+    mutationFn: async (variables: { id: string; date: string; mode: "single" | "future" }) => {
+      await apiRequest("POST", `/api/teacher-availability/${variables.id}/remove-from-date`, {
+        date: variables.date,
+        mode: variables.mode,
+      });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/teacher-availability"] });
-      toast({ title: "Thành công", description: "Đã xoá đăng ký" });
+      setAvailabilityDeleteTarget(null);
+      toast({
+        title: "Thành công",
+        description: variables.mode === "single"
+          ? "Đã xóa ca trong ngày đã chọn."
+          : "Đã xóa ca từ ngày đã chọn trở đi; các ngày trước đó được giữ nguyên.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Không thể xóa ca",
+        description: error.message || "Vui lòng thử lại.",
+        variant: "destructive",
+      });
     }
   });
 
@@ -1301,11 +1322,11 @@ export function ShiftManagement() {
                                             data-testid={`button-delete-availability-${item.id}-${index}`}
                                             aria-label="Xóa ca đăng ký"
                                             title="Xóa ca đăng ký"
-                                            onClick={() => {
-                                              if (confirm("Xóa đăng ký ca lặp lại này? Ca sẽ bị xóa ở mọi ngày tương ứng trong thời hạn đăng ký.")) {
-                                                deleteMutation.mutate(item.id);
-                                              }
-                                            }}
+                                            onClick={() => setAvailabilityDeleteTarget({
+                                              id: item.id,
+                                              date: format(boardDays[index].date, "yyyy-MM-dd"),
+                                              time,
+                                            })}
                                           >
                                             <X className="h-3 w-3" />
                                           </Button>
@@ -1324,6 +1345,62 @@ export function ShiftManagement() {
                 </div>
               </CardContent>
             </Card>
+            <Dialog
+              open={!!availabilityDeleteTarget}
+              onOpenChange={(open) => {
+                if (!open && !deleteMutation.isPending) setAvailabilityDeleteTarget(null);
+              }}
+            >
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Xóa ca đăng ký</DialogTitle>
+                </DialogHeader>
+                {availabilityDeleteTarget && (
+                  <div className="space-y-2 text-sm">
+                    <p>
+                      Ca <strong>{availabilityDeleteTarget.time}</strong> ngày{" "}
+                      <strong>{formatAvailabilityDate(availabilityDeleteTarget.date)}</strong>.
+                    </p>
+                    <p className="text-muted-foreground">
+                      Chọn xóa riêng ngày này hoặc xóa ca từ ngày này trở đi. Các ngày trước đó sẽ được giữ nguyên.
+                    </p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Button
+                        variant="outline"
+                        disabled={deleteMutation.isPending}
+                        onClick={() => deleteMutation.mutate({
+                          id: availabilityDeleteTarget.id,
+                          date: availabilityDeleteTarget.date,
+                          mode: "single",
+                        })}
+                      >
+                        Xóa ngày này
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        disabled={deleteMutation.isPending}
+                        onClick={() => deleteMutation.mutate({
+                          id: availabilityDeleteTarget.id,
+                          date: availabilityDeleteTarget.date,
+                          mode: "future",
+                        })}
+                      >
+                        Xóa từ ngày này trở đi
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                <DialogFooter>
+                  <Button
+                    variant="ghost"
+                    disabled={deleteMutation.isPending}
+                    onClick={() => setAvailabilityDeleteTarget(null)}
+                  >
+                    Hủy
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           <TabsContent value="board">

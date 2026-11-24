@@ -202,6 +202,7 @@ export interface IStorage {
   createTeacherAvailability(data: InsertTeacherAvailability): Promise<TeacherAvailability>;
   updateTeacherAvailability(id: string, data: Partial<InsertTeacherAvailability>): Promise<TeacherAvailability>;
   deleteTeacherAvailability(id: string): Promise<void>;
+  removeTeacherAvailabilityFromDate(id: string, date: string, mode: "single" | "future"): Promise<void>;
   checkTeacherAtLocation(teacherId: string, locationId: string): Promise<boolean>;
   // Classes & Sessions
   getClasses(locationId?: string, allowedLocationIds?: string[] | null, viewScope?: ClassViewScope): Promise<Class[]>;
@@ -596,6 +597,10 @@ export class DatabaseStorage implements IStorage {
 
   async deleteTeacherAvailability(id: string): Promise<void> {
     return shiftStorage.deleteTeacherAvailability(id);
+  }
+
+  async removeTeacherAvailabilityFromDate(id: string, date: string, mode: "single" | "future"): Promise<void> {
+    return shiftStorage.removeTeacherAvailabilityFromDate(id, date, mode);
   }
 
   async checkTeacherAtLocation(teacherId: string, locationId: string): Promise<boolean> {
