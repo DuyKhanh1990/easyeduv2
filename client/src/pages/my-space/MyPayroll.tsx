@@ -743,7 +743,7 @@ function SalaryTableGrid({
                 <tr key={row.classId} className="hover:bg-muted/10 transition-colors bg-background">
                   <td
                     className="px-3 py-2.5 border-b border-border whitespace-nowrap"
-                    style={{ position: "sticky", left: 0, zIndex: 30, backgroundColor: "hsl(var(--background))", width: COL_CLASS, minWidth: COL_CLASS, maxWidth: COL_CLASS, boxSizing: "border-box", overflow: "hidden", boxShadow: "1px 0 0 0 hsl(var(--border))" }}
+                    style={{ position: "sticky", left: 0, zIndex: 10, backgroundColor: "hsl(var(--background))", width: COL_CLASS, minWidth: COL_CLASS, maxWidth: COL_CLASS, boxSizing: "border-box", overflow: "hidden", boxShadow: "1px 0 0 0 hsl(var(--border))" }}
                   >
                     <div className="flex items-center gap-1.5">
                       <BookOpen className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
@@ -838,7 +838,7 @@ function SalaryTableGrid({
 
                   <td
                     className="border-l border-b border-border px-3 py-2.5 text-center whitespace-nowrap text-xs"
-                    style={{ position: "sticky", right: COL_TONG_LUONG, zIndex: 30, backgroundColor: "hsl(var(--background))", width: COL_TONG_SO, minWidth: COL_TONG_SO, maxWidth: COL_TONG_SO, boxSizing: "border-box", overflow: "hidden", boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
+                    style={{ position: "sticky", right: COL_TONG_LUONG, zIndex: 10, backgroundColor: "hsl(var(--background))", width: COL_TONG_SO, minWidth: COL_TONG_SO, maxWidth: COL_TONG_SO, boxSizing: "border-box", overflow: "hidden", boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
                   >
                     {tongSo.value === "—" ? (
                       <span className="text-muted-foreground">—</span>
@@ -856,7 +856,7 @@ function SalaryTableGrid({
 
                   <td
                     className="border-l border-b border-border px-3 py-2.5 text-center whitespace-nowrap text-xs"
-                    style={{ position: "sticky", right: 0, zIndex: 30, backgroundColor: "hsl(var(--background))", width: COL_TONG_LUONG, minWidth: COL_TONG_LUONG, maxWidth: COL_TONG_LUONG, boxSizing: "border-box", overflow: "hidden", boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
+                    style={{ position: "sticky", right: 0, zIndex: 10, backgroundColor: "hsl(var(--background))", width: COL_TONG_LUONG, minWidth: COL_TONG_LUONG, maxWidth: COL_TONG_LUONG, boxSizing: "border-box", overflow: "hidden", boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
                   >
                     {totalSalary !== null && totalSalary > 0 ? (
                        <span className="font-semibold text-emerald-600">{formatMoney(totalSalary, lang)}</span>
