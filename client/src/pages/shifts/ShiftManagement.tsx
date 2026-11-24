@@ -1091,10 +1091,12 @@ export function ShiftManagement() {
                                       isActive: teacher.status !== "Không hoạt động",
                                     }))}
                                   value={field.value}
-                                  onChange={field.onChange}
+                                  onChange={(value) => {
+                                    field.onChange(value);
+                                    if (value.length > 0) form.clearErrors("teacherIds");
+                                  }}
                                   placeholder={selectedLocationId ? "Chọn giáo viên" : "Chọn cơ sở trước"}
                                   searchPlaceholder="Tìm giáo viên..."
-                                  compactSelectionLabel="giáo viên"
                                   disabled={!selectedLocationId}
                                   data-testid="select-register-teachers"
                                 />
@@ -1117,10 +1119,12 @@ export function ShiftManagement() {
                                     label: `${shift.name} (${shift.startTime} - ${shift.endTime})`,
                                   }))}
                                   value={field.value}
-                                  onChange={field.onChange}
+                                  onChange={(value) => {
+                                    field.onChange(value);
+                                    if (value.length > 0) form.clearErrors("shiftTemplateIds");
+                                  }}
                                   placeholder={selectedLocationId ? "Chọn một hoặc nhiều ca" : "Chọn cơ sở trước"}
                                   searchPlaceholder="Tìm ca học..."
-                                  compactSelectionLabel="ca học"
                                   disabled={!selectedLocationId}
                                   data-testid="select-register-shifts"
                                 />
