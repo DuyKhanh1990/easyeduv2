@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format, eachDayOfInterval, parseISO, isValid, getDay } from "date-fns";
 import {
-  ChevronLeft, ChevronRight, Wallet,
+  ChevronLeft, ChevronRight, ChevronDown, Wallet,
   TableProperties, Lock, BookOpen, CheckCircle2, AlertCircle,
   Clock, Zap, TrendingUp, BadgeCheck, CalendarDays,
 } from "lucide-react";
@@ -587,10 +587,14 @@ function SalaryTableGrid({
   meta,
   rows,
   packageMap,
+  isExpanded,
+  onToggle,
 }: {
   meta: PublishedPayrollRow;
   rows: PublishedPayrollRow[];
   packageMap: Map<string, any>;
+  isExpanded: boolean;
+  onToggle: () => void;
 }) {
   const { t, lang } = useLanguage();
   const dateRange = useMemo(() => {
@@ -623,11 +627,13 @@ function SalaryTableGrid({
   const stickyHeaderBackground = "hsl(var(--muted))";
 
   return (
-    <div className="relative min-w-0">
-      {/* Keep this outside the table scroller so horizontal table movement cannot move it. */}
-      <div
-        className="h-14 px-4 bg-muted border-b border-border flex items-center gap-2"
-        style={{ position: "sticky", top: 0, left: 0, zIndex: 50, width: "100%", minWidth: 0, boxSizing: "border-box" }}
+    <div className="relative min-w-0" data-salary-period-card>
+      {/* The period header stays outside the table scroller. */}
+      <button
+        type="button"
+        aria-expanded={isExpanded}
+        onClick={onToggle}
+        className="h-14 w-full px-4 bg-muted border-b border-border flex items-center gap-2 text-left hover:bg-muted/80 transition-colors"
       >
         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
         <div className="flex-1 min-w-0">
@@ -643,9 +649,11 @@ function SalaryTableGrid({
             <span className="text-xs font-bold">{formatMoneyShort(grandTotal)}</span>
           </div>
         )}
-      </div>
+        <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", isExpanded && "rotate-180")} />
+      </button>
 
       {/* Horizontal and vertical scrolling are isolated to the table, like TeacherSalaryDetailTable. */}
+      {isExpanded && (
       <div className="max-h-[calc(100vh-220px)] overflow-auto">
         <table
           className="text-sm"
@@ -894,12 +902,15 @@ function SalaryTableGrid({
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }
 
-function SalaryDungLop() {
+function SalaryDungLop({ year, monthIndex }: { year: number; monthIndex: number }) {
   const { t } = useLanguage();
+  const [expandedSalaryTableId, setExpandedSalaryTableId] = useState<string | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const { data: publishedRows = [], isLoading, isError } = useQuery<PublishedPayrollRow[]>({
     queryKey: ["/api/my-space/payroll/published-rows"],
   });
@@ -915,16 +926,42 @@ function SalaryDungLop() {
     return m;
   }, [packages]);
 
+  const monthRows = useMemo(() => publishedRows.filter((row) => {
+    if (!row.startDate) return false;
+    const startDate = parseISO(row.startDate);
+    return isValid(startDate) && startDate.getFullYear() === year && startDate.getMonth() === monthIndex;
+  }), [publishedRows, year, monthIndex]);
+
   const grouped = useMemo(() => {
     const g = new Map<string, { meta: PublishedPayrollRow; rows: PublishedPayrollRow[] }>();
-    for (const row of publishedRows) {
+    for (const row of monthRows) {
       if (!g.has(row.salaryTableId)) {
         g.set(row.salaryTableId, { meta: row, rows: [] });
       }
       g.get(row.salaryTableId)!.rows.push(row);
     }
     return Array.from(g.values());
-  }, [publishedRows]);
+  }, [monthRows]);
+
+  useEffect(() => {
+    setExpandedSalaryTableId(null);
+  }, [year, monthIndex]);
+
+  useEffect(() => {
+    if (!expandedSalaryTableId) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!contentRef.current?.contains(event.target as Node)) {
+        setExpandedSalaryTableId(null);
+        return;
+      }
+      const target = event.target as Element;
+      if (!target.closest("[data-salary-period-card]")) {
+        setExpandedSalaryTableId(null);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, [expandedSalaryTableId]);
 
   if (isLoading) {
     return (
@@ -945,16 +982,16 @@ function SalaryDungLop() {
     );
   }
 
-  if (publishedRows.length === 0) {
+  if (grouped.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
         <div className="w-14 h-14 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
           <Lock className="w-6 h-6 text-amber-500" />
         </div>
         <div className="text-center max-w-sm">
-          <p className="text-sm font-semibold text-foreground mb-1">{t("mySpace.payroll.notPublishedTitle")}</p>
+          <p className="text-sm font-semibold text-foreground mb-1">{t("mySpace.payroll.noTeachingRowsTitle")}</p>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            {t("mySpace.payroll.notPublishedDescription")}
+            {t("mySpace.payroll.noTeachingRowsDescription")}
           </p>
         </div>
       </div>
@@ -962,13 +999,15 @@ function SalaryDungLop() {
   }
 
   return (
-    <div className="space-y-6">
+    <div ref={contentRef} className="space-y-3">
       {grouped.map(({ meta, rows }) => (
         <SalaryTableGrid
           key={meta.salaryTableId}
           meta={meta}
           rows={rows}
           packageMap={packageMap}
+          isExpanded={expandedSalaryTableId === meta.salaryTableId}
+          onToggle={() => setExpandedSalaryTableId((current) => current === meta.salaryTableId ? null : meta.salaryTableId)}
         />
       ))}
     </div>
@@ -1070,7 +1109,7 @@ export default function MyPayroll() {
           )}
           {tab === "dung-lop" && (
             <div className="h-full overflow-auto py-4">
-              <SalaryDungLop />
+              <SalaryDungLop year={year} monthIndex={monthIndex} />
             </div>
           )}
         </div>
