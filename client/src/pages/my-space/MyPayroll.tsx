@@ -909,7 +909,7 @@ function SalaryTableGrid({
 
 function SalaryDungLop({ year, monthIndex }: { year: number; monthIndex: number }) {
   const { t } = useLanguage();
-  const [expandedSalaryTableId, setExpandedSalaryTableId] = useState<string | null>(null);
+  const [expandedSalaryTableIds, setExpandedSalaryTableIds] = useState<Set<string>>(() => new Set());
   const contentRef = useRef<HTMLDivElement>(null);
   const { data: publishedRows = [], isLoading, isError } = useQuery<PublishedPayrollRow[]>({
     queryKey: ["/api/my-space/payroll/published-rows"],
@@ -944,24 +944,24 @@ function SalaryDungLop({ year, monthIndex }: { year: number; monthIndex: number 
   }, [monthRows]);
 
   useEffect(() => {
-    setExpandedSalaryTableId(null);
-  }, [year, monthIndex]);
+    setExpandedSalaryTableIds(new Set(grouped.map(({ meta }) => meta.salaryTableId)));
+  }, [year, monthIndex, grouped]);
 
   useEffect(() => {
-    if (!expandedSalaryTableId) return;
+    if (expandedSalaryTableIds.size === 0) return;
     const closeOnOutsideClick = (event: PointerEvent) => {
       if (!contentRef.current?.contains(event.target as Node)) {
-        setExpandedSalaryTableId(null);
+        setExpandedSalaryTableIds(new Set());
         return;
       }
       const target = event.target as Element;
       if (!target.closest("[data-salary-period-card]")) {
-        setExpandedSalaryTableId(null);
+        setExpandedSalaryTableIds(new Set());
       }
     };
     document.addEventListener("pointerdown", closeOnOutsideClick);
     return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
-  }, [expandedSalaryTableId]);
+  }, [expandedSalaryTableIds]);
 
   if (isLoading) {
     return (
@@ -1006,8 +1006,13 @@ function SalaryDungLop({ year, monthIndex }: { year: number; monthIndex: number 
           meta={meta}
           rows={rows}
           packageMap={packageMap}
-          isExpanded={expandedSalaryTableId === meta.salaryTableId}
-          onToggle={() => setExpandedSalaryTableId((current) => current === meta.salaryTableId ? null : meta.salaryTableId)}
+          isExpanded={expandedSalaryTableIds.has(meta.salaryTableId)}
+          onToggle={() => setExpandedSalaryTableIds((current) => {
+            const next = new Set(current);
+            if (next.has(meta.salaryTableId)) next.delete(meta.salaryTableId);
+            else next.add(meta.salaryTableId);
+            return next;
+          })}
         />
       ))}
     </div>
