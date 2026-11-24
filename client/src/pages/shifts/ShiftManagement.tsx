@@ -7,7 +7,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Trash2, Edit2, Copy, Clock, CalendarRange, ClipboardList, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Trash2, Edit2, Copy, Clock, CalendarRange, ClipboardList, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -791,6 +791,7 @@ export function ShiftManagement() {
       teacherName: string;
       teacherCode: string;
       locationId: string;
+      effectiveRanges: { from: string; to: string }[];
       perDay: any[][];
     }>();
     const dateKey = (value: unknown) => String(value ?? "").slice(0, 10);
@@ -817,9 +818,13 @@ export function ShiftManagement() {
             teacherName: item.teacher?.fullName ?? staffMember?.fullName ?? "Giáo viên",
             teacherCode: item.teacher?.code ?? staffMember?.code ?? "",
             locationId,
+            effectiveRanges: [],
             perDay: Array.from({ length: daysInBoardMonth }, () => []),
           };
           rowsByKey.set(key, row);
+        }
+        if (!row.effectiveRanges.some((range) => range.from === effectiveFrom && range.to === effectiveTo)) {
+          row.effectiveRanges.push({ from: effectiveFrom, to: effectiveTo });
         }
         row.perDay[day.day - 1].push(item);
       }
@@ -842,6 +847,17 @@ export function ShiftManagement() {
       setBoardMonth(1);
       setBoardYear((y) => y + 1);
     } else setBoardMonth((m) => m + 1);
+  };
+  const formatAvailabilityDate = (value: string) => {
+    if (!value) return "";
+    const [year, month, day] = value.split("-");
+    return year && month && day ? `${day}/${month}/${year}` : value;
+  };
+  const formatAvailabilityRange = ({ from, to }: { from: string; to: string }) => {
+    if (from && to) return `${formatAvailabilityDate(from)} – ${formatAvailabilityDate(to)}`;
+    if (from) return `Từ ${formatAvailabilityDate(from)}`;
+    if (to) return `Đến ${formatAvailabilityDate(to)}`;
+    return "Không giới hạn";
   };
 
   // Determine if a staff matches an assignment
@@ -1247,6 +1263,15 @@ export function ShiftManagement() {
                             <TableCell className="sticky left-0 z-10 bg-background font-medium">
                               <div className="text-sm">{row.teacherName}</div>
                               {row.teacherCode && <div className="text-xs text-muted-foreground">{row.teacherCode}</div>}
+                              {row.effectiveRanges.map((range) => (
+                                <div
+                                  key={`${range.from}-${range.to}`}
+                                  className="text-[10px] text-muted-foreground"
+                                  title="Khoảng hiệu lực đăng ký"
+                                >
+                                  Hiệu lực: {formatAvailabilityRange(range)}
+                                </div>
+                              ))}
                             </TableCell>
                             <TableCell className="sticky left-[180px] z-10 bg-background">{getLocationName(row.locationId)}</TableCell>
                             {row.perDay.map((items, index) => (
@@ -1282,7 +1307,7 @@ export function ShiftManagement() {
                                               }
                                             }}
                                           >
-                                            <Trash2 className="h-3.5 w-3.5" />
+                                            <X className="h-3 w-3" />
                                           </Button>
                                         )}
                                       </div>
