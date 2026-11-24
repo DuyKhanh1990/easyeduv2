@@ -56,6 +56,7 @@ const MyInvoices = lazy(() => import("@/pages/my-space/MyInvoices"));
 const MyPayroll = lazy(() => import("@/pages/my-space/MyPayroll"));
 const MyScoreSheet = lazy(() => import("@/pages/my-space/MyScoreSheet"));
 const MyDonTu = lazy(() => import("@/pages/my-space/MyDonTu"));
+const MyAvailability = lazy(() => import("@/pages/my-space/MyAvailability"));
 const ExamTakingPage = lazy(() => import("@/pages/my-space/ExamTakingPage").then(m => ({ default: m.ExamTakingPage })));
 
 const TeacherSalary = lazy(() => import("@/pages/hrm/TeacherSalary").then(m => ({ default: m.TeacherSalary })));
@@ -133,6 +134,7 @@ function Router() {
         <Route path="/my-space/invoices" component={MyInvoices} />
         <Route path="/my-space/payroll" component={MyPayroll} />
         <Route path="/my-space/don-tu" component={MyDonTu} />
+        <Route path="/my-space/availability" component={MyAvailability} />
         <Route path="/tasks" component={Tasks} />
         <Route path="/news-feed" component={NewsFeed} />
         <Route path="/chat" component={ChatPage} />

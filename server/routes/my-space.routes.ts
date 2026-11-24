@@ -52,6 +52,8 @@ import {
   studentLeaveRequests,
   staffRewards,
   staffAdvances,
+  teacherAvailability,
+  teacherAvailabilityWindows,
   examSubmissions,
   exams,
   testSessions,
@@ -166,6 +168,27 @@ async function getStaffForUser(userId: string) {
     .where(eq(staff.userId, userId))
     .limit(1);
   return staffRecord ?? null;
+}
+
+async function isMySpaceAvailabilityEnabled() {
+  const [setting] = await db
+    .select({ value: systemSettings.value })
+    .from(systemSettings)
+    .where(eq(systemSettings.key, "mySpaceAvailabilityEnabled"))
+    .limit(1);
+  return setting?.value === "true";
+}
+
+async function getAvailabilityStaff(userId: string, staffId?: string | null) {
+  const staffRecord = await getStaffForUser(userId);
+  if (staffRecord) return staffRecord;
+  if (!staffId) return null;
+  const [staffById] = await db
+    .select({ id: staff.id, code: staff.code, fullName: staff.fullName })
+    .from(staff)
+    .where(eq(staff.id, staffId))
+    .limit(1);
+  return staffById ?? null;
 }
 
 async function getScoreSheetAssessmentScoringConfig(assessmentId: string, queryable: any = db) {
@@ -1297,6 +1320,153 @@ async function getStudentContext(userId: string): Promise<StudentContext> {
 }
 
 export function registerMySpaceRoutes(app: Express): void {
+
+  app.get("/api/my-space/availability", async (req, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+      if (!(await isMySpaceAvailabilityEnabled())) {
+        return res.status(404).json({ message: "Tính năng đăng ký lịch rảnh hiện chưa được bật." });
+      }
+      const user = req.user as any;
+      const staffRecord = await getAvailabilityStaff(String(user.id), req.staffId);
+      if (!staffRecord?.id) return res.status(403).json({ message: "Chỉ nhân sự mới có thể đăng ký lịch rảnh." });
+
+      const [assignedLocations, legacyAvailabilities, timeWindows] = await Promise.all([
+        db
+          .selectDistinct({ id: locations.id, name: locations.name })
+          .from(staffAssignments)
+          .innerJoin(locations, eq(locations.id, staffAssignments.locationId))
+          .where(eq(staffAssignments.staffId, staffRecord.id)),
+        storage.getTeacherAvailabilities({ teacherId: staffRecord.id }),
+        storage.getTeacherAvailabilityWindows({ teacherId: staffRecord.id }),
+      ]);
+
+      res.json({
+        profile: staffRecord,
+        assignedLocations,
+        availabilities: [
+          ...legacyAvailabilities.map((item: any) => ({
+            ...item,
+            availabilityType: "shift",
+            startTime: item.shiftTemplate?.startTime ?? null,
+            endTime: item.shiftTemplate?.endTime ?? null,
+          })),
+          ...timeWindows.map((item: any) => ({ ...item, availabilityType: "time_window", shiftTemplate: null })),
+        ],
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Không thể tải lịch rảnh." });
+    }
+  });
+
+  app.post("/api/my-space/availability/windows", async (req, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+      if (!(await isMySpaceAvailabilityEnabled())) {
+        return res.status(404).json({ message: "Tính năng đăng ký lịch rảnh hiện chưa được bật." });
+      }
+      const user = req.user as any;
+      const staffRecord = await getAvailabilityStaff(String(user.id), req.staffId);
+      if (!staffRecord?.id) return res.status(403).json({ message: "Chỉ nhân sự mới có thể đăng ký lịch rảnh." });
+
+      const body = z.object({
+        locationId: z.string().uuid(),
+        windows: z.array(z.object({
+          weekday: z.number().int().min(0).max(6),
+          startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+          endTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+        })).min(1),
+        effectiveFrom: z.string().nullable().optional(),
+        effectiveTo: z.string().nullable().optional(),
+      }).parse(req.body);
+      const isDateOnly = (value: string | null | undefined) =>
+        value == null || (/^\d{4}-\d{2}-\d{2}$/.test(value) &&
+          !Number.isNaN(new Date(`${value}T00:00:00.000Z`).getTime()) &&
+          new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value);
+      if (!isDateOnly(body.effectiveFrom) || !isDateOnly(body.effectiveTo)) {
+        return res.status(400).json({ message: "Ngày hiệu lực không hợp lệ." });
+      }
+      if (body.effectiveFrom && body.effectiveTo && body.effectiveTo < body.effectiveFrom) {
+        return res.status(400).json({ message: "Ngày kết thúc hiệu lực phải bằng hoặc sau ngày bắt đầu." });
+      }
+      const invalidTimeWindow = body.windows.some((window) => window.endTime <= window.startTime);
+      if (invalidTimeWindow) {
+        return res.status(400).json({ message: "Giờ kết thúc phải sau giờ bắt đầu." });
+      }
+
+      const created = await storage.createTeacherAvailabilityWindows({
+        locationId: body.locationId,
+        teacherIds: [staffRecord.id],
+        windows: body.windows,
+        effectiveFrom: body.effectiveFrom ?? null,
+        effectiveTo: body.effectiveTo ?? null,
+      });
+      res.status(201).json(created);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return res.status(400).json(err.issues);
+      res.status(Number(err?.statusCode) || 500).json({ message: err?.message || "Không thể lưu giờ rảnh." });
+    }
+  });
+
+  app.post("/api/my-space/availability/windows/:id/remove-from-date", async (req, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+      if (!(await isMySpaceAvailabilityEnabled())) {
+        return res.status(404).json({ message: "Tính năng đăng ký lịch rảnh hiện chưa được bật." });
+      }
+      const user = req.user as any;
+      const staffRecord = await getAvailabilityStaff(String(user.id), req.staffId);
+      if (!staffRecord?.id) return res.status(403).json({ message: "Chỉ nhân sự mới có thể đăng ký lịch rảnh." });
+      const { date, mode } = z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        mode: z.enum(["single", "future"]),
+      }).parse(req.body ?? {});
+      const [ownedWindow] = await db
+        .select({ id: teacherAvailabilityWindows.id })
+        .from(teacherAvailabilityWindows)
+        .where(and(
+          eq(teacherAvailabilityWindows.id, req.params.id),
+          eq(teacherAvailabilityWindows.teacherId, staffRecord.id),
+        ))
+        .limit(1);
+      if (!ownedWindow) return res.status(404).json({ message: "Không tìm thấy giờ rảnh của bạn." });
+      await storage.removeTeacherAvailabilityWindowFromDate(req.params.id, date, mode);
+      res.status(204).send();
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return res.status(400).json(err.issues);
+      res.status(Number(err?.statusCode) || 500).json({ message: err?.message || "Không thể xóa giờ rảnh." });
+    }
+  });
+
+  app.post("/api/my-space/availability/:id/remove-from-date", async (req, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: "Unauthorized" });
+      if (!(await isMySpaceAvailabilityEnabled())) {
+        return res.status(404).json({ message: "Tính năng đăng ký lịch rảnh hiện chưa được bật." });
+      }
+      const user = req.user as any;
+      const staffRecord = await getAvailabilityStaff(String(user.id), req.staffId);
+      if (!staffRecord?.id) return res.status(403).json({ message: "Chỉ nhân sự mới có thể đăng ký lịch rảnh." });
+      const { date, mode } = z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        mode: z.enum(["single", "future"]),
+      }).parse(req.body ?? {});
+      const [ownedAvailability] = await db
+        .select({ id: teacherAvailability.id })
+        .from(teacherAvailability)
+        .where(and(
+          eq(teacherAvailability.id, req.params.id),
+          eq(teacherAvailability.teacherId, staffRecord.id),
+        ))
+        .limit(1);
+      if (!ownedAvailability) return res.status(404).json({ message: "Không tìm thấy ca rảnh của bạn." });
+      await storage.removeTeacherAvailabilityFromDate(req.params.id, date, mode);
+      res.status(204).send();
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return res.status(400).json(err.issues);
+      res.status(Number(err?.statusCode) || 500).json({ message: err?.message || "Không thể xóa giờ rảnh." });
+    }
+  });
 
   // ── Current user info (name, code) ──────────────────────────────────────
   app.get("/api/my-space/me-info", async (req, res) => {

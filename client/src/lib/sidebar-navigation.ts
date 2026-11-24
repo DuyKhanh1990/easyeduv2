@@ -93,7 +93,8 @@ export const navigation: NavEntry[] = [
       { name: "Bảng điểm của tôi", href: "/my-space/score-sheet", icon: BarChart3 },
       { name: "Hoá đơn của tôi", href: "/my-space/invoices", icon: FileText },
       { name: "Bảng lương của tôi", href: "/my-space/payroll", icon: Wallet },
-      { name: "Đơn từ của tôi", href: "/my-space/don-tu", icon: FileText }
+      { name: "Đơn từ của tôi", href: "/my-space/don-tu", icon: FileText },
+      { name: "Đăng ký lịch rảnh", href: "/my-space/availability", icon: CalendarDays }
     ]
   },
   {

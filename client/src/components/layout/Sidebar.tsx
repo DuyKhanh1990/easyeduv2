@@ -23,6 +23,7 @@ import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
 import { useMyPermissions, canAccessItem } from "@/hooks/use-my-permissions";
 import { useTinodeContext } from "@/hooks/use-tinode";
 import { Input } from "@/components/ui/input";
+import { useQuery } from "@tanstack/react-query";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle,
@@ -88,6 +89,15 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps = {}) {
   const isCollapsed = !mobileOpen && isCollapsedState && !isHoveringCollapsed && !isAccountMenuOpen;
   const { isModuleVisible, isItemVisible, hasServerData } = useSidebarVisibility();
   const { data: myPerms, isLoading: permsLoading } = useMyPermissions();
+  const { data: mySpaceAvailabilitySetting } = useQuery<{ enabled: boolean }>({
+    queryKey: ["/api/system-settings/my-space-availability"],
+    queryFn: async () => {
+      const response = await fetch("/api/system-settings/my-space-availability", { credentials: "include" });
+      if (!response.ok) return { enabled: false };
+      return response.json();
+    },
+    staleTime: 30_000,
+  });
   const hasInitialized = useRef(false);
   const passwordMismatch = confirmPassword.length > 0 && newPassword !== confirmPassword;
 
@@ -140,12 +150,13 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps = {}) {
       if (href === "/my-space/invoices") return true; // permission check in getVisibleItems
       return false;
     }
+    if (href === "/my-space/availability") return mySpaceAvailabilitySetting?.enabled === true;
     // Nếu admin đã lưu sidebar visibility settings, tôn trọng cài đặt đó — bỏ qua restriction phòng ban
     if (hasServerData) return true;
     // Chỉ nhân viên thuộc Phòng ban hệ thống (is_system=true) mới có quyền mặc định
     if (!isInSystemDept) return false;
     // Phòng ban hệ thống: lịch cá nhân, bài tập, bảng điểm mặc định
-    if (["/my-space/calendar", "/my-space/assignments", "/my-space/score-sheet", "/my-space/don-tu"].includes(href)) return true;
+    if (["/my-space/calendar", "/my-space/assignments", "/my-space/score-sheet", "/my-space/don-tu", "/my-space/availability"].includes(href)) return true;
     // Phòng Đào tạo hệ thống: thêm bảng lương mặc định
     if (isSystemTrainingDept && href === "/my-space/payroll") return true;
     // Hoá đơn: kiểm tra quyền (xử lý trong getVisibleItems)
@@ -161,6 +172,7 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps = {}) {
 
   const getVisibleItems = (item: NavModule) =>
     item.items.filter(sub => {
+      if (sub.href === "/my-space/availability" && mySpaceAvailabilitySetting?.enabled !== true) return false;
       if (!isItemVisible(sub.href, item.module)) return false;
       if (!hasDefaultAccess(sub.href, item.module)) return false;
       if (item.module === "MY SPACE") {
