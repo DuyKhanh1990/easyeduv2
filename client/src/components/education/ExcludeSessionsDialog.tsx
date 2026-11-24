@@ -367,7 +367,7 @@ export function ExcludeSessionsDialog({
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0" />
                     <span className="text-xs font-medium text-orange-700">
-                      {liveConflicts.length} xung đột lịch ở buổi bù cuối lịch
+                      {liveConflicts.length} cảnh báo lịch ở buổi bù cuối lịch
                     </span>
                   </div>
                   <div className="mt-0.5 flex gap-3 text-xs text-orange-600">
@@ -377,6 +377,9 @@ export function ExcludeSessionsDialog({
                     {liveConflicts.filter(c => c.type === "teacher").length > 0 && (
                       <span>👤 {liveConflicts.filter(c => c.type === "teacher").length} trùng GV</span>
                     )}
+                      {liveConflicts.filter(c => c.type === "availability").length > 0 && (
+                        <span>🕒 {liveConflicts.filter(c => c.type === "availability").length} GV ngoài giờ rảnh</span>
+                      )}
                     <span className="underline ml-auto">Xem chi tiết →</span>
                   </div>
                 </button>
@@ -454,7 +457,7 @@ export function ExcludeSessionsDialog({
         open={conflictSheetOpen}
         onClose={() => setConflictSheetOpen(false)}
         conflicts={liveConflicts}
-        title={`${liveConflicts.length} xung đột lịch — Buổi bù cuối lịch`}
+        title={`${liveConflicts.length} cảnh báo lịch — Buổi bù cuối lịch`}
       />
 
       {/* Warning dialog */}

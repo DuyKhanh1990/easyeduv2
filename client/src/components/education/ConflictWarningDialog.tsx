@@ -9,17 +9,18 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, Home, User } from "lucide-react";
+import { AlertTriangle, Home, User, Clock } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 export interface ConflictItem {
-  type: "room" | "teacher";
+  type: "room" | "teacher" | "availability";
   sessionDate: string;
   shiftName: string;
   shiftTime: string;
   resourceName: string;
   conflictClassName: string;
   conflictClassCode: string;
+  reason?: string;
 }
 
 interface ConflictWarningDialogProps {
@@ -52,6 +53,8 @@ export function ConflictWarningDialog({
 
   const roomConflicts = conflicts.filter(c => c.type === "room");
   const teacherConflicts = conflicts.filter(c => c.type === "teacher");
+  const availabilityConflicts = conflicts.filter(c => c.type === "availability");
+  const hasScheduleOverlap = roomConflicts.length > 0 || teacherConflicts.length > 0;
 
   return (
     <Dialog open={isOpen} onOpenChange={open => { if (!open) onClose(); }}>
@@ -61,19 +64,19 @@ export function ConflictWarningDialog({
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-amber-600">
                 <AlertTriangle className="h-5 w-5" />
-                Cảnh báo trùng lịch
+                {hasScheduleOverlap ? "Cảnh báo xung đột lịch" : "Cảnh báo thời gian khả dụng"}
               </DialogTitle>
               <DialogDescription>
                 {mode === "confirm" ? (
                   <>
                     Hệ thống phát hiện{" "}
-                    <span className="font-semibold text-foreground">{conflicts.length} trùng lịch</span>
+                    <span className="font-semibold text-foreground">{conflicts.length} mục cần kiểm tra</span>
                     . Vui lòng kiểm tra lại trước khi quyết định lưu.
                   </>
                 ) : (
                   <>
                     Dữ liệu đã được lưu. Tuy nhiên phát hiện{" "}
-                    <span className="font-semibold text-foreground">{conflicts.length} trùng lịch</span>{" "}
+                    <span className="font-semibold text-foreground">{conflicts.length} mục cần kiểm tra</span>{" "}
                     cần kiểm tra lại.
                   </>
                 )}
@@ -125,6 +128,30 @@ export function ConflictWarningDialog({
                           <div className="mt-0.5 text-xs text-blue-600">
                             {formatDate(c.sessionDate)} • Đang dạy lớp:{" "}
                             <span className="font-medium">{c.conflictClassCode || c.conflictClassName}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {availabilityConflicts.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5 text-sm font-semibold text-amber-700">
+                      <Clock className="h-3.5 w-3.5" />
+                      Giáo viên không có thời gian khả dụng ({availabilityConflicts.length})
+                    </div>
+                    <div className="space-y-1.5">
+                      {availabilityConflicts.map((c, i) => (
+                        <div key={i} className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium text-amber-900">{c.resourceName}</span>
+                            <Badge variant="outline" className="text-xs border-amber-300 text-amber-800">
+                              {c.shiftTime}
+                            </Badge>
+                          </div>
+                          <div className="mt-0.5 text-xs text-amber-800">
+                            {formatDate(c.sessionDate)} • {c.reason || c.conflictClassName}
                           </div>
                         </div>
                       ))}

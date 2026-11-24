@@ -2,7 +2,7 @@ import {
   db,
   eq, sql, and, inArray,
   users, locations, staff, departments, roles, staffAssignments, systemSettings, studentLocations, classes,
-  shiftTemplates, teacherAvailability, invoices, courses, students,
+  shiftTemplates, teacherAvailability, teacherAvailabilityWindows, invoices, courses, students,
 } from "./base";
 import { hashPassword } from "../auth";
 import { decrypt, encrypt } from "../lib/encryption";
@@ -176,6 +176,7 @@ export async function checkLocationUsage(id: string): Promise<boolean> {
     db.select({ id: studentLocations.id }).from(studentLocations).where(eq(studentLocations.locationId, id)).limit(1),
     db.select({ id: shiftTemplates.id }).from(shiftTemplates).where(eq(shiftTemplates.locationId, id)).limit(1),
     db.select({ id: teacherAvailability.id }).from(teacherAvailability).where(eq(teacherAvailability.locationId, id)).limit(1),
+    db.select({ id: teacherAvailabilityWindows.id }).from(teacherAvailabilityWindows).where(eq(teacherAvailabilityWindows.locationId, id)).limit(1),
     db.select({ id: invoices.id }).from(invoices).where(eq(invoices.locationId, id)).limit(1),
     db.select({ id: courses.id }).from(courses).where(eq(courses.locationId, id)).limit(1),
   ]);

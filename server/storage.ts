@@ -16,7 +16,7 @@ import {
   type CourseFeePackage, type InsertCourseFeePackage,
   type CourseProgram, type CourseProgramContent,
   type ShiftTemplate, type InsertShiftTemplate,
-  type TeacherAvailability, type InsertTeacherAvailability,
+  type TeacherAvailability, type InsertTeacherAvailability, type TeacherAvailabilityWindow,
   type Class, type ClassSession,
   type SessionContent, type InsertSessionContent,
   type StudentSessionContent, type InsertStudentSessionContent,
@@ -199,10 +199,19 @@ export interface IStorage {
 
   // Teacher Availability
   getTeacherAvailabilities(filters: { locationId?: string; teacherId?: string; weekday?: number }): Promise<any[]>;
+  getTeacherAvailabilityWindows(filters: { locationId?: string; teacherId?: string; weekday?: number }): Promise<TeacherAvailabilityWindow[]>;
+  createTeacherAvailabilityWindows(input: {
+    locationId: string;
+    teacherIds: string[];
+    windows: Array<{ weekday: number; startTime: string; endTime: string }>;
+    effectiveFrom: string | null;
+    effectiveTo: string | null;
+  }): Promise<TeacherAvailabilityWindow[]>;
   createTeacherAvailability(data: InsertTeacherAvailability): Promise<TeacherAvailability>;
   updateTeacherAvailability(id: string, data: Partial<InsertTeacherAvailability>): Promise<TeacherAvailability>;
   deleteTeacherAvailability(id: string): Promise<void>;
   removeTeacherAvailabilityFromDate(id: string, date: string, mode: "single" | "future"): Promise<void>;
+  removeTeacherAvailabilityWindowFromDate(id: string, date: string, mode: "single" | "future"): Promise<void>;
   checkTeacherAtLocation(teacherId: string, locationId: string): Promise<boolean>;
   // Classes & Sessions
   getClasses(locationId?: string, allowedLocationIds?: string[] | null, viewScope?: ClassViewScope): Promise<Class[]>;
@@ -587,6 +596,20 @@ export class DatabaseStorage implements IStorage {
     return shiftStorage.getTeacherAvailabilities(filters);
   }
 
+  async getTeacherAvailabilityWindows(filters: { locationId?: string; teacherId?: string; weekday?: number }): Promise<TeacherAvailabilityWindow[]> {
+    return shiftStorage.getTeacherAvailabilityWindows(filters);
+  }
+
+  async createTeacherAvailabilityWindows(input: {
+    locationId: string;
+    teacherIds: string[];
+    windows: Array<{ weekday: number; startTime: string; endTime: string }>;
+    effectiveFrom: string | null;
+    effectiveTo: string | null;
+  }): Promise<TeacherAvailabilityWindow[]> {
+    return shiftStorage.createTeacherAvailabilityWindows(input);
+  }
+
   async createTeacherAvailability(data: InsertTeacherAvailability): Promise<TeacherAvailability> {
     return shiftStorage.createTeacherAvailability(data);
   }
@@ -601,6 +624,10 @@ export class DatabaseStorage implements IStorage {
 
   async removeTeacherAvailabilityFromDate(id: string, date: string, mode: "single" | "future"): Promise<void> {
     return shiftStorage.removeTeacherAvailabilityFromDate(id, date, mode);
+  }
+
+  async removeTeacherAvailabilityWindowFromDate(id: string, date: string, mode: "single" | "future"): Promise<void> {
+    return shiftStorage.removeTeacherAvailabilityWindowFromDate(id, date, mode);
   }
 
   async checkTeacherAtLocation(teacherId: string, locationId: string): Promise<boolean> {

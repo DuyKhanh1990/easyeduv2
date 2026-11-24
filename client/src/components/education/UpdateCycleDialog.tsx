@@ -508,6 +508,7 @@ export function UpdateCycleDialog({
 
   const roomConflicts = liveConflicts.filter(c => c.type === "room");
   const teacherConflicts = liveConflicts.filter(c => c.type === "teacher");
+  const availabilityConflicts = liveConflicts.filter(c => c.type === "availability");
   const effectiveStartDate = getNextCycleDate(startDate, selectedWeekdays);
 
   return (
@@ -587,12 +588,13 @@ export function UpdateCycleDialog({
                         <div className="flex items-center gap-2">
                           <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0" />
                           <span className="text-sm font-medium text-orange-700">
-                            Phát hiện {liveConflicts.length} xung đột lịch
+                            Có {liveConflicts.length} cảnh báo lịch
                           </span>
                         </div>
                         <div className="mt-1 flex gap-3 text-xs text-orange-600">
                           {roomConflicts.length > 0 && <span>🏠 {roomConflicts.length} trùng phòng</span>}
                           {teacherConflicts.length > 0 && <span>👤 {teacherConflicts.length} trùng GV</span>}
+                          {availabilityConflicts.length > 0 && <span>🕒 {availabilityConflicts.length} GV ngoài giờ rảnh</span>}
                           <span className="underline ml-auto">Xem chi tiết →</span>
                         </div>
                       </button>
@@ -851,7 +853,7 @@ export function UpdateCycleDialog({
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
         conflicts={liveConflicts}
-        title={`${liveConflicts.length} xung đột lịch — Cập nhật chu kỳ`}
+        title={`${liveConflicts.length} cảnh báo lịch — Cập nhật chu kỳ`}
       />
     </>
   );

@@ -1,12 +1,13 @@
 import {
   db,
-  eq, sql, and,
-  shiftTemplates, teacherAvailability, staffAssignments,
+  eq, sql, and, inArray, isNull,
+  shiftTemplates, teacherAvailability, teacherAvailabilityWindows, staffAssignments,
 } from "./base";
 
 import type {
   ShiftTemplate, InsertShiftTemplate,
   TeacherAvailability, InsertTeacherAvailability,
+  TeacherAvailabilityWindow,
 } from "./base";
 
 // ---------------------------------------------------------------------------
@@ -75,6 +76,89 @@ export async function getTeacherAvailabilities(filters: { locationId?: string; t
       shiftTemplate: true,
     },
     orderBy: (table, { desc }) => [desc(table.createdAt)],
+  });
+}
+
+export async function getTeacherAvailabilityWindows(filters: {
+  locationId?: string;
+  teacherId?: string;
+  weekday?: number;
+}): Promise<TeacherAvailabilityWindow[]> {
+  const whereFilters = [];
+  if (filters.locationId) whereFilters.push(eq(teacherAvailabilityWindows.locationId, filters.locationId));
+  if (filters.teacherId) whereFilters.push(eq(teacherAvailabilityWindows.teacherId, filters.teacherId));
+  if (filters.weekday !== undefined) whereFilters.push(eq(teacherAvailabilityWindows.weekday, filters.weekday));
+
+  return db.query.teacherAvailabilityWindows.findMany({
+    where: whereFilters.length > 0 ? and(...whereFilters) : undefined,
+    with: {
+      teacher: true,
+      location: true,
+    },
+    orderBy: (table, { asc }) => [asc(table.weekday), asc(table.startTime)],
+  });
+}
+
+export async function createTeacherAvailabilityWindows(input: {
+  locationId: string;
+  teacherIds: string[];
+  windows: Array<{ weekday: number; startTime: string; endTime: string }>;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+}): Promise<TeacherAvailabilityWindow[]> {
+  return db.transaction(async (tx) => {
+    const assignments = await tx
+      .select({ staffId: staffAssignments.staffId })
+      .from(staffAssignments)
+      .where(and(
+        eq(staffAssignments.locationId, input.locationId),
+        inArray(staffAssignments.staffId, input.teacherIds),
+      ));
+    const assignedTeacherIds = new Set(assignments.map((assignment) => assignment.staffId));
+    const unassignedTeacher = input.teacherIds.find((teacherId) => !assignedTeacherIds.has(teacherId));
+    if (unassignedTeacher) {
+      throw Object.assign(new Error("Một hoặc nhiều giáo viên không thuộc cơ sở đã chọn."), { statusCode: 400 });
+    }
+
+    const created: TeacherAvailabilityWindow[] = [];
+    for (const teacherId of input.teacherIds) {
+      for (const window of input.windows) {
+        const duplicateFilters = [
+          eq(teacherAvailabilityWindows.teacherId, teacherId),
+          eq(teacherAvailabilityWindows.locationId, input.locationId),
+          eq(teacherAvailabilityWindows.weekday, window.weekday),
+          eq(teacherAvailabilityWindows.startTime, window.startTime),
+          eq(teacherAvailabilityWindows.endTime, window.endTime),
+          input.effectiveFrom
+            ? eq(teacherAvailabilityWindows.effectiveFrom, input.effectiveFrom)
+            : isNull(teacherAvailabilityWindows.effectiveFrom),
+          input.effectiveTo
+            ? eq(teacherAvailabilityWindows.effectiveTo, input.effectiveTo)
+            : isNull(teacherAvailabilityWindows.effectiveTo),
+        ];
+        const [duplicate] = await tx
+          .select({ id: teacherAvailabilityWindows.id })
+          .from(teacherAvailabilityWindows)
+          .where(and(...duplicateFilters))
+          .limit(1);
+        if (duplicate) continue;
+
+        const [row] = await tx
+          .insert(teacherAvailabilityWindows)
+          .values({
+            teacherId,
+            locationId: input.locationId,
+            weekday: window.weekday,
+            startTime: window.startTime,
+            endTime: window.endTime,
+            effectiveFrom: input.effectiveFrom,
+            effectiveTo: input.effectiveTo,
+          })
+          .returning();
+        created.push(row);
+      }
+    }
+    return created;
   });
 }
 
@@ -181,6 +265,91 @@ export async function removeTeacherAvailabilityFromDate(
         .where(eq(teacherAvailability.id, id));
     } else {
       await tx.delete(teacherAvailability).where(eq(teacherAvailability.id, id));
+    }
+  });
+}
+
+export async function removeTeacherAvailabilityWindowFromDate(
+  id: string,
+  date: string,
+  mode: "single" | "future",
+): Promise<void> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw Object.assign(new Error("Ngày xóa không hợp lệ."), { statusCode: 400 });
+  }
+  const selectedDate = new Date(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(selectedDate.getTime()) || selectedDate.toISOString().slice(0, 10) !== date) {
+    throw Object.assign(new Error("Ngày xóa không hợp lệ."), { statusCode: 400 });
+  }
+  const weekday = selectedDate.getUTCDay();
+  const addDays = (value: string, amount: number) => {
+    const day = new Date(`${value}T00:00:00.000Z`);
+    day.setUTCDate(day.getUTCDate() + amount);
+    return day.toISOString().slice(0, 10);
+  };
+  const previousDate = addDays(date, -1);
+  const nextDate = addDays(date, 1);
+
+  await db.transaction(async (tx) => {
+    const [availability] = await tx
+      .select()
+      .from(teacherAvailabilityWindows)
+      .where(eq(teacherAvailabilityWindows.id, id))
+      .limit(1);
+    if (!availability) {
+      throw Object.assign(new Error("Không tìm thấy đăng ký giờ rảnh."), { statusCode: 404 });
+    }
+    if (availability.weekday !== weekday) {
+      throw Object.assign(new Error("Ngày đã chọn không thuộc thứ của đăng ký này."), { statusCode: 400 });
+    }
+
+    const effectiveFrom = availability.effectiveFrom ? String(availability.effectiveFrom).slice(0, 10) : null;
+    const effectiveTo = availability.effectiveTo ? String(availability.effectiveTo).slice(0, 10) : null;
+    if ((effectiveFrom && date < effectiveFrom) || (effectiveTo && date > effectiveTo)) {
+      throw Object.assign(new Error("Ngày đã chọn nằm ngoài khoảng hiệu lực của đăng ký."), { statusCode: 400 });
+    }
+
+    if (mode === "future") {
+      if (effectiveFrom && date <= effectiveFrom) {
+        await tx.delete(teacherAvailabilityWindows).where(eq(teacherAvailabilityWindows.id, id));
+      } else {
+        await tx
+          .update(teacherAvailabilityWindows)
+          .set({ effectiveTo: previousDate, updatedAt: new Date() })
+          .where(eq(teacherAvailabilityWindows.id, id));
+      }
+      return;
+    }
+
+    const hasPreviousRange = !effectiveFrom || effectiveFrom <= previousDate;
+    const hasNextRange = !effectiveTo || nextDate <= effectiveTo;
+
+    if (hasPreviousRange && hasNextRange) {
+      await tx
+        .update(teacherAvailabilityWindows)
+        .set({ effectiveTo: previousDate, updatedAt: new Date() })
+        .where(eq(teacherAvailabilityWindows.id, id));
+      await tx.insert(teacherAvailabilityWindows).values({
+        teacherId: availability.teacherId,
+        locationId: availability.locationId,
+        weekday: availability.weekday,
+        startTime: availability.startTime,
+        endTime: availability.endTime,
+        effectiveFrom: nextDate,
+        effectiveTo: availability.effectiveTo,
+      });
+    } else if (hasPreviousRange) {
+      await tx
+        .update(teacherAvailabilityWindows)
+        .set({ effectiveTo: previousDate, updatedAt: new Date() })
+        .where(eq(teacherAvailabilityWindows.id, id));
+    } else if (hasNextRange) {
+      await tx
+        .update(teacherAvailabilityWindows)
+        .set({ effectiveFrom: nextDate, updatedAt: new Date() })
+        .where(eq(teacherAvailabilityWindows.id, id));
+    } else {
+      await tx.delete(teacherAvailabilityWindows).where(eq(teacherAvailabilityWindows.id, id));
     }
   });
 }

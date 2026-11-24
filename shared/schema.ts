@@ -1240,6 +1240,42 @@ export const teacherAvailabilityRelations = relations(teacherAvailability, ({ on
   }),
 }));
 
+export const teacherAvailabilityWindows = pgTable("teacher_availability_windows", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  teacherId: uuid("teacher_id").notNull().references(() => staff.id, { onDelete: "cascade" }),
+  locationId: uuid("location_id").notNull().references(() => locations.id, { onDelete: "cascade" }),
+  weekday: integer("weekday").notNull(), // 0=Sunday, 1=Monday...6=Saturday
+  startTime: time("start_time").notNull(),
+  endTime: time("end_time").notNull(),
+  effectiveFrom: date("effective_from"),
+  effectiveTo: date("effective_to"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  teacherLocationWeekdayIdx: index("teacher_avail_windows_teacher_loc_day_idx").on(
+    table.teacherId,
+    table.locationId,
+    table.weekday,
+  ),
+  effectiveDatesIdx: index("teacher_avail_windows_effective_dates_idx").on(
+    table.effectiveFrom,
+    table.effectiveTo,
+  ),
+}));
+
+export const teacherAvailabilityWindowsRelations = relations(teacherAvailabilityWindows, ({ one }) => ({
+  teacher: one(staff, {
+    fields: [teacherAvailabilityWindows.teacherId],
+    references: [staff.id],
+    relationName: "teacher_avail_window_staff",
+  }),
+  location: one(locations, {
+    fields: [teacherAvailabilityWindows.locationId],
+    references: [locations.id],
+    relationName: "teacher_avail_window_loc",
+  }),
+}));
+
 export const shiftTemplatesRelations = relations(shiftTemplates, ({ one, many }) => ({
   location: one(locations, {
     fields: [shiftTemplates.locationId],
@@ -1255,6 +1291,9 @@ export const shiftTemplatesRelations = relations(shiftTemplates, ({ one, many })
 export const insertTeacherAvailabilitySchema = createInsertSchema(teacherAvailability).omit({ id: true, createdAt: true, updatedAt: true });
 export type TeacherAvailability = typeof teacherAvailability.$inferSelect;
 export type InsertTeacherAvailability = z.infer<typeof insertTeacherAvailabilitySchema>;
+export const insertTeacherAvailabilityWindowSchema = createInsertSchema(teacherAvailabilityWindows).omit({ id: true, createdAt: true, updatedAt: true });
+export type TeacherAvailabilityWindow = typeof teacherAvailabilityWindows.$inferSelect;
+export type InsertTeacherAvailabilityWindow = z.infer<typeof insertTeacherAvailabilityWindowSchema>;
 
 export const insertShiftTemplateSchema = createInsertSchema(shiftTemplates).omit({ id: true, createdAt: true, updatedAt: true });
 export type ShiftTemplate = typeof shiftTemplates.$inferSelect;

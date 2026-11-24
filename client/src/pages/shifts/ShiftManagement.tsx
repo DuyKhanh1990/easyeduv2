@@ -62,13 +62,53 @@ const weekdays = [
   { id: 0, label: "Chủ Nhật" },
 ];
 
+const availabilityWindowSchema = z.object({
+  startTime: z.string(),
+  endTime: z.string(),
+});
+
 const formSchema = z.object({
   locationId: z.string().min(1, "Vui lòng chọn cơ sở"),
   teacherIds: z.array(z.string()).min(1, "Vui lòng chọn ít nhất một giáo viên"),
-  shiftTemplateIds: z.array(z.string()).min(1, "Vui lòng chọn ít nhất một ca"),
   weekdays: z.array(z.number()).min(1, "Vui lòng chọn ít nhất một thứ"),
+  dayWindows: z.record(z.string(), z.array(availabilityWindowSchema)),
   effectiveFrom: z.string().optional(),
   effectiveTo: z.string().optional(),
+}).superRefine((values, ctx) => {
+  if (values.effectiveFrom && values.effectiveTo && values.effectiveTo < values.effectiveFrom) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["effectiveTo"],
+      message: "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.",
+    });
+  }
+  for (const weekday of values.weekdays) {
+    const key = String(weekday);
+    const windows = values.dayWindows[key] ?? [];
+    if (windows.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["weekdays"],
+        message: `Vui lòng nhập giờ rảnh cho ${weekdays.find((day) => day.id === weekday)?.label ?? "thứ đã chọn"}.`,
+      });
+      continue;
+    }
+    windows.forEach((window, index) => {
+      if (!window.startTime || !window.endTime) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["dayWindows", key, index, !window.startTime ? "startTime" : "endTime"],
+          message: "Nhập giờ bắt đầu và kết thúc.",
+        });
+      } else if (window.endTime <= window.startTime) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["dayWindows", key, index, "endTime"],
+          message: "Giờ kết thúc phải sau giờ bắt đầu.",
+        });
+      }
+    });
+  }
 });
 
 const shiftAssignmentSchema = z.object({
@@ -112,7 +152,7 @@ function getTabFromUrl(): TabKey {
 }
 
 const tabs: { key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: "register", label: "Đăng ký ca dạy", icon: Clock },
+  { key: "register", label: "Đăng ký giờ rảnh", icon: Clock },
   { key: "board", label: "Bảng phân ca", icon: CalendarRange },
   { key: "assign", label: "Phân ca làm việc", icon: ClipboardList },
   { key: "config", label: "Cấu hình ca làm việc", icon: Clock },
@@ -172,6 +212,7 @@ export function ShiftManagement() {
     id: string;
     date: string;
     time: string;
+    availabilityType?: string;
   } | null>(null);
   const [filters, setFilters] = useState({
     locationId: "all",
@@ -200,15 +241,6 @@ export function ShiftManagement() {
     s.roleNames?.some((r: string) => r.toLowerCase().includes("giáo viên") || r.toLowerCase().includes("teacher"))
   );
 
-  const { data: shiftTemplates = [] } = useQuery<any[]>({
-    queryKey: ["/api/shift-templates", "class"],
-    queryFn: async () => {
-      const res = await fetch("/api/shift-templates?type=class");
-      if (!res.ok) throw new Error("Failed to fetch class shifts");
-      return res.json();
-    },
-  });
-
   const { data: availabilities = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/teacher-availability", filters],
     queryFn: async () => {
@@ -232,38 +264,30 @@ export function ShiftManagement() {
 
   const createMutation = useMutation({
     mutationFn: async (values: z.infer<typeof formSchema>) => {
-      let createdCount = 0;
-      const failures: string[] = [];
-      for (const teacherId of values.teacherIds) {
-        for (const shiftTemplateId of values.shiftTemplateIds) {
-          try {
-            const response = await apiRequest("POST", "/api/teacher-availability", {
-              locationId: values.locationId,
-              teacherId,
-              shiftTemplateId,
-              weekdays: values.weekdays,
-              effectiveFrom: values.effectiveFrom || null,
-              effectiveTo: values.effectiveTo || null,
-            });
-            const created = await response.json();
-            createdCount += Array.isArray(created) ? created.length : 0;
-          } catch (error: any) {
-            const teacherName = filteredTeachersForForm.find((teacher: any) => teacher.id === teacherId)?.fullName ?? "Giáo viên";
-            const shiftName = filteredShiftsForForm.find((shift: any) => shift.id === shiftTemplateId)?.name ?? "ca học";
-            failures.push(`${teacherName} — ${shiftName}: ${error?.message || "không lưu được"}`);
-          }
-        }
-      }
-      if (failures.length > 0) {
-        throw new Error(`Đã lưu ${createdCount} dòng; ${failures.length} tổ hợp chưa lưu được. ${failures[0]}`);
-      }
-      return createdCount;
+      const windows = values.weekdays.flatMap((weekday) =>
+        (values.dayWindows[String(weekday)] ?? []).map((window) => ({
+          weekday,
+          startTime: window.startTime,
+          endTime: window.endTime,
+        })),
+      );
+      const response = await apiRequest("POST", "/api/teacher-availability/windows", {
+        locationId: values.locationId,
+        teacherIds: values.teacherIds,
+        windows,
+        effectiveFrom: values.effectiveFrom || null,
+        effectiveTo: values.effectiveTo || null,
+      });
+      const created = await response.json();
+      return Array.isArray(created) ? created.length : 0;
     },
     onSuccess: (createdCount) => {
       queryClient.invalidateQueries({ queryKey: ["/api/teacher-availability"] });
       toast({
         title: "Thành công",
-        description: createdCount > 0 ? `Đã tạo ${createdCount} dòng đăng ký ca dạy` : "Các ca đã chọn đã được đăng ký trước đó",
+        description: createdCount > 0
+          ? `Đã lưu ${createdCount} khoảng giờ rảnh`
+          : "Các khoảng giờ đã chọn đã được đăng ký trước đó.",
       });
       setIsDialogOpen(false);
       form.reset();
@@ -272,15 +296,18 @@ export function ShiftManagement() {
       queryClient.invalidateQueries({ queryKey: ["/api/teacher-availability"] });
       toast({
         title: "Lỗi",
-        description: error.message || "Không thể đăng ký ca dạy",
+        description: error.message || "Không thể lưu giờ rảnh.",
         variant: "destructive"
       });
     }
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (variables: { id: string; date: string; mode: "single" | "future" }) => {
-      await apiRequest("POST", `/api/teacher-availability/${variables.id}/remove-from-date`, {
+    mutationFn: async (variables: { id: string; date: string; mode: "single" | "future"; availabilityType?: string }) => {
+      const endpoint = variables.availabilityType === "time_window"
+        ? `/api/teacher-availability/windows/${variables.id}/remove-from-date`
+        : `/api/teacher-availability/${variables.id}/remove-from-date`;
+      await apiRequest("POST", endpoint, {
         date: variables.date,
         mode: variables.mode,
       });
@@ -309,8 +336,8 @@ export function ShiftManagement() {
     defaultValues: {
       locationId: "",
       teacherIds: [],
-      shiftTemplateIds: [],
       weekdays: [],
+      dayWindows: {},
       effectiveFrom: format(new Date(), "yyyy-MM-dd"),
     },
   });
@@ -319,8 +346,6 @@ export function ShiftManagement() {
   const filteredTeachersForForm = staff.filter((s: any) =>
     s.assignments?.some((a: any) => a.locationId === selectedLocationId)
   );
-  const filteredShiftsForForm = shiftTemplates.filter((s: any) => s.locationId === selectedLocationId);
-
   // === Cấu hình ca làm việc ===
   const [configLocationFilter, setConfigLocationFilter] = useState<string>("all");
   const [shiftDialogOpen, setShiftDialogOpen] = useState(false);
@@ -1002,7 +1027,7 @@ export function ShiftManagement() {
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-3xl font-display font-bold text-foreground">Quản lý Ca làm việc</h1>
-            <p className="text-muted-foreground mt-1">Quản lý đăng ký ca dạy và lịch làm việc của nhân sự</p>
+            <p className="text-muted-foreground mt-1">Quản lý giờ rảnh đăng ký và lịch làm việc của nhân sự</p>
           </div>
         </div>
 
@@ -1081,7 +1106,7 @@ export function ShiftManagement() {
                   </DialogTrigger>
                   <DialogContent className="w-[85vw] max-w-[85vw] max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                      <DialogTitle>Đăng ký ca rảnh giáo viên</DialogTitle>
+                                <DialogTitle>Đăng ký giờ rảnh giáo viên</DialogTitle>
                     </DialogHeader>
                     <Form {...form}>
                       <form onSubmit={form.handleSubmit((v) => createMutation.mutate(v))} className="space-y-4">
@@ -1096,8 +1121,7 @@ export function ShiftManagement() {
                                 onValueChange={(locationId) => {
                                   field.onChange(locationId);
                                   form.setValue("teacherIds", []);
-                                  form.setValue("shiftTemplateIds", []);
-                                  form.clearErrors(["teacherIds", "shiftTemplateIds"]);
+                                    form.clearErrors("teacherIds");
                                 }}
                               >
                                 <FormControl>
@@ -1145,39 +1169,11 @@ export function ShiftManagement() {
 
                         <FormField
                           control={form.control}
-                          name="shiftTemplateIds"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Ca học</FormLabel>
-                              <FormControl>
-                                <SearchableMultiSelect
-                                  options={filteredShiftsForForm.map((shift: any) => ({
-                                    value: shift.id,
-                                    label: `${shift.name} (${shift.startTime} - ${shift.endTime})`,
-                                  }))}
-                                  value={field.value}
-                                  onChange={(value) => {
-                                    field.onChange(value);
-                                    if (value.length > 0) form.clearErrors("shiftTemplateIds");
-                                  }}
-                                  placeholder={selectedLocationId ? "Chọn một hoặc nhiều ca" : "Chọn cơ sở trước"}
-                                  searchPlaceholder="Tìm ca học..."
-                                  disabled={!selectedLocationId}
-                                  data-testid="select-register-shifts"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        <FormField
-                          control={form.control}
                           name="weekdays"
                           render={() => (
                             <FormItem>
-                              <FormLabel>Thứ trong tuần</FormLabel>
-                              <div className="grid grid-cols-4 gap-2">
+                              <FormLabel>Ngày trong tuần</FormLabel>
+                              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
                                 {weekdays.map((w) => (
                                   <FormField
                                     key={w.id}
@@ -1188,12 +1184,29 @@ export function ShiftManagement() {
                                         <FormControl>
                                           <Checkbox
                                             checked={field.value?.includes(w.id)}
-                                            onCheckedChange={(checked) => checked
-                                              ? field.onChange([...field.value, w.id])
-                                              : field.onChange(field.value?.filter((value) => value !== w.id))}
+                                            onCheckedChange={(checked) => {
+                                              const currentDays = field.value ?? [];
+                                              const nextDays = checked
+                                                ? [...currentDays, w.id]
+                                                : currentDays.filter((value) => value !== w.id);
+                                              field.onChange(nextDays);
+                                              const dayWindows = form.getValues("dayWindows") ?? {};
+                                              if (checked) {
+                                                form.setValue("dayWindows", {
+                                                  ...dayWindows,
+                                                  [String(w.id)]: dayWindows[String(w.id)]?.length
+                                                    ? dayWindows[String(w.id)]
+                                                    : [{ startTime: "", endTime: "" }],
+                                                }, { shouldValidate: true });
+                                              } else {
+                                                const nextWindows = { ...dayWindows };
+                                                delete nextWindows[String(w.id)];
+                                                form.setValue("dayWindows", nextWindows, { shouldValidate: true });
+                                              }
+                                            }}
                                           />
                                         </FormControl>
-                                        <FormLabel className="text-xs font-normal cursor-pointer">{w.label}</FormLabel>
+                                        <FormLabel className="text-sm font-normal cursor-pointer">{w.label}</FormLabel>
                                       </FormItem>
                                     )}
                                   />
@@ -1202,6 +1215,100 @@ export function ShiftManagement() {
                               <FormMessage />
                             </FormItem>
                           )}
+                        />
+
+                        <FormField
+                          control={form.control}
+                          name="dayWindows"
+                          render={({ field }) => {
+                            const selectedDays = [...(form.watch("weekdays") ?? [])]
+                              .sort((a, b) => weekdays.findIndex((day) => day.id === a) - weekdays.findIndex((day) => day.id === b));
+                            const windowsByDay = field.value ?? {};
+                            const updateDay = (weekday: number, rows: Array<{ startTime: string; endTime: string }>) => {
+                              field.onChange({ ...windowsByDay, [String(weekday)]: rows });
+                            };
+                            return (
+                              <FormItem>
+                                <FormLabel>Khoảng giờ rảnh theo từng ngày</FormLabel>
+                                <div className="space-y-3">
+                                  {selectedDays.map((weekday) => {
+                                    const dayKey = String(weekday);
+                                    const dayWindows = windowsByDay[dayKey] ?? [];
+                                    return (
+                                      <div key={dayKey} className="rounded-lg border bg-muted/20 p-3">
+                                        <div className="mb-2 font-medium text-sm">
+                                          {weekdays.find((day) => day.id === weekday)?.label}
+                                        </div>
+                                        <div className="space-y-2">
+                                          {dayWindows.map((window, index) => (
+                                            <div key={`${dayKey}-${index}`} className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
+                                              <div>
+                                                <Input
+                                                  type="time"
+                                                  value={window.startTime}
+                                                  onChange={(event) => {
+                                                    const next = [...dayWindows];
+                                                    next[index] = { ...next[index], startTime: event.target.value };
+                                                    updateDay(weekday, next);
+                                                  }}
+                                                  aria-label={`${weekdays.find((day) => day.id === weekday)?.label} giờ bắt đầu, khoảng ${index + 1}`}
+                                                />
+                                                {(form.formState.errors as any).dayWindows?.[dayKey]?.[index]?.startTime?.message && (
+                                                  <p className="mt-1 text-xs text-destructive">
+                                                    {(form.formState.errors as any).dayWindows[dayKey][index].startTime.message}
+                                                  </p>
+                                                )}
+                                              </div>
+                                              <span className="text-sm text-muted-foreground">đến</span>
+                                              <div>
+                                                <Input
+                                                  type="time"
+                                                  value={window.endTime}
+                                                  onChange={(event) => {
+                                                    const next = [...dayWindows];
+                                                    next[index] = { ...next[index], endTime: event.target.value };
+                                                    updateDay(weekday, next);
+                                                  }}
+                                                  aria-label={`${weekdays.find((day) => day.id === weekday)?.label} giờ kết thúc, khoảng ${index + 1}`}
+                                                />
+                                                {(form.formState.errors as any).dayWindows?.[dayKey]?.[index]?.endTime?.message && (
+                                                  <p className="mt-1 text-xs text-destructive">
+                                                    {(form.formState.errors as any).dayWindows[dayKey][index].endTime.message}
+                                                  </p>
+                                                )}
+                                              </div>
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                className="text-destructive hover:text-destructive"
+                                                disabled={dayWindows.length <= 1}
+                                                onClick={() => updateDay(weekday, dayWindows.filter((_, rowIndex) => rowIndex !== index))}
+                                                aria-label="Xóa khoảng giờ"
+                                              >
+                                                <X className="h-4 w-4" />
+                                              </Button>
+                                            </div>
+                                          ))}
+                                        </div>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          className="mt-2"
+                                          onClick={() => updateDay(weekday, [...dayWindows, { startTime: "", endTime: "" }])}
+                                        >
+                                          <Plus className="mr-1 h-3.5 w-3.5" />
+                                          Thêm khoảng giờ
+                                        </Button>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                <FormMessage />
+                              </FormItem>
+                            );
+                          }}
                         />
 
                         <div className="grid grid-cols-2 gap-4">
@@ -1245,10 +1352,10 @@ export function ShiftManagement() {
               <CardHeader className="py-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <CalendarRange className="h-4 w-4" />
-                  Lịch ca rảnh — Tháng {boardMonth}/{boardYear}
+                  Lịch giờ rảnh — Tháng {boardMonth}/{boardYear}
                 </CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  Ô trống là ngày không có ca đăng ký. Giáo viên chỉ hiện khi có ca hiệu lực trong tháng.
+                  Ô trống là ngày không có giờ rảnh đăng ký. Giáo viên chỉ hiện khi có đăng ký hiệu lực trong tháng.
                 </p>
               </CardHeader>
               <CardContent className="p-0">
@@ -1275,7 +1382,7 @@ export function ShiftManagement() {
                       ) : registerRows.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={boardDays.length + 2} className="py-10 text-center text-muted-foreground">
-                            Tháng này chưa có ca dạy nào được đăng ký.
+                            Tháng này chưa có giờ rảnh nào được đăng ký.
                           </TableCell>
                         </TableRow>
                       ) : (
@@ -1302,10 +1409,10 @@ export function ShiftManagement() {
                               >
                                 <div className="flex min-h-7 flex-col gap-1">
                                   {[...items].sort((a: any, b: any) =>
-                                    String(a.shiftTemplate?.startTime ?? "").localeCompare(String(b.shiftTemplate?.startTime ?? ""))
+                                    String(a.startTime ?? a.shiftTemplate?.startTime ?? "").localeCompare(String(b.startTime ?? b.shiftTemplate?.startTime ?? ""))
                                   ).map((item: any) => {
-                                    const start = String(item.shiftTemplate?.startTime ?? "").slice(0, 5);
-                                    const end = String(item.shiftTemplate?.endTime ?? "").slice(0, 5);
+                                    const start = String(item.startTime ?? item.shiftTemplate?.startTime ?? "").slice(0, 5);
+                                    const end = String(item.endTime ?? item.shiftTemplate?.endTime ?? "").slice(0, 5);
                                     const time = start && end
                                       ? `${start} - ${end}`
                                       : item.shiftTemplate?.name || "Ca đã đăng ký";
@@ -1320,12 +1427,13 @@ export function ShiftManagement() {
                                             size="icon"
                                             className="h-6 w-6 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                                             data-testid={`button-delete-availability-${item.id}-${index}`}
-                                            aria-label="Xóa ca đăng ký"
-                                            title="Xóa ca đăng ký"
+                                            aria-label="Xóa giờ rảnh đã đăng ký"
+                                            title="Xóa giờ rảnh đã đăng ký"
                                             onClick={() => setAvailabilityDeleteTarget({
                                               id: item.id,
                                               date: format(boardDays[index].date, "yyyy-MM-dd"),
                                               time,
+                                              availabilityType: item.availabilityType,
                                             })}
                                           >
                                             <X className="h-3 w-3" />
@@ -1353,16 +1461,16 @@ export function ShiftManagement() {
             >
               <DialogContent className="max-w-md">
                 <DialogHeader>
-                  <DialogTitle>Xóa ca đăng ký</DialogTitle>
+                  <DialogTitle>Xóa giờ rảnh đã đăng ký</DialogTitle>
                 </DialogHeader>
                 {availabilityDeleteTarget && (
                   <div className="space-y-2 text-sm">
                     <p>
-                      Ca <strong>{availabilityDeleteTarget.time}</strong> ngày{" "}
+                      Khoảng giờ <strong>{availabilityDeleteTarget.time}</strong> ngày{" "}
                       <strong>{formatAvailabilityDate(availabilityDeleteTarget.date)}</strong>.
                     </p>
                     <p className="text-muted-foreground">
-                      Chọn xóa riêng ngày này hoặc xóa ca từ ngày này trở đi. Các ngày trước đó sẽ được giữ nguyên.
+                      Chọn xóa riêng ngày này hoặc xóa giờ rảnh từ ngày này trở đi. Các ngày trước đó sẽ được giữ nguyên.
                     </p>
                     <div className="grid gap-2 sm:grid-cols-2">
                       <Button
@@ -1372,6 +1480,7 @@ export function ShiftManagement() {
                           id: availabilityDeleteTarget.id,
                           date: availabilityDeleteTarget.date,
                           mode: "single",
+                          availabilityType: availabilityDeleteTarget.availabilityType,
                         })}
                       >
                         Xóa ngày này
@@ -1383,6 +1492,7 @@ export function ShiftManagement() {
                           id: availabilityDeleteTarget.id,
                           date: availabilityDeleteTarget.date,
                           mode: "future",
+                          availabilityType: availabilityDeleteTarget.availabilityType,
                         })}
                       >
                         Xóa từ ngày này trở đi

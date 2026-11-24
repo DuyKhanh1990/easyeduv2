@@ -224,6 +224,7 @@ export function CreateTutorClass() {
       setIsLiveChecking(true);
       try {
         const res = await apiRequest("POST", "/api/classes/preview-conflicts", {
+          locationId: selectedLocationId,
           startDate: watchedStartDate,
           endDate: watchedEndDate,
           endType,
@@ -238,7 +239,7 @@ export function CreateTutorClass() {
     }, 1000);
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(scheduleConfig), JSON.stringify(teachersConfig), watchedStartDate, watchedEndDate, endType, sessionCount]);
+  }, [JSON.stringify(scheduleConfig), JSON.stringify(teachersConfig), watchedStartDate, watchedEndDate, endType, sessionCount, selectedLocationId]);
 
   useEffect(() => {
     setSelectedStudentId("");
@@ -392,6 +393,7 @@ export function CreateTutorClass() {
       setIsCheckingStep2(true);
       try {
         const res = await apiRequest("POST", "/api/classes/preview-conflicts", {
+          locationId: selectedLocationId,
           startDate: values.startDate,
           endDate: values.endDate,
           endType,
@@ -971,14 +973,15 @@ export function CreateTutorClass() {
                         {!isLiveChecking && liveConflicts.length > 0 && (
                           <button
                             type="button"
-                            onClick={() => setConflictDetail({ conflicts: liveConflicts, title: `Tất cả ${liveConflicts.length} buổi trùng lịch` })}
+                            onClick={() => setConflictDetail({ conflicts: liveConflicts, title: `Tất cả ${liveConflicts.length} cảnh báo lịch` })}
                             className="w-full flex items-start gap-2 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-md px-3 py-2 hover:bg-orange-100 transition-colors text-left cursor-pointer"
                           >
                             <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                             <span>
-                              Phát hiện trùng lịch:{" "}
-                              {liveConflicts.filter(c => c.type === "room").length > 0 && <><strong>{liveConflicts.filter(c => c.type === "room").length} buổi trùng phòng</strong>{liveConflicts.filter(c => c.type === "teacher").length > 0 ? ", " : ""}</>}
-                              {liveConflicts.filter(c => c.type === "teacher").length > 0 && <strong>{liveConflicts.filter(c => c.type === "teacher").length} buổi trùng giáo viên</strong>}
+                              Có cảnh báo lịch:{" "}
+                              {liveConflicts.filter(c => c.type === "room").length > 0 && <><strong>{liveConflicts.filter(c => c.type === "room").length} buổi trùng phòng</strong>{liveConflicts.some(c => c.type === "teacher" || c.type === "availability") ? ", " : ""}</>}
+                              {liveConflicts.filter(c => c.type === "teacher").length > 0 && <><strong>{liveConflicts.filter(c => c.type === "teacher").length} buổi trùng giáo viên</strong>{liveConflicts.filter(c => c.type === "availability").length > 0 ? ", " : ""}</>}
+                              {liveConflicts.filter(c => c.type === "availability").length > 0 && <strong>{liveConflicts.filter(c => c.type === "availability").length} buổi giáo viên ngoài giờ rảnh</strong>}
                               . <span className="underline">Nhấn để xem chi tiết →</span>
                             </span>
                           </button>
@@ -1137,8 +1140,10 @@ export function CreateTutorClass() {
                           {teachersConfig.map((teacher: any, idx: number) => {
                             const staffMember = staff?.find((s: any) => s.id === teacher.teacher_id);
                             const teacherConflictCount = staffMember?.fullName ? liveConflicts.filter(c => c.type === "teacher" && c.resourceName === staffMember.fullName).length : 0;
+                            const teacherAvailabilityCount = staffMember?.fullName ? liveConflicts.filter(c => c.type === "availability" && c.resourceName === staffMember.fullName).length : 0;
+                            const teacherIssueCount = teacherConflictCount + teacherAvailabilityCount;
                             return (
-                              <Card key={teacher.teacher_id} className={cn("bg-muted/10 border-dashed", teacherConflictCount > 0 && "border-orange-300")}>
+                              <Card key={teacher.teacher_id} className={cn("bg-muted/10 border-dashed", teacherIssueCount > 0 && "border-orange-300")}>
                                 <CardContent className="pt-4 space-y-4">
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
@@ -1146,16 +1151,19 @@ export function CreateTutorClass() {
                                         <User className="h-4 w-4 text-purple-600" />
                                       </div>
                                       <span className="font-bold">{staffMember?.fullName}</span>
-                                      {teacherConflictCount > 0 && (
+                                      {teacherIssueCount > 0 && (
                                         <button
                                           type="button"
                                           onClick={() => setConflictDetail({
-                                            conflicts: liveConflicts.filter(c => c.type === "teacher" && c.resourceName === staffMember?.fullName),
-                                            title: `${staffMember?.fullName}: ${teacherConflictCount} buổi trùng lịch`
+                                            conflicts: liveConflicts.filter(c => (c.type === "teacher" || c.type === "availability") && c.resourceName === staffMember?.fullName),
+                                            title: `${staffMember?.fullName}: ${teacherIssueCount} cảnh báo lịch`
                                           })}
                                           className="flex items-center gap-1 text-[11px] text-orange-600 bg-orange-50 border border-orange-200 rounded px-1.5 py-0.5 hover:bg-orange-100"
                                         >
-                                          <AlertTriangle className="h-3 w-3" /> Trùng {teacherConflictCount} buổi →
+                                          <AlertTriangle className="h-3 w-3" />
+                                          {teacherConflictCount > 0 && <>Trùng {teacherConflictCount}</>}
+                                          {teacherConflictCount > 0 && teacherAvailabilityCount > 0 && " · "}
+                                          {teacherAvailabilityCount > 0 && <>Ngoài giờ rảnh {teacherAvailabilityCount}</>} →
                                         </button>
                                       )}
                                     </div>

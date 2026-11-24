@@ -2407,8 +2407,77 @@ export function registerConfigRoutes(app: Express): void {
       teacherId: req.query.teacherId as string,
       weekday: req.query.weekday ? parseInt(req.query.weekday as string) : undefined
     };
-    const availabilities = await storage.getTeacherAvailabilities(filters);
-    res.json(availabilities);
+    const [legacyAvailabilities, timeWindows] = await Promise.all([
+      storage.getTeacherAvailabilities(filters),
+      storage.getTeacherAvailabilityWindows(filters),
+    ]);
+    res.json([
+      ...legacyAvailabilities.map((item: any) => ({
+        ...item,
+        availabilityType: "shift",
+        startTime: item.shiftTemplate?.startTime ?? null,
+        endTime: item.shiftTemplate?.endTime ?? null,
+      })),
+      ...timeWindows.map((item) => ({ ...item, availabilityType: "time_window", shiftTemplate: null })),
+    ]);
+  });
+
+  app.post("/api/teacher-availability/windows", async (req, res) => {
+    try {
+      const body = req.body ?? {};
+      const { locationId, teacherIds, windows, effectiveFrom = null, effectiveTo = null } = body;
+      if (
+        typeof locationId !== "string" ||
+        !Array.isArray(teacherIds) || teacherIds.length === 0 ||
+        teacherIds.some((id: unknown) => typeof id !== "string") ||
+        !Array.isArray(windows) || windows.length === 0
+      ) {
+        return res.status(400).json({ message: "Chọn cơ sở, giáo viên và ít nhất một khoảng giờ." });
+      }
+
+      const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+      const normalizedWindows: Array<{ weekday: number; startTime: string; endTime: string }> = [];
+      for (const window of windows) {
+        if (
+          !Number.isInteger(window?.weekday) ||
+          window.weekday < 0 || window.weekday > 6 ||
+          typeof window.startTime !== "string" || !timePattern.test(window.startTime) ||
+          typeof window.endTime !== "string" || !timePattern.test(window.endTime) ||
+          window.startTime >= window.endTime
+        ) {
+          return res.status(400).json({ message: "Mỗi khoảng giờ phải hợp lệ và giờ kết thúc phải sau giờ bắt đầu." });
+        }
+        normalizedWindows.push({
+          weekday: window.weekday,
+          startTime: window.startTime,
+          endTime: window.endTime,
+        });
+      }
+
+      const validDate = (value: unknown): value is string =>
+        value === null ||
+        (typeof value === "string" &&
+          /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+          !Number.isNaN(new Date(`${value}T00:00:00.000Z`).getTime()) &&
+          new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value);
+      if (!validDate(effectiveFrom) || !validDate(effectiveTo)) {
+        return res.status(400).json({ message: "Ngày hiệu lực không hợp lệ." });
+      }
+      if (effectiveFrom && effectiveTo && effectiveTo < effectiveFrom) {
+        return res.status(400).json({ message: "Ngày kết thúc hiệu lực phải bằng hoặc sau ngày bắt đầu." });
+      }
+
+      const created = await storage.createTeacherAvailabilityWindows({
+        locationId,
+        teacherIds: [...new Set(teacherIds as string[])],
+        windows: normalizedWindows,
+        effectiveFrom,
+        effectiveTo,
+      });
+      res.status(201).json(created);
+    } catch (err: any) {
+      res.status(Number(err?.statusCode) || 500).json({ message: err?.message || "Không thể lưu giờ rảnh." });
+    }
   });
 
   app.post("/api/teacher-availability", async (req, res) => {
@@ -2473,6 +2542,20 @@ export function registerConfigRoutes(app: Express): void {
     } catch (err) {
       const statusCode = Number((err as any)?.statusCode) || 500;
       res.status(statusCode).json({ message: (err as any)?.message || "Không thể xóa ca đăng ký." });
+    }
+  });
+
+  app.post("/api/teacher-availability/windows/:id/remove-from-date", async (req, res) => {
+    try {
+      const { date, mode } = req.body ?? {};
+      if (typeof date !== "string" || (mode !== "single" && mode !== "future")) {
+        return res.status(400).json({ message: "Cần chọn ngày và kiểu xóa hợp lệ." });
+      }
+      await storage.removeTeacherAvailabilityWindowFromDate(req.params.id, date, mode);
+      res.status(204).send();
+    } catch (err) {
+      const statusCode = Number((err as any)?.statusCode) || 500;
+      res.status(statusCode).json({ message: (err as any)?.message || "Không thể xóa giờ rảnh." });
     }
   });
 

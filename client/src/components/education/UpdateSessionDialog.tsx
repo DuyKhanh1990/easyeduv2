@@ -234,6 +234,7 @@ export function UpdateSessionDialog({
     .map((s: any) => ({ ...s, _isActive: s.status === "Hoạt động" }));
   const roomConflicts = liveConflicts.filter(c => c.type === "room");
   const teacherConflicts = liveConflicts.filter(c => c.type === "teacher");
+  const availabilityConflicts = liveConflicts.filter(c => c.type === "availability");
   const invalidTimeTeacherIds = teacherTimeAssignments
     .filter((assignment) => !isTeacherTimeRangeWithinShift(
       assignment.startTime,
@@ -572,12 +573,13 @@ export function UpdateSessionDialog({
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="h-4 w-4 shrink-0 text-orange-600" />
                       <span className="text-sm font-semibold text-orange-800">
-                        Phát hiện {liveConflicts.length} xung đột lịch
+                        Có {liveConflicts.length} cảnh báo lịch
                       </span>
                     </div>
                     <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-orange-700">
                       {roomConflicts.length > 0 && <span>{roomConflicts.length} trùng phòng</span>}
                       {teacherConflicts.length > 0 && <span>{teacherConflicts.length} trùng giáo viên</span>}
+                      {availabilityConflicts.length > 0 && <span>{availabilityConflicts.length} giáo viên ngoài giờ rảnh</span>}
                       <span className="ml-auto underline">Xem chi tiết</span>
                     </div>
                   </button>
@@ -642,7 +644,7 @@ export function UpdateSessionDialog({
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
         conflicts={liveConflicts}
-        title={`${liveConflicts.length} buổi trùng lịch — Buổi ${session?.sessionIndex}`}
+        title={`${liveConflicts.length} cảnh báo lịch — Buổi ${session?.sessionIndex}`}
       />
     </>
   );

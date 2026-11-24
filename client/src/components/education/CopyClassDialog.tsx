@@ -779,7 +779,7 @@ export function CopyClassDialog({ open, onClose, sourceClass }: CopyClassDialogP
                           </div>
                           {!isLiveChecking && liveConflicts.length > 0 && (
                             <button type="button"
-                              onClick={() => setConflictDetail({ conflicts: liveConflicts, title: `${liveConflicts.length} buổi trùng lịch` })}
+                              onClick={() => setConflictDetail({ conflicts: liveConflicts, title: `${liveConflicts.length} cảnh báo lịch` })}
                               className="w-full flex items-start gap-2 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded-md px-3 py-2 hover:bg-orange-100 transition-colors text-left"
                             >
                               <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
@@ -902,8 +902,12 @@ export function CopyClassDialog({ open, onClose, sourceClass }: CopyClassDialogP
                               const teacherConflictCount = staffMember?.fullName
                                 ? liveConflicts.filter(c => c.type === "teacher" && c.resourceName === staffMember.fullName).length
                                 : 0;
+                              const teacherAvailabilityCount = staffMember?.fullName
+                                ? liveConflicts.filter(c => c.type === "availability" && c.resourceName === staffMember.fullName).length
+                                : 0;
+                              const teacherIssueCount = teacherConflictCount + teacherAvailabilityCount;
                               return (
-                                <Card key={teacher.teacher_id} className={cn("bg-muted/10 border-dashed", teacherConflictCount > 0 && "border-orange-300")}>
+                                <Card key={teacher.teacher_id} className={cn("bg-muted/10 border-dashed", teacherIssueCount > 0 && "border-orange-300")}>
                                   <CardContent className="pt-3 pb-3 space-y-3">
                                     <div className="flex items-center justify-between">
                                       <div className="flex items-center gap-2">
@@ -911,15 +915,18 @@ export function CopyClassDialog({ open, onClose, sourceClass }: CopyClassDialogP
                                           <User className="h-3.5 w-3.5 text-primary" />
                                         </div>
                                         <span className="font-bold text-sm">{staffMember?.fullName}</span>
-                                        {teacherConflictCount > 0 && (
+                                        {teacherIssueCount > 0 && (
                                           <button type="button"
                                             onClick={() => setConflictDetail({
-                                              conflicts: liveConflicts.filter(c => c.type === "teacher" && c.resourceName === staffMember?.fullName),
-                                              title: `${staffMember?.fullName}: ${teacherConflictCount} buổi trùng`,
+                                              conflicts: liveConflicts.filter(c => (c.type === "teacher" || c.type === "availability") && c.resourceName === staffMember?.fullName),
+                                              title: `${staffMember?.fullName}: ${teacherIssueCount} cảnh báo lịch`,
                                             })}
                                             className="flex items-center gap-1 text-[11px] text-orange-600 bg-orange-50 border border-orange-200 rounded px-1.5 py-0.5"
                                           >
-                                            <AlertTriangle className="h-3 w-3" /> Trùng {teacherConflictCount} buổi →
+                                            <AlertTriangle className="h-3 w-3" />
+                                            {teacherConflictCount > 0 && <>Trùng {teacherConflictCount}</>}
+                                            {teacherConflictCount > 0 && teacherAvailabilityCount > 0 && " · "}
+                                            {teacherAvailabilityCount > 0 && <>Ngoài giờ rảnh {teacherAvailabilityCount}</>} →
                                           </button>
                                         )}
                                       </div>

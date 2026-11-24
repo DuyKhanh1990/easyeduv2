@@ -7233,6 +7233,7 @@ export function registerClassesRoutes(app: Express): void {
           sessions.push({
             sessionDate: dateStr,
             shiftTemplateId,
+            locationId: req.body.locationId ?? req.body.location_id ?? null,
             roomId: shift.room_id || shift.roomId || null,
             teacherIds: teacherIds.length > 0 ? teacherIds : null,
             teacherTimeAssignments: buildTeacherTimeAssignments(
