@@ -273,7 +273,7 @@ export default function MyAvailability() {
           <Card>
             <CardContent className="py-10 text-center text-sm text-muted-foreground">
               {(availabilityQuery.error as Error).message.includes("chưa được bật")
-                ? "Đăng ký lịch rảnh hiện đang tắt. Super Admin có thể bật mục này trong Cài đặt hệ thống."
+                ? "Đăng ký lịch rảnh hiện đang tắt."
                 : (availabilityQuery.error as Error).message}
             </CardContent>
           </Card>
