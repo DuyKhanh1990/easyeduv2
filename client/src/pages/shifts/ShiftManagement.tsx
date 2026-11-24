@@ -1109,7 +1109,9 @@ export function ShiftManagement() {
                       <DialogTitle>Đăng ký giờ rảnh giáo viên</DialogTitle>
                     </DialogHeader>
                     <Form {...form}>
-                      <form onSubmit={form.handleSubmit((v) => createMutation.mutate(v))} className="space-y-4">
+                      <form onSubmit={form.handleSubmit((v) => createMutation.mutate(v))} className="space-y-5">
+                        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                          <div className="space-y-4">
                         <FormField
                           control={form.control}
                           name="locationId"
@@ -1167,6 +1169,30 @@ export function ShiftManagement() {
                           )}
                         />
 
+                        <FormField
+                          control={form.control}
+                          name="effectiveFrom"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Từ ngày</FormLabel>
+                              <FormControl><Input type="date" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="effectiveTo"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Đến ngày</FormLabel>
+                              <FormControl><Input type="date" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                          </div>
+                          <div className="space-y-4">
                         <FormField
                           control={form.control}
                           name="weekdays"
@@ -1237,7 +1263,7 @@ export function ShiftManagement() {
                                   </FormLabel>
                                   {selectedDays.length > 0 ? (
                                     <div className="overflow-hidden rounded-xl border">
-                                      <div className="grid grid-cols-[76px_minmax(0,1fr)_64px] items-center border-b bg-muted/40 px-4 py-3 text-sm font-semibold">
+                                      <div className="grid grid-cols-[48px_minmax(0,1fr)_40px] items-center border-b bg-muted/40 px-2 py-3 text-sm font-semibold">
                                         <div>Thứ</div>
                                         <div>Khoảng thời gian</div>
                                         <div className="text-center">Thêm</div>
@@ -1250,15 +1276,16 @@ export function ShiftManagement() {
                                         return (
                                           <div
                                             key={dayKey}
-                                            className="grid grid-cols-[76px_minmax(0,1fr)_64px] items-center gap-3 border-b px-4 py-3 last:border-b-0"
+                                            className="grid grid-cols-[48px_minmax(0,1fr)_40px] items-center gap-2 border-b px-2 py-3 last:border-b-0"
                                           >
                                             <div className="font-bold text-primary">{dayLabel}</div>
                                             <div className="space-y-2">
                                               {dayWindows.map((window, index) => (
                                                 <div key={`${dayKey}-${index}`} className="space-y-1">
-                                                  <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_32px] items-center gap-2">
+                                                  <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_32px] items-center gap-1.5">
                                                     <Input
                                                       type="time"
+                                                      className="min-w-0 px-2"
                                                       value={window.startTime}
                                                       onChange={(event) => {
                                                         const next = [...dayWindows];
@@ -1270,6 +1297,7 @@ export function ShiftManagement() {
                                                     <span className="text-sm text-muted-foreground">đến</span>
                                                     <Input
                                                       type="time"
+                                                      className="min-w-0 px-2"
                                                       value={window.endTime}
                                                       onChange={(event) => {
                                                         const next = [...dayWindows];
@@ -1309,7 +1337,7 @@ export function ShiftManagement() {
                                               type="button"
                                               variant="ghost"
                                               size="icon"
-                                              className="mx-auto h-9 w-9 text-primary hover:bg-primary/10 hover:text-primary"
+                                              className="mx-auto h-8 w-8 text-primary hover:bg-primary/10 hover:text-primary"
                                               onClick={() => updateDay(weekday, [...dayWindows, { startTime: "", endTime: "" }])}
                                               aria-label={`Thêm khoảng giờ ${dayLabel}`}
                                               title={`Thêm khoảng giờ ${dayLabel}`}
@@ -1331,30 +1359,7 @@ export function ShiftManagement() {
                             );
                           }}
                         />
-
-                        <div className="grid grid-cols-2 gap-4">
-                          <FormField
-                            control={form.control}
-                            name="effectiveFrom"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Từ ngày</FormLabel>
-                                <FormControl><Input type="date" {...field} /></FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="effectiveTo"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Đến ngày</FormLabel>
-                                <FormControl><Input type="date" {...field} /></FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
+                          </div>
                         </div>
 
                         <DialogFooter>
