@@ -1106,7 +1106,7 @@ export function ShiftManagement() {
                   </DialogTrigger>
                   <DialogContent className="w-[85vw] max-w-[85vw] max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                                <DialogTitle>Đăng ký giờ rảnh giáo viên</DialogTitle>
+                      <DialogTitle>Đăng ký giờ rảnh giáo viên</DialogTitle>
                     </DialogHeader>
                     <Form {...form}>
                       <form onSubmit={form.handleSubmit((v) => createMutation.mutate(v))} className="space-y-4">
@@ -1121,7 +1121,7 @@ export function ShiftManagement() {
                                 onValueChange={(locationId) => {
                                   field.onChange(locationId);
                                   form.setValue("teacherIds", []);
-                                    form.clearErrors("teacherIds");
+                                  form.clearErrors("teacherIds");
                                 }}
                               >
                                 <FormControl>
@@ -1173,14 +1173,14 @@ export function ShiftManagement() {
                           render={() => (
                             <FormItem>
                               <FormLabel>Ngày trong tuần</FormLabel>
-                              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+                              <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-xl border bg-muted/20 px-5 py-4">
                                 {weekdays.map((w) => (
                                   <FormField
                                     key={w.id}
                                     control={form.control}
                                     name="weekdays"
                                     render={({ field }) => (
-                                      <FormItem className="flex items-center space-x-2 space-y-0">
+                                      <FormItem className="flex min-w-[88px] items-center gap-2 space-y-0">
                                         <FormControl>
                                           <Checkbox
                                             checked={field.value?.includes(w.id)}
@@ -1206,7 +1206,9 @@ export function ShiftManagement() {
                                             }}
                                           />
                                         </FormControl>
-                                        <FormLabel className="text-sm font-normal cursor-pointer">{w.label}</FormLabel>
+                                        <FormLabel className="cursor-pointer text-sm font-medium">
+                                          {w.label === "Chủ Nhật" ? "CN" : w.label.replace("Thứ ", "T")}
+                                        </FormLabel>
                                       </FormItem>
                                     )}
                                   />
@@ -1229,81 +1231,100 @@ export function ShiftManagement() {
                             };
                             return (
                               <FormItem>
-                                <FormLabel>Khoảng giờ rảnh theo từng ngày</FormLabel>
-                                <div className="space-y-3">
-                                  {selectedDays.map((weekday) => {
-                                    const dayKey = String(weekday);
-                                    const dayWindows = windowsByDay[dayKey] ?? [];
-                                    return (
-                                      <div key={dayKey} className="rounded-lg border bg-muted/20 p-3">
-                                        <div className="mb-2 font-medium text-sm">
-                                          {weekdays.find((day) => day.id === weekday)?.label}
-                                        </div>
-                                        <div className="space-y-2">
-                                          {dayWindows.map((window, index) => (
-                                            <div key={`${dayKey}-${index}`} className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
-                                              <div>
-                                                <Input
-                                                  type="time"
-                                                  value={window.startTime}
-                                                  onChange={(event) => {
-                                                    const next = [...dayWindows];
-                                                    next[index] = { ...next[index], startTime: event.target.value };
-                                                    updateDay(weekday, next);
-                                                  }}
-                                                  aria-label={`${weekdays.find((day) => day.id === weekday)?.label} giờ bắt đầu, khoảng ${index + 1}`}
-                                                />
-                                                {(form.formState.errors as any).dayWindows?.[dayKey]?.[index]?.startTime?.message && (
-                                                  <p className="mt-1 text-xs text-destructive">
-                                                    {(form.formState.errors as any).dayWindows[dayKey][index].startTime.message}
-                                                  </p>
-                                                )}
-                                              </div>
-                                              <span className="text-sm text-muted-foreground">đến</span>
-                                              <div>
-                                                <Input
-                                                  type="time"
-                                                  value={window.endTime}
-                                                  onChange={(event) => {
-                                                    const next = [...dayWindows];
-                                                    next[index] = { ...next[index], endTime: event.target.value };
-                                                    updateDay(weekday, next);
-                                                  }}
-                                                  aria-label={`${weekdays.find((day) => day.id === weekday)?.label} giờ kết thúc, khoảng ${index + 1}`}
-                                                />
-                                                {(form.formState.errors as any).dayWindows?.[dayKey]?.[index]?.endTime?.message && (
-                                                  <p className="mt-1 text-xs text-destructive">
-                                                    {(form.formState.errors as any).dayWindows[dayKey][index].endTime.message}
-                                                  </p>
-                                                )}
-                                              </div>
-                                              <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="icon"
-                                                className="text-destructive hover:text-destructive"
-                                                disabled={dayWindows.length <= 1}
-                                                onClick={() => updateDay(weekday, dayWindows.filter((_, rowIndex) => rowIndex !== index))}
-                                                aria-label="Xóa khoảng giờ"
-                                              >
-                                                <X className="h-4 w-4" />
-                                              </Button>
-                                            </div>
-                                          ))}
-                                        </div>
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          size="sm"
-                                          className="mt-2"
-                                          onClick={() => updateDay(weekday, [...dayWindows, { startTime: "", endTime: "" }])}
-                                        >
-                                          <Plus className="mr-1 h-3.5 w-3.5" />
-                                          Thêm khoảng giờ
-                                        </Button>
+                                <div className="space-y-2">
+                                  <FormLabel className="text-base font-semibold uppercase tracking-wide">
+                                    Khoảng giờ rảnh theo thứ
+                                  </FormLabel>
+                                  {selectedDays.length > 0 ? (
+                                    <div className="overflow-hidden rounded-xl border">
+                                      <div className="grid grid-cols-[76px_minmax(0,1fr)_64px] items-center border-b bg-muted/40 px-4 py-3 text-sm font-semibold">
+                                        <div>Thứ</div>
+                                        <div>Khoảng thời gian</div>
+                                        <div className="text-center">Thêm</div>
                                       </div>
-                                    );
-                                  })}
+                                      {selectedDays.map((weekday) => {
+                                        const dayKey = String(weekday);
+                                        const dayWindows = windowsByDay[dayKey] ?? [];
+                                        const weekdayLabel = weekdays.find((day) => day.id === weekday)?.label;
+                                        const dayLabel = weekdayLabel === "Chủ Nhật" ? "CN" : weekdayLabel?.replace("Thứ ", "T") ?? "CN";
+                                        return (
+                                          <div
+                                            key={dayKey}
+                                            className="grid grid-cols-[76px_minmax(0,1fr)_64px] items-center gap-3 border-b px-4 py-3 last:border-b-0"
+                                          >
+                                            <div className="font-bold text-primary">{dayLabel}</div>
+                                            <div className="space-y-2">
+                                              {dayWindows.map((window, index) => (
+                                                <div key={`${dayKey}-${index}`} className="space-y-1">
+                                                  <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_32px] items-center gap-2">
+                                                    <Input
+                                                      type="time"
+                                                      value={window.startTime}
+                                                      onChange={(event) => {
+                                                        const next = [...dayWindows];
+                                                        next[index] = { ...next[index], startTime: event.target.value };
+                                                        updateDay(weekday, next);
+                                                      }}
+                                                      aria-label={`${dayLabel} giờ bắt đầu, khoảng ${index + 1}`}
+                                                    />
+                                                    <span className="text-sm text-muted-foreground">đến</span>
+                                                    <Input
+                                                      type="time"
+                                                      value={window.endTime}
+                                                      onChange={(event) => {
+                                                        const next = [...dayWindows];
+                                                        next[index] = { ...next[index], endTime: event.target.value };
+                                                        updateDay(weekday, next);
+                                                      }}
+                                                      aria-label={`${dayLabel} giờ kết thúc, khoảng ${index + 1}`}
+                                                    />
+                                                    <Button
+                                                      type="button"
+                                                      variant="ghost"
+                                                      size="icon"
+                                                      className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                                      disabled={dayWindows.length <= 1}
+                                                      onClick={() => updateDay(weekday, dayWindows.filter((_, rowIndex) => rowIndex !== index))}
+                                                      aria-label="Xóa khoảng giờ"
+                                                    >
+                                                      <X className="h-4 w-4" />
+                                                    </Button>
+                                                  </div>
+                                                  <div className="grid grid-cols-2 gap-2">
+                                                    {(form.formState.errors as any).dayWindows?.[dayKey]?.[index]?.startTime?.message && (
+                                                      <p className="text-xs text-destructive">
+                                                        {(form.formState.errors as any).dayWindows[dayKey][index].startTime.message}
+                                                      </p>
+                                                    )}
+                                                    {(form.formState.errors as any).dayWindows?.[dayKey]?.[index]?.endTime?.message && (
+                                                      <p className="text-xs text-destructive">
+                                                        {(form.formState.errors as any).dayWindows[dayKey][index].endTime.message}
+                                                      </p>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="icon"
+                                              className="mx-auto h-9 w-9 text-primary hover:bg-primary/10 hover:text-primary"
+                                              onClick={() => updateDay(weekday, [...dayWindows, { startTime: "", endTime: "" }])}
+                                              aria-label={`Thêm khoảng giờ ${dayLabel}`}
+                                              title={`Thêm khoảng giờ ${dayLabel}`}
+                                            >
+                                              <Plus className="h-5 w-5" />
+                                            </Button>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <div className="rounded-lg border border-dashed px-4 py-5 text-center text-sm text-muted-foreground">
+                                      Chọn thứ trong tuần để nhập giờ rảnh.
+                                    </div>
+                                  )}
                                 </div>
                                 <FormMessage />
                               </FormItem>
