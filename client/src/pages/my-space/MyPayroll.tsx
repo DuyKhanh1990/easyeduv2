@@ -741,8 +741,8 @@ function SalaryTableGrid({
               return (
                 <tr key={row.classId} className="hover:bg-muted/10 transition-colors bg-background">
                   <td
-                    className="sticky left-0 z-10 px-3 py-2.5 border-b border-border bg-white dark:bg-gray-950 whitespace-nowrap"
-                    style={{ boxShadow: "1px 0 0 0 hsl(var(--border))" }}
+                    className="px-3 py-2.5 border-b border-border whitespace-nowrap"
+                    style={{ position: "sticky", left: 0, zIndex: 10, backgroundColor: "hsl(var(--background))", width: COL_CLASS, minWidth: COL_CLASS, boxShadow: "1px 0 0 0 hsl(var(--border))" }}
                   >
                     <div className="flex items-center gap-1.5">
                       <BookOpen className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
@@ -836,8 +836,8 @@ function SalaryTableGrid({
                       ))}
 
                   <td
-                    className="sticky right-[110px] z-10 border-l border-b border-border px-3 py-2.5 text-center whitespace-nowrap text-xs bg-white dark:bg-gray-950"
-                    style={{ boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
+                    className="border-l border-b border-border px-3 py-2.5 text-center whitespace-nowrap text-xs"
+                    style={{ position: "sticky", right: COL_TONG_LUONG, zIndex: 10, backgroundColor: "hsl(var(--background))", width: COL_TONG_SO, minWidth: COL_TONG_SO, boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
                   >
                     {tongSo.value === "—" ? (
                       <span className="text-muted-foreground">—</span>
@@ -854,8 +854,8 @@ function SalaryTableGrid({
                   </td>
 
                   <td
-                    className="sticky right-0 z-10 border-l border-b border-border px-3 py-2.5 text-center whitespace-nowrap text-xs bg-white dark:bg-gray-950"
-                    style={{ boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
+                    className="border-l border-b border-border px-3 py-2.5 text-center whitespace-nowrap text-xs"
+                    style={{ position: "sticky", right: 0, zIndex: 10, backgroundColor: "hsl(var(--background))", width: COL_TONG_LUONG, minWidth: COL_TONG_LUONG, boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
                   >
                     {totalSalary !== null && totalSalary > 0 ? (
                        <span className="font-semibold text-emerald-600">{formatMoney(totalSalary, lang)}</span>
@@ -870,7 +870,8 @@ function SalaryTableGrid({
             <tr className="bg-gray-50 dark:bg-gray-900 font-semibold">
               <td
                 colSpan={3}
-                className="sticky left-0 z-10 px-4 py-2.5 text-xs text-right text-foreground border-t border-border bg-gray-50 dark:bg-gray-900"
+                className="px-4 py-2.5 text-xs text-right text-foreground border-t border-border bg-gray-50 dark:bg-gray-900"
+                style={{ position: "sticky", left: 0, zIndex: 10, backgroundColor: "hsl(var(--muted))" }}
               >
                  {t("mySpace.payroll.total")}
               </td>
@@ -879,12 +880,12 @@ function SalaryTableGrid({
                 className="border-t border-border bg-gray-50 dark:bg-gray-900"
               />
               <td
-                className="sticky right-[110px] z-10 border-l border-t border-border px-3 py-2.5 text-center text-xs bg-gray-50 dark:bg-gray-900"
-                style={{ boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
+                className="border-l border-t border-border px-3 py-2.5 text-center text-xs bg-gray-50 dark:bg-gray-900"
+                style={{ position: "sticky", right: COL_TONG_LUONG, zIndex: 10, width: COL_TONG_SO, minWidth: COL_TONG_SO, backgroundColor: "hsl(var(--muted))", boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
               />
               <td
-                className="sticky right-0 z-10 border-l border-t border-border px-3 py-2.5 text-center text-sm font-bold text-emerald-600 bg-gray-50 dark:bg-gray-900"
-                style={{ boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
+                className="border-l border-t border-border px-3 py-2.5 text-center text-sm font-bold text-emerald-600 bg-gray-50 dark:bg-gray-900"
+                style={{ position: "sticky", right: 0, zIndex: 10, width: COL_TONG_LUONG, minWidth: COL_TONG_LUONG, backgroundColor: "hsl(var(--muted))", boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
               >
                  {formatMoney(grandTotal, lang)}
               </td>
