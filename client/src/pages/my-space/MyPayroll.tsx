@@ -640,31 +640,43 @@ function SalaryTableGrid({
         )}
       </div>
 
-      {/* Table — no overflow wrapper; parent scroll container handles both axes */}
+      {/* The parent scroll container handles both axes; fixed column widths keep sticky cells aligned. */}
       <table
-          className="text-sm"
-          style={{
-            minWidth: `${COL_CLASS + COL_PKG + COL_ROLE + numDateCols * DATE_COL + COL_TONG_SO + COL_TONG_LUONG}px`,
-            borderCollapse: "separate",
-            borderSpacing: 0,
-          }}
-        >
-          <thead className="sticky top-0 z-20">
-            <tr className="bg-muted/40" style={{ boxShadow: "0 1px 0 0 hsl(var(--border))" }}>
+        className="text-sm"
+        style={{
+          width: `${COL_CLASS + COL_PKG + COL_ROLE + numDateCols * DATE_COL + COL_TONG_SO + COL_TONG_LUONG}px`,
+          minWidth: `${COL_CLASS + COL_PKG + COL_ROLE + numDateCols * DATE_COL + COL_TONG_SO + COL_TONG_LUONG}px`,
+          tableLayout: "fixed",
+          borderCollapse: "separate",
+          borderSpacing: 0,
+        }}
+      >
+        <colgroup>
+          <col style={{ width: COL_CLASS }} />
+          <col style={{ width: COL_PKG }} />
+          <col style={{ width: COL_ROLE }} />
+          {Array.from({ length: numDateCols }).map((_, index) => (
+            <col key={index} style={{ width: DATE_COL }} />
+          ))}
+          <col style={{ width: COL_TONG_SO }} />
+          <col style={{ width: COL_TONG_LUONG }} />
+        </colgroup>
+        <thead>
+          <tr className="bg-muted/40" style={{ boxShadow: "0 1px 0 0 hsl(var(--border))" }}>
               <th
-                className="sticky left-0 z-30 text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap bg-white dark:bg-gray-950"
+                className="sticky left-0 top-0 z-40 text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap bg-muted/40"
                 style={{ width: COL_CLASS, minWidth: COL_CLASS, boxShadow: "1px 0 0 0 hsl(var(--border))" }}
               >
                  {t("mySpace.payroll.className")}
               </th>
               <th
-                className="text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap"
+                className="sticky top-0 z-20 text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap bg-muted/40"
                 style={{ width: COL_PKG, minWidth: COL_PKG, boxShadow: "1px 0 0 0 hsl(var(--border))" }}
               >
                  {t("mySpace.payroll.salaryPackage")}
               </th>
               <th
-                className="text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap"
+                className="sticky top-0 z-20 text-left px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap bg-muted/40"
                 style={{ width: COL_ROLE, minWidth: COL_ROLE, boxShadow: "1px 0 0 0 hsl(var(--border))" }}
               >
                  {t("mySpace.payroll.role")}
@@ -680,7 +692,7 @@ function SalaryTableGrid({
                       <th
                         key={date.toISOString()}
                         className={cn(
-                          "px-0 py-2 text-center text-xs font-semibold whitespace-nowrap border-l border-border",
+                          "sticky top-0 z-20 px-0 py-2 text-center text-xs font-semibold whitespace-nowrap border-l border-border bg-muted/40",
                           isWeekend ? "text-red-500" : "text-muted-foreground"
                         )}
                         style={{ width: DATE_COL, minWidth: DATE_COL }}
@@ -692,7 +704,7 @@ function SalaryTableGrid({
                 : Array.from({ length: 8 }).map((_, i) => (
                     <th
                       key={i}
-                      className="px-0 py-2 text-center text-xs font-semibold whitespace-nowrap border-l border-border text-muted-foreground"
+                      className="sticky top-0 z-20 px-0 py-2 text-center text-xs font-semibold whitespace-nowrap border-l border-border text-muted-foreground bg-muted/40"
                       style={{ width: DATE_COL, minWidth: DATE_COL }}
                     >
                       <div className="text-[10px]">--/--</div>
@@ -700,13 +712,13 @@ function SalaryTableGrid({
                   ))}
 
               <th
-                className="sticky right-[110px] z-30 text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap bg-white dark:bg-gray-950"
+                className="sticky top-0 right-[110px] z-40 text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap bg-muted/40"
                 style={{ width: COL_TONG_SO, minWidth: COL_TONG_SO, boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
               >
                  {t("mySpace.payroll.totalCount")}
               </th>
               <th
-                className="sticky right-0 z-30 text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap bg-white dark:bg-gray-950"
+                className="sticky top-0 right-0 z-40 text-center px-3 py-2.5 text-xs font-semibold text-muted-foreground whitespace-nowrap bg-muted/40"
                 style={{ width: COL_TONG_LUONG, minWidth: COL_TONG_LUONG, boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
               >
                  {t("mySpace.payroll.totalSalary")}
@@ -852,11 +864,15 @@ function SalaryTableGrid({
 
             <tr className="bg-gray-50 dark:bg-gray-900 font-semibold">
               <td
-                colSpan={3 + numDateCols}
-                className="sticky left-0 px-4 py-2.5 text-xs text-right text-foreground border-t border-border bg-gray-50 dark:bg-gray-900"
+                colSpan={3}
+                className="sticky left-0 z-10 px-4 py-2.5 text-xs text-right text-foreground border-t border-border bg-gray-50 dark:bg-gray-900"
               >
                  {t("mySpace.payroll.total")}
               </td>
+              <td
+                colSpan={numDateCols}
+                className="border-t border-border bg-gray-50 dark:bg-gray-900"
+              />
               <td
                 className="sticky right-[110px] z-10 border-l border-t border-border px-3 py-2.5 text-center text-xs bg-gray-50 dark:bg-gray-900"
                 style={{ boxShadow: "-1px 0 0 0 hsl(var(--border))" }}
