@@ -247,7 +247,7 @@ export default function MyAvailability() {
   return (
     <DashboardLayout>
       <div className="flex h-full min-h-0 flex-col gap-4 p-4 md:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
           <div>
             <h1 className="flex items-center gap-2 text-xl font-semibold">
               <CalendarDays className="h-5 w-5 text-primary" />
@@ -257,12 +257,6 @@ export default function MyAvailability() {
               Xem và đăng ký giờ rảnh của bạn tại các cơ sở được phân công.
             </p>
           </div>
-          {availabilityQuery.data && (
-            <Button onClick={openCreateDialog} disabled={locations.length === 0} className="gap-2">
-              <Plus className="h-4 w-4" />
-              Đăng ký mới
-            </Button>
-          )}
         </div>
 
         {isPageLoading ? (
@@ -288,7 +282,13 @@ export default function MyAvailability() {
                   Ô trống là ngày không có giờ rảnh đăng ký. Chỉ hiển thị lịch của bạn.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {availabilityQuery.data && (
+                  <Button onClick={openCreateDialog} disabled={locations.length === 0} className="gap-2">
+                    <Plus className="h-4 w-4" />
+                    Đăng ký mới
+                  </Button>
+                )}
                 <Button variant="outline" size="icon" onClick={() => setVisibleMonth((month) => subMonths(month, 1))} aria-label="Tháng trước">
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
