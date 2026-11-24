@@ -4,6 +4,7 @@ import { db, eq, inArray } from "../storage/base";
 import { invoices, invoiceItems, students } from "../storage/base";
 import { financePromotions, invoicePaymentSchedule } from "@shared/schema";
 import { matbao, type MatBaoAdjustment } from "../lib/matbao.service";
+import { getMatBaoInvoiceQuantity, isCoursePackageType } from "../lib/matbao-invoice-mapping";
 import { getUniformInvoicePromotionVatRate } from "@shared/invoice-promotion-vat";
 
 const signSchema = z.object({
@@ -201,8 +202,8 @@ export function registerEInvoiceRoutes(app: Express) {
         ? items.flatMap(it => {
             const price = parseFloat(it.unitPrice ?? "0");
             const qty = it.quantity ?? 1;
-            const isCoursePackage = it.packageType === "khoá";
-            const exportQty = isCoursePackage ? 1 : qty;
+            const isCoursePackage = isCoursePackageType(it.packageType);
+            const exportQty = getMatBaoInvoiceQuantity(it.packageType, qty);
             const base = price * exportQty;
             const isSurchargeLine = String(it.category ?? "").toLowerCase() === "phụ thu";
             const taxRate = it.packageType === "buổi" || it.packageType === "Kho" || isSurchargeLine
