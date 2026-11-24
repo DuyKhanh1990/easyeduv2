@@ -1395,7 +1395,10 @@ export function ShiftManagement() {
                         {boardDays.map((day) => (
                           <TableHead
                             key={day.day}
-                            className={cn("min-w-[112px] px-2 text-center", day.isWeekend && "bg-orange-50 text-orange-700")}
+                            className={cn(
+                              "min-w-[112px] border-r border-border/50 px-2 text-center last:border-r-0",
+                              day.isWeekend && "bg-orange-50 text-orange-700",
+                            )}
                           >
                             <div className="text-xs font-normal">{dayOfWeekShort[day.dow]}</div>
                             <div className="text-sm font-semibold">{day.day}</div>
@@ -1432,7 +1435,10 @@ export function ShiftManagement() {
                             {row.perDay.map((items, index) => (
                               <TableCell
                                 key={index}
-                                className={cn("px-2 align-top", boardDays[index].isWeekend && "bg-orange-50/40")}
+                                className={cn(
+                                  "border-r border-border/50 px-2 align-top last:border-r-0",
+                                  boardDays[index].isWeekend && "bg-orange-50/40",
+                                )}
                               >
                                 <div className="flex min-h-7 flex-col gap-1">
                                   {[...items].sort((a: any, b: any) =>
@@ -1452,7 +1458,7 @@ export function ShiftManagement() {
                                           <Button
                                             variant="ghost"
                                             size="icon"
-                                            className="h-6 w-6 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                            className="h-5 w-5 shrink-0 p-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                                             data-testid={`button-delete-availability-${item.id}-${index}`}
                                             aria-label="Xóa giờ rảnh đã đăng ký"
                                             title="Xóa giờ rảnh đã đăng ký"
@@ -1463,7 +1469,7 @@ export function ShiftManagement() {
                                               availabilityType: item.availabilityType,
                                             })}
                                           >
-                                            <X className="h-3 w-3" />
+                                            <X className="h-2.5 w-2.5" />
                                           </Button>
                                         )}
                                       </div>
