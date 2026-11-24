@@ -174,12 +174,18 @@ async function isMySpaceAvailabilityEnabled() {
   const [setting] = await db
     .select({ value: systemSettings.value })
     .from(systemSettings)
-    .where(eq(systemSettings.key, "mySpaceAvailabilityEnabled"))
+    .where(eq(systemSettings.key, "sidebarVisibility"))
     .limit(1);
-  return setting?.value === "true";
+  if (!setting?.value) return false;
+  try {
+    const visibility = JSON.parse(setting.value) as Record<string, boolean>;
+    return visibility["item:/my-space/availability"] === true;
+  } catch {
+    return false;
+  }
 }
 
-async function getAvailabilityStaff(userId: string, staffId?: string | null) {
+async function getAvailabilityStaff(userId: string, staffId?: string | null, isSuperAdmin = false) {
   const staffRecord = await getStaffForUser(userId);
   let resolvedStaff = staffRecord;
   if (!resolvedStaff && staffId) {
@@ -190,7 +196,7 @@ async function getAvailabilityStaff(userId: string, staffId?: string | null) {
       .limit(1);
     resolvedStaff = staffById ?? null;
   }
-  if (!resolvedStaff || !(await isStaffInDaotaoDept(resolvedStaff.id))) return null;
+  if (!resolvedStaff || (!isSuperAdmin && !(await isStaffInDaotaoDept(resolvedStaff.id)))) return null;
   return resolvedStaff;
 }
 
@@ -1331,7 +1337,7 @@ export function registerMySpaceRoutes(app: Express): void {
         return res.status(404).json({ message: "Tính năng đăng ký lịch rảnh hiện chưa được bật." });
       }
       const user = req.user as any;
-      const staffRecord = await getAvailabilityStaff(String(user.id), req.staffId);
+      const staffRecord = await getAvailabilityStaff(String(user.id), req.staffId, req.isSuperAdmin === true);
       if (!staffRecord?.id) return res.status(403).json({ message: "Chỉ nhân sự thuộc Phòng Đào tạo mặc định mới có thể đăng ký lịch rảnh." });
 
       const [assignedLocations, legacyAvailabilities, timeWindows] = await Promise.all([
@@ -1369,7 +1375,7 @@ export function registerMySpaceRoutes(app: Express): void {
         return res.status(404).json({ message: "Tính năng đăng ký lịch rảnh hiện chưa được bật." });
       }
       const user = req.user as any;
-      const staffRecord = await getAvailabilityStaff(String(user.id), req.staffId);
+      const staffRecord = await getAvailabilityStaff(String(user.id), req.staffId, req.isSuperAdmin === true);
       if (!staffRecord?.id) return res.status(403).json({ message: "Chỉ nhân sự thuộc Phòng Đào tạo mặc định mới có thể đăng ký lịch rảnh." });
 
       const body = z.object({
@@ -1418,7 +1424,7 @@ export function registerMySpaceRoutes(app: Express): void {
         return res.status(404).json({ message: "Tính năng đăng ký lịch rảnh hiện chưa được bật." });
       }
       const user = req.user as any;
-      const staffRecord = await getAvailabilityStaff(String(user.id), req.staffId);
+      const staffRecord = await getAvailabilityStaff(String(user.id), req.staffId, req.isSuperAdmin === true);
       if (!staffRecord?.id) return res.status(403).json({ message: "Chỉ nhân sự thuộc Phòng Đào tạo mặc định mới có thể đăng ký lịch rảnh." });
       const { date, mode } = z.object({
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -1448,7 +1454,7 @@ export function registerMySpaceRoutes(app: Express): void {
         return res.status(404).json({ message: "Tính năng đăng ký lịch rảnh hiện chưa được bật." });
       }
       const user = req.user as any;
-      const staffRecord = await getAvailabilityStaff(String(user.id), req.staffId);
+      const staffRecord = await getAvailabilityStaff(String(user.id), req.staffId, req.isSuperAdmin === true);
       if (!staffRecord?.id) return res.status(403).json({ message: "Chỉ nhân sự thuộc Phòng Đào tạo mặc định mới có thể đăng ký lịch rảnh." });
       const { date, mode } = z.object({
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

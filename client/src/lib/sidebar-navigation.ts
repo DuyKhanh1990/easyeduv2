@@ -94,7 +94,7 @@ export const navigation: NavEntry[] = [
       { name: "Hoá đơn của tôi", href: "/my-space/invoices", icon: FileText },
       { name: "Bảng lương của tôi", href: "/my-space/payroll", icon: Wallet },
       { name: "Đơn từ của tôi", href: "/my-space/don-tu", icon: FileText },
-      { name: "Đăng ký lịch rảnh", href: "/my-space/availability", icon: CalendarDays }
+      { name: "Đăng ký lịch rảnh", href: "/my-space/availability", icon: CalendarDays, defaultVisible: false }
     ]
   },
   {

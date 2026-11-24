@@ -115,14 +115,6 @@ export default function MyAvailability() {
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 
-  const featureQuery = useQuery<{ enabled: boolean }>({
-    queryKey: ["/api/system-settings/my-space-availability"],
-    queryFn: async () => {
-      const response = await fetch("/api/system-settings/my-space-availability", { credentials: "include" });
-      if (!response.ok) throw new Error("Không thể kiểm tra cài đặt tính năng.");
-      return response.json();
-    },
-  });
   const availabilityQuery = useQuery<MyAvailabilityData>({
     queryKey: ["/api/my-space/availability"],
     queryFn: async () => {
@@ -131,7 +123,6 @@ export default function MyAvailability() {
       if (!response.ok) throw new Error(payload.message || "Không thể tải lịch rảnh.");
       return payload;
     },
-    enabled: featureQuery.data?.enabled === true,
   });
   const data = availabilityQuery.data;
   const locations = data?.assignedLocations ?? [];
@@ -251,7 +242,7 @@ export default function MyAvailability() {
   };
 
   const titleMonth = format(visibleMonth, "M/yyyy");
-  const isPageLoading = featureQuery.isLoading || (featureQuery.data?.enabled === true && availabilityQuery.isLoading);
+  const isPageLoading = availabilityQuery.isLoading;
 
   return (
     <DashboardLayout>
@@ -266,7 +257,7 @@ export default function MyAvailability() {
               Xem và đăng ký giờ rảnh của bạn tại các cơ sở được phân công.
             </p>
           </div>
-          {featureQuery.data?.enabled && (
+          {availabilityQuery.data && (
             <Button onClick={openCreateDialog} disabled={locations.length === 0} className="gap-2">
               <Plus className="h-4 w-4" />
               Đăng ký mới
@@ -278,12 +269,14 @@ export default function MyAvailability() {
           <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Đang tải...
           </div>
-        ) : featureQuery.isError ? (
-          <Card><CardContent className="py-10 text-center text-sm text-destructive">{(featureQuery.error as Error).message}</CardContent></Card>
-        ) : featureQuery.data?.enabled !== true ? (
-          <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Tính năng đăng ký lịch rảnh hiện chưa được bật.</CardContent></Card>
         ) : availabilityQuery.isError ? (
-          <Card><CardContent className="py-10 text-center text-sm text-destructive">{(availabilityQuery.error as Error).message}</CardContent></Card>
+          <Card>
+            <CardContent className="py-10 text-center text-sm text-muted-foreground">
+              {(availabilityQuery.error as Error).message.includes("chưa được bật")
+                ? "Đăng ký lịch rảnh hiện đang tắt. Super Admin có thể bật mục này trong Cài đặt hệ thống."
+                : (availabilityQuery.error as Error).message}
+            </CardContent>
+          </Card>
         ) : (
           <Card className="flex min-h-0 flex-1 flex-col">
             <CardHeader className="flex flex-wrap flex-row items-center justify-between gap-3 py-3">

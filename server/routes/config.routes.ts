@@ -2763,6 +2763,7 @@ export function registerConfigRoutes(app: Express): void {
           "subtab:/shifts:register": false,
           "item:/reconciliation": false,
         };
+        const availabilityMigrationKey = "sidebarVisibilityAvailabilityDefaultOffV1";
         await tx.insert(systemSettings)
           .values({ key: migrationKey, value: "pending" })
           .onConflictDoNothing();
@@ -2776,8 +2777,18 @@ export function registerConfigRoutes(app: Express): void {
           .where(eq(systemSettings.key, "sidebarVisibility"))
           .limit(1);
         const current = row ? JSON.parse(row.value) as Record<string, boolean> : {};
+        const [availabilityMigration] = await tx.select({ value: systemSettings.value })
+          .from(systemSettings)
+          .where(eq(systemSettings.key, availabilityMigrationKey))
+          .for("update")
+          .limit(1);
         if (migration?.value !== "done") {
           Object.assign(current, defaultOffs);
+        }
+        if (availabilityMigration?.value !== "done") {
+          current["item:/my-space/availability"] = false;
+        }
+        if (migration?.value !== "done" || availabilityMigration?.value !== "done") {
           const value = JSON.stringify(current);
           await tx.insert(systemSettings)
             .values({ key: "sidebarVisibility", value })
@@ -2788,6 +2799,12 @@ export function registerConfigRoutes(app: Express): void {
           await tx.update(systemSettings)
             .set({ value: "done", updatedAt: new Date() })
             .where(eq(systemSettings.key, migrationKey));
+          await tx.insert(systemSettings)
+            .values({ key: availabilityMigrationKey, value: "done" })
+            .onConflictDoUpdate({
+              target: systemSettings.key,
+              set: { value: "done", updatedAt: new Date() },
+            });
         }
         return current;
       });
@@ -2812,41 +2829,6 @@ export function registerConfigRoutes(app: Express): void {
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json(err.errors);
       res.status(500).json({ message: err.message });
-    }
-  });
-
-  app.get("/api/system-settings/my-space-availability", async (req, res) => {
-    try {
-      if (!req.user) return res.status(401).json({ message: "Unauthorized" });
-      const { systemSettings } = await import("@shared/schema");
-      const [setting] = await db
-        .select({ value: systemSettings.value })
-        .from(systemSettings)
-        .where(eq(systemSettings.key, "mySpaceAvailabilityEnabled"))
-        .limit(1);
-      res.json({ enabled: setting?.value === "true" });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || "Không thể tải cài đặt." });
-    }
-  });
-
-  app.put("/api/system-settings/my-space-availability", async (req, res) => {
-    try {
-      if (!req.isSuperAdmin) return res.status(403).json({ message: "Chỉ Super Admin mới có quyền thay đổi cài đặt này." });
-      const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
-      const { systemSettings } = await import("@shared/schema");
-      const value = String(enabled);
-      await db
-        .insert(systemSettings)
-        .values({ key: "mySpaceAvailabilityEnabled", value })
-        .onConflictDoUpdate({
-          target: systemSettings.key,
-          set: { value, updatedAt: new Date() },
-        });
-      res.json({ enabled });
-    } catch (err: any) {
-      if (err instanceof z.ZodError) return res.status(400).json(err.issues);
-      res.status(500).json({ message: err.message || "Không thể lưu cài đặt." });
     }
   });
 

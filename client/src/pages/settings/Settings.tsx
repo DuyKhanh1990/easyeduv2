@@ -1044,7 +1044,6 @@ export function Settings() {
 
                 <TabsContent value="modules">
                   <ModulesManager />
-                  <MySpaceAvailabilitySetting />
                 </TabsContent>
 
                 <TabsContent value="hrm-accounts">
@@ -1515,52 +1514,6 @@ function ModulesManager() {
         );
       })}
     </div>
-  );
-}
-
-function MySpaceAvailabilitySetting() {
-  const { toast } = useToast();
-  const { data, isLoading } = useQuery<{ enabled: boolean }>({
-    queryKey: ["/api/system-settings/my-space-availability"],
-    queryFn: async () => {
-      const response = await fetch("/api/system-settings/my-space-availability", { credentials: "include" });
-      if (!response.ok) throw new Error("Không thể tải cài đặt.");
-      return response.json();
-    },
-  });
-  const update = useMutation({
-    mutationFn: async (enabled: boolean) => {
-      await apiRequest("PUT", "/api/system-settings/my-space-availability", { enabled });
-    },
-    onSuccess: (_result, enabled) => {
-      queryClient.setQueryData(["/api/system-settings/my-space-availability"], { enabled });
-      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/my-space-availability"] });
-      toast({ title: enabled ? "Đã bật đăng ký lịch rảnh trong My Space" : "Đã tắt đăng ký lịch rảnh trong My Space" });
-    },
-    onError: (error: Error) => toast({ title: "Không thể lưu cài đặt", description: error.message, variant: "destructive" }),
-  });
-
-  return (
-    <Card className="mt-4">
-      <CardHeader className="py-3">
-        <CardTitle className="text-sm">Đăng ký lịch rảnh trong My Space</CardTitle>
-      </CardHeader>
-      <CardContent className="flex items-center justify-between gap-4">
-        <div>
-          <p className="text-sm font-medium">Cho phép nhân sự tự đăng ký giờ rảnh</p>
-          <p className="text-xs text-muted-foreground">
-            Khi bật, nhân sự chỉ xem và đăng ký giờ rảnh cho chính mình tại các cơ sở được phân công. Mặc định tính năng đang tắt.
-          </p>
-        </div>
-        <Switch
-          checked={data?.enabled === true}
-          disabled={isLoading || update.isPending}
-          onCheckedChange={(enabled) => update.mutate(enabled)}
-          aria-label="Bật đăng ký lịch rảnh trong My Space"
-          data-testid="switch-my-space-availability"
-        />
-      </CardContent>
-    </Card>
   );
 }
 
