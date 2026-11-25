@@ -1,8 +1,17 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, Users } from "lucide-react";
+import { BriefcaseBusiness, Search, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useLanguage } from "@/hooks/use-language";
+
+type TeacherProfile = {
+  experienceValue: number | null;
+  experienceUnit: "year" | "month" | null;
+  teachingExperience: string;
+  certificates: string;
+  achievements: string;
+};
 
 type TrainingTeacher = {
   id: string;
@@ -10,6 +19,7 @@ type TrainingTeacher = {
   code: string;
   avatarUrl: string | null;
   roleNames: string[];
+  teacherProfile: TeacherProfile | null;
 };
 
 type TeacherDirectoryResponse = {
@@ -68,6 +78,11 @@ export function FreeChoiceTeacherList() {
     if (!keyword) return teachers;
     return teachers.filter((teacher) =>
       [teacher.fullName, teacher.code, ...teacher.roleNames]
+        .concat([
+          teacher.teacherProfile?.teachingExperience ?? "",
+          teacher.teacherProfile?.certificates ?? "",
+          teacher.teacherProfile?.achievements ?? "",
+        ])
         .some((value) => value.toLocaleLowerCase("vi").includes(keyword))
     );
   }, [search, teachers]);
@@ -133,34 +148,99 @@ export function FreeChoiceTeacherList() {
 
       {!isLoading && !isError && filteredTeachers.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {filteredTeachers.map((teacher) => (
-            <article
-              key={teacher.id}
-              className="flex min-h-40 gap-4 rounded-2xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md"
-            >
-              <TeacherAvatar teacher={teacher} />
-              <div className="min-w-0 flex-1">
-                <h2 className="truncate text-base font-semibold text-foreground">
-                  {teacher.fullName}
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {t("mySpace.calendar.staffCode")}: {teacher.code}
-                </p>
-                {teacher.roleNames.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {teacher.roleNames.map((role) => (
-                      <span
-                        key={role}
-                        className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
-                      >
-                        {role}
-                      </span>
-                    ))}
+          {filteredTeachers.map((teacher) => {
+            const profile = teacher.teacherProfile;
+            const teachingExperience = profile?.teachingExperience?.trim() ?? "";
+            const certificates = profile?.certificates?.trim() ?? "";
+            const achievements = profile?.achievements?.trim() ?? "";
+
+            return (
+              <article
+                key={teacher.id}
+                className="flex min-h-40 flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md"
+              >
+                <div className="flex min-w-0 gap-4">
+                  <TeacherAvatar teacher={teacher} />
+                  <div className="min-w-0 flex-1">
+                    <h2 className="truncate text-base font-semibold text-foreground">
+                      {teacher.fullName}
+                    </h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {t("mySpace.calendar.staffCode")}: {teacher.code}
+                    </p>
+                    {teacher.roleNames.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {teacher.roleNames.map((role) => (
+                          <span
+                            key={role}
+                            className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+                          >
+                            {role}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {profile?.experienceValue !== null
+                      && profile?.experienceValue !== undefined
+                      && (
+                        <p className="mt-3 flex items-center gap-1.5 text-sm font-medium text-foreground">
+                          <BriefcaseBusiness className="h-4 w-4 shrink-0 text-primary" />
+                          {profile.experienceValue}{" "}
+                          {profile.experienceUnit === "month"
+                            ? t("mySpace.calendar.experienceMonths")
+                            : t("mySpace.calendar.experienceYears")}
+                        </p>
+                      )}
+                    {teachingExperience && (
+                      <p className="mt-2 line-clamp-2 text-sm leading-5 text-muted-foreground">
+                        {teachingExperience}
+                      </p>
+                    )}
+                    {(certificates || achievements) && (
+                      <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                        {certificates && (
+                          <p className="line-clamp-1">
+                            <span className="font-medium text-foreground">{t("mySpace.calendar.certificates")}:</span>{" "}
+                            {certificates}
+                          </p>
+                        )}
+                        {achievements && (
+                          <p className="line-clamp-1">
+                            <span className="font-medium text-foreground">{t("mySpace.calendar.achievements")}:</span>{" "}
+                            {achievements}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </article>
-          ))}
+                </div>
+                <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled
+                    className="whitespace-nowrap"
+                  >
+                    {t("mySpace.calendar.viewProfile")}
+                  </Button>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {t("mySpace.calendar.comingSoon")}
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled
+                      className="whitespace-nowrap"
+                    >
+                      {t("mySpace.calendar.registerStudy")}
+                    </Button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
         </div>
       )}
     </div>
