@@ -10,6 +10,7 @@ import { saveInvoiceCommissions, getInvoiceFilterOptions, getThuChiReportEntries
 import { createInvoiceAuditLog } from "../storage/invoice-audit-log.storage";
 import { createIssueReceiptsForInvoice, cancelIssueReceiptForInvoice } from "./store-issue-receipt.routes";
 import { allocateInvoiceWalletAmountsToSchedules } from "../utils/invoice-schedule-wallet";
+import { computeTuitionWalletAmount, sumTuitionInvoiceItemSubtotals } from "../utils/tuition-wallet";
 
 import { z } from "zod";
 import {
@@ -180,11 +181,7 @@ function walletActionFor(
 }
 
 function computeHocPhiWalletAmount(grandTotal: number, items: any[]): number {
-  const nonHocPhiTotal = (items ?? []).reduce((sum: number, item: any) => {
-    if ((item.category ?? "").trim() !== "Học phí") return sum + (parseFloat(item.subtotal) || 0);
-    return sum;
-  }, 0);
-  return Math.max(0, grandTotal - nonHocPhiTotal);
+  return computeTuitionWalletAmount(grandTotal, items ?? []);
 }
 
 function computeDepositWalletAmount(items: any[]): number {
@@ -1237,10 +1234,7 @@ export function registerFinanceRoutes(app: Express): void {
         classId: data.classId, invoiceCode: data.code,
         invoiceDescription: data.note || data.description, createdBy: userId, createdByName: creatorName,
       });
-      const hocPhiSubtotal = (payload.items ?? []).reduce((sum: number, item: any) => {
-        if (item.category === "Học phí") return sum + (parseFloat(item.subtotal) || 0);
-        return sum;
-      }, 0);
+      const hocPhiSubtotal = sumTuitionInvoiceItemSubtotals(payload.items ?? []);
       const hocPhiDeduction = Math.min(deductionAmt, hocPhiSubtotal);
       if (hocPhiDeduction > 0) {
         const fmtHocPhi = hocPhiDeduction.toLocaleString("vi-VN") + " đ";
@@ -1577,10 +1571,7 @@ export function registerFinanceRoutes(app: Express): void {
           // Get the net Học phí amount credited for this invoice (to reverse accurately across multiple edits)
           const existingHocPhiCreditTotal = await getNetWalletAmountByInvoiceAndCategory(data.id, "Học phí");
 
-          const newHocPhiSubtotal = (parsed.data.items ?? []).reduce((sum: number, item: any) => {
-            if (item.category === "Học phí") return sum + (parseFloat(item.subtotal) || 0);
-            return sum;
-          }, 0);
+          const newHocPhiSubtotal = sumTuitionInvoiceItemSubtotals(parsed.data.items ?? []);
           const newHocPhiDed = Math.min(newDed, newHocPhiSubtotal);
 
           // Reverse old deduction if any

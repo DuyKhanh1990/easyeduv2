@@ -28,7 +28,7 @@ import {
   teacherAvailabilityWindows,
   users,
 } from "./base";
-import { ne } from "drizzle-orm";
+import { like, ne } from "drizzle-orm";
 import { getNextLocationCode } from "./finance.storage";
 import { calculateAutoInvoiceDepositTotals } from "@shared/invoice-deposit-accounting";
 
@@ -134,6 +134,7 @@ async function getPurchasedPackages(executor: any, studentId: string, locationId
         eq(invoices.studentId, studentId),
         eq(invoices.locationId, locationId),
         eq(invoices.type, "Thu"),
+        eq(invoices.category, REGISTRATION_INVOICE_CATEGORY),
         inArray(invoices.status, ["paid", "confirmed"]),
         isNotNull(invoiceItems.packageId),
       )),
@@ -148,6 +149,7 @@ async function getPurchasedPackages(executor: any, studentId: string, locationId
       .where(and(
         eq(studentSessions.studentId, studentId),
         eq(classes.locationId, locationId),
+        like(classes.classCode, "SR-%"),
         isNotNull(studentSessions.packageId),
         sql`LOWER(COALESCE(${studentSessions.status}, '')) NOT IN ('cancelled', 'canceled')`,
         sql`LOWER(COALESCE(${classSessions.status}, '')) NOT IN ('cancelled', 'canceled')`,

@@ -13,6 +13,8 @@ In the delayed-finalization flow, confirming the booking first creates only a ca
 
 For fixed student/teacher/date/shift sessions, prefer `classType: "tutor"` over free class: tutor classes use the normal `class_sessions` and `student_sessions` attendance and finance paths, while free classes have a distinct day-registration model.
 
-**Why:** The user specified partial booking of a full package, with the unbooked sessions available for later scheduling, and teacher/student bookings must share a center. They clarified that “Học phí theo đăng ký” payments must fund the tuition wallet, and that in the future delayed flow, official class and invoice generation happens only after the cancellation window expires without cancellation.
+Only paid or confirmed invoices categorized “Học phí theo đăng ký” should supply packages to this self-booking flow. Count only sessions booked through this flow against those packages; ordinary class history shares the same catalog package ID and must not consume this separate entitlement.
 
-**How to apply:** Link the receipt, exact booked sessions, and paired wallet entries atomically at finalization. Preserve the full package quantity on the invoice while counting only actual non-cancelled student sessions against the balance. Keep the pre-deadline reservation separate from official class, invoice, and wallet records.
+**Why:** The user specified partial booking of a full package, with the unbooked sessions available for later scheduling, and teacher/student bookings must share a center. They clarified that “Học phí theo đăng ký” payments must fund the tuition wallet, that ordinary class history must not hide this booking package, and that in the future delayed flow, official class and invoice generation happens only after the cancellation window expires without cancellation.
+
+**How to apply:** Link the receipt, exact booked sessions, and paired wallet entries atomically at finalization. Preserve the full package quantity on the invoice while counting only actual non-cancelled self-booked sessions against the balance. Keep the pre-deadline reservation separate from official class, invoice, and wallet records.

@@ -1,3 +1,5 @@
+import { isTuitionInvoiceItemCategory } from "./tuition-wallet";
+
 type ScheduleRow = {
   id: string;
   amount: string | number | null;
@@ -25,7 +27,7 @@ export function allocateInvoiceWalletAmountsToSchedules(
 ): Map<string, { tuition: number; deposit: number }> {
   const totalCents = Math.max(0, cents(grandTotal));
   const nonTuitionCents = (items ?? []).reduce((sum, item) =>
-    (item.category ?? "").trim() === "Học phí" ? sum : sum + cents(item.subtotal), 0);
+    isTuitionInvoiceItemCategory(item.category) ? sum : sum + cents(item.subtotal), 0);
   const tuitionCents = Math.max(0, totalCents - nonTuitionCents);
   const depositCents = (items ?? []).reduce((sum, item) =>
     (item.category ?? "").trim() === "Đặt cọc" ? sum + cents(item.subtotal) : sum, 0);
