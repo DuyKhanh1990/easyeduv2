@@ -52,6 +52,8 @@ type Availability = {
   }[];
 };
 
+type ViewMode = "week" | "month";
+
 type TeacherBookingDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -155,12 +157,14 @@ export function TeacherBookingDialog({
   const weekdays = isEnglish ? WEEKDAYS_EN : WEEKDAYS_VI;
   const locale = isEnglish ? "en-US" : "vi-VN";
   const [focusedDate, setFocusedDate] = useState(() => new Date());
+  const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [locationId, setLocationId] = useState("");
   const [selectedShiftId, setSelectedShiftId] = useState("");
 
   useEffect(() => {
     if (open) {
       setFocusedDate(new Date());
+      setViewMode("week");
       setLocationId("");
       setSelectedShiftId("");
     }
@@ -212,6 +216,16 @@ export function TeacherBookingDialog({
   const selectedShift = query.data?.shifts.find((shift) => shift.id === selectedShiftId);
   const selectedLocation = sharedLocations.find((location) => location.id === locationId);
   const weekDays = Array.from({ length: 7 }, (_, index) => addDays(mondayOf(focusedDate), index));
+  const monthStart = new Date(focusedDate.getFullYear(), focusedDate.getMonth(), 1);
+  const monthEnd = new Date(focusedDate.getFullYear(), focusedDate.getMonth() + 1, 0);
+  const firstWeekdayOffset = (monthStart.getDay() + 6) % 7;
+  const monthCellCount = Math.ceil((firstWeekdayOffset + monthEnd.getDate()) / 7) * 7;
+  const monthCells = Array.from({ length: monthCellCount }, (_, index) => {
+    const dayNumber = index - firstWeekdayOffset + 1;
+    return dayNumber > 0 && dayNumber <= monthEnd.getDate()
+      ? new Date(focusedDate.getFullYear(), focusedDate.getMonth(), dayNumber)
+      : null;
+  });
 
   const goToDate = (date: Date) => {
     setFocusedDate(date);
@@ -220,6 +234,15 @@ export function TeacherBookingDialog({
 
   const moveWeek = (amount: number) => {
     goToDate(addDays(focusedDate, amount * 7));
+  };
+
+  const moveMonth = (amount: number) => {
+    goToDate(new Date(focusedDate.getFullYear(), focusedDate.getMonth() + amount, 1));
+  };
+
+  const movePeriod = (amount: number) => {
+    if (viewMode === "week") moveWeek(amount);
+    else moveMonth(amount);
   };
 
   const selectedDateLabel = formatDate(focusedDate, { weekday: "long", year: "numeric" }, locale);
@@ -240,13 +263,33 @@ export function TeacherBookingDialog({
                     {formatDate(focusedDate, { month: "long", year: "numeric" }, locale)}
                   </h2>
                 </div>
-                <div className="flex gap-1 self-end">
+                <div className="flex items-center gap-2 self-end">
+                  <div className="inline-flex rounded-xl border border-[#dce7e1] bg-[#eef3ef] p-0.5" aria-label={isEnglish ? "Calendar view mode" : "Chế độ xem lịch"}>
+                    <button
+                      type="button"
+                      aria-pressed={viewMode === "week"}
+                      onClick={() => setViewMode("week")}
+                      className={`min-h-8 rounded-lg px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5f9b8f] ${viewMode === "week" ? "bg-[#fffefa] text-[#28665d] shadow-sm" : "text-[#71827c] hover:text-[#345f56]"}`}
+                    >
+                      {isEnglish ? "Week" : "Tuần"}
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={viewMode === "month"}
+                      onClick={() => setViewMode("month")}
+                      className={`min-h-8 rounded-lg px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5f9b8f] ${viewMode === "month" ? "bg-[#fffefa] text-[#28665d] shadow-sm" : "text-[#71827c] hover:text-[#345f56]"}`}
+                    >
+                      {isEnglish ? "Month" : "Tháng"}
+                    </button>
+                  </div>
                   <Button
                     type="button"
                     variant="outline"
                     size="icon"
-                    aria-label={isEnglish ? "Previous week" : "Tuần trước"}
-                    onClick={() => moveWeek(-1)}
+                    aria-label={viewMode === "week"
+                      ? (isEnglish ? "Previous week" : "Tuần trước")
+                      : (isEnglish ? "Previous month" : "Tháng trước")}
+                    onClick={() => movePeriod(-1)}
                     className="h-9 w-9 border-[#dce7e1] bg-[#fffefa] text-[#47736a] hover:bg-[#edf5f0]"
                   >
                     <ChevronLeft className="h-4 w-4" />
@@ -255,8 +298,10 @@ export function TeacherBookingDialog({
                     type="button"
                     variant="outline"
                     size="icon"
-                    aria-label={isEnglish ? "Next week" : "Tuần sau"}
-                    onClick={() => moveWeek(1)}
+                    aria-label={viewMode === "week"
+                      ? (isEnglish ? "Next week" : "Tuần sau")
+                      : (isEnglish ? "Next month" : "Tháng sau")}
+                    onClick={() => movePeriod(1)}
                     className="h-9 w-9 border-[#dce7e1] bg-[#fffefa] text-[#47736a] hover:bg-[#edf5f0]"
                   >
                     <ChevronRight className="h-4 w-4" />
@@ -264,33 +309,70 @@ export function TeacherBookingDialog({
                 </div>
               </div>
 
-              <section aria-label={isEnglish ? "Choose a day this week" : "Chọn ngày trong tuần"} className="rounded-2xl border border-[#dce7e1] bg-[#fffefa] p-2.5 sm:p-3">
-                <div className="grid grid-cols-7 gap-1 sm:gap-2">
-                  {weekDays.map((date, index) => {
-                    const day = dayMap.get(dateKey(date));
-                    const availableCount = availabilityReady ? day?.slots.filter((slot) => slot.status === "available").length ?? 0 : 0;
-                    const active = dateKey(date) === dateKey(focusedDate);
-                    return (
-                      <button
-                        type="button"
-                        key={dateKey(date)}
-                        onClick={() => goToDate(date)}
-                        aria-pressed={active}
-                        aria-label={`${weekdays[index]}, ${formatDate(date, {}, locale)}${availableCount ? `, ${availableCount} ${isEnglish ? "available shifts" : "ca còn chỗ"}` : ""}`}
-                        className={`flex min-h-[62px] flex-col items-center justify-center gap-1 rounded-xl border px-1 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5f9b8f] sm:min-h-[68px] ${active ? "border-[#5c9286] bg-[#e8f3ed] text-[#245e54]" : "border-transparent text-[#65776f] hover:border-[#dce7e1] hover:bg-[#f5f8f5]"}`}
-                      >
-                        <span className="text-[10px] font-semibold uppercase tracking-wide sm:text-[11px]">{weekdays[index]}</span>
-                        <span className={`font-display text-lg font-semibold leading-none sm:text-xl ${active ? "text-[#245e54]" : "text-[#334e48]"}`}>
-                          {date.getDate()}
-                        </span>
-                        <span className="min-h-3 text-[9px] font-medium sm:text-[10px]">
-                          {availableCount ? `${availableCount} ${isEnglish ? "shifts" : "ca"}` : "\u00a0"}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
+              {viewMode === "week" ? (
+                <section aria-label={isEnglish ? "Choose a day this week" : "Chọn ngày trong tuần"} className="rounded-2xl border border-[#dce7e1] bg-[#fffefa] p-2.5 sm:p-3">
+                  <div className="grid grid-cols-7 gap-1 sm:gap-2">
+                    {weekDays.map((date, index) => {
+                      const day = dayMap.get(dateKey(date));
+                      const availableCount = availabilityReady ? day?.slots.filter((slot) => slot.status === "available").length ?? 0 : 0;
+                      const active = dateKey(date) === dateKey(focusedDate);
+                      return (
+                        <button
+                          type="button"
+                          key={dateKey(date)}
+                          onClick={() => goToDate(date)}
+                          aria-pressed={active}
+                          aria-label={`${weekdays[index]}, ${formatDate(date, {}, locale)}${availableCount ? `, ${availableCount} ${isEnglish ? "available shifts" : "ca còn chỗ"}` : ""}`}
+                          className={`flex min-h-[62px] flex-col items-center justify-center gap-1 rounded-xl border px-1 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5f9b8f] sm:min-h-[68px] ${active ? "border-[#5c9286] bg-[#e8f3ed] text-[#245e54]" : "border-transparent text-[#65776f] hover:border-[#dce7e1] hover:bg-[#f5f8f5]"}`}
+                        >
+                          <span className="text-[10px] font-semibold uppercase tracking-wide sm:text-[11px]">{weekdays[index]}</span>
+                          <span className={`font-display text-lg font-semibold leading-none sm:text-xl ${active ? "text-[#245e54]" : "text-[#334e48]"}`}>
+                            {date.getDate()}
+                          </span>
+                          <span className="min-h-3 text-[9px] font-medium sm:text-[10px]">
+                            {availableCount ? `${availableCount} ${isEnglish ? "shifts" : "ca"}` : "\u00a0"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ) : (
+                <section aria-label={isEnglish ? "Monthly calendar" : "Lịch tháng"} className="rounded-2xl border border-[#dce7e1] bg-[#fffefa] p-1.5 sm:p-2">
+                  <div className="mb-0.5 grid grid-cols-7">
+                    {weekdays.map((weekday) => (
+                      <div key={weekday} className="py-1 text-center text-[9px] font-semibold uppercase tracking-wide text-[#85918b] sm:text-[10px]">
+                        {weekday}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
+                    {monthCells.map((date, index) => {
+                      if (!date) return <div key={`empty-${index}`} className="min-h-[24px] sm:min-h-[28px]" />;
+                      const day = dayMap.get(dateKey(date));
+                      const availableCount = availabilityReady ? day?.slots.filter((slot) => slot.status === "available").length ?? 0 : 0;
+                      const busyCount = availabilityReady ? day?.slots.filter((slot) => slot.status === "busy").length ?? 0 : 0;
+                      const active = dateKey(date) === dateKey(focusedDate);
+                      return (
+                        <button
+                          key={dateKey(date)}
+                          type="button"
+                          onClick={() => goToDate(date)}
+                          aria-pressed={active}
+                          aria-label={`${formatDate(date, { weekday: "long" }, locale)}${availableCount ? `, ${availableCount} ${isEnglish ? "available shifts" : "ca còn chỗ"}` : (isEnglish ? ", no available shifts" : ", không có ca còn chỗ")}`}
+                          className={`flex min-h-[24px] items-center justify-center gap-1 rounded-md border px-1 text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5f9b8f] sm:min-h-[28px] sm:text-[11px] ${active ? "border-[#5c9286] bg-[#e8f3ed] font-semibold text-[#245e54]" : "border-transparent text-[#465f57] hover:border-[#dce7e1] hover:bg-[#f5f8f5]"}`}
+                        >
+                          <span>{date.getDate()}</span>
+                          <span className="flex items-center gap-0.5" aria-hidden="true">
+                            {availableCount > 0 && <i className="h-1 w-1 rounded-full bg-[#4c9a7b]" />}
+                            {busyCount > 0 && <i className="h-1 w-1 rounded-full bg-[#c3816c]" />}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
 
               <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[#718079] sm:text-xs">
                 <span className="inline-flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-full bg-[#4c9a7b]" />{isEnglish ? "Available" : "Còn chỗ"}</span>
