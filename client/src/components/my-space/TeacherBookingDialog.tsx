@@ -47,7 +47,7 @@ type SlotStatus = "available" | "busy" | "outside_availability" | "past";
 type Availability = {
   locations: { id: string; name: string }[];
   locationId: string | null;
-  shifts: { id: string; name: string; startTime: string; endTime: string }[];
+  shifts: { id: string; name: string; startTime: string; endTime: string; locationName: string }[];
   days: {
     date: string;
     weekday: number;
@@ -251,7 +251,7 @@ export function TeacherBookingDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[94dvh] max-w-6xl gap-0 overflow-hidden border-[#d8e6df] bg-[#f8faf7] p-0 text-[#203c38] sm:rounded-[26px]">
+      <DialogContent className="h-auto max-h-[94dvh] w-[99vw] max-w-[99vw] gap-0 overflow-hidden border-[#d8e6df] bg-[#f8faf7] p-0 text-[#203c38] sm:rounded-[26px]">
         <div className="max-h-[94dvh] overflow-y-auto">
           <DialogHeader className="border-b border-[#e3ebe6] bg-[#fffefa] px-5 py-5 text-left sm:px-7 sm:py-6">
             <div className="flex items-start gap-3">
@@ -458,7 +458,7 @@ export function TeacherBookingDialog({
 
                 {!query.isLoading && !query.isError && availabilityReady && (
                   query.data?.shifts.length ? (
-                    <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                       {query.data.shifts.map((shift) => {
                         const status = getSlotStatus(selectedDay, shift.id);
                         const isAvailable = status === "available";
@@ -474,6 +474,9 @@ export function TeacherBookingDialog({
                           >
                             <span className="min-w-0">
                               <span className="block truncate text-sm font-semibold">{shift.name}</span>
+                              <span className="mt-0.5 block truncate text-[10px] font-medium leading-4 opacity-70">
+                                {shift.locationName || selectedLocation?.name}
+                              </span>
                               <span className="mt-1 flex items-center gap-1.5 text-xs opacity-80">
                                 <Clock3 className="h-3.5 w-3.5" />
                                 {shift.startTime} – {shift.endTime}
@@ -553,9 +556,14 @@ export function TeacherBookingDialog({
                       <div className="min-w-0">
                         <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#829089]">{isEnglish ? "Class shift" : "Ca học"}</dt>
                         <dd className="mt-0.5 text-sm font-medium text-[#405c53]">
-                          {selectedShift
-                            ? `${selectedShift.name} · ${selectedShift.startTime}–${selectedShift.endTime}`
-                            : (isEnglish ? "No shift selected" : "Chưa chọn ca")}
+                          {selectedShift ? (
+                            <>
+                              <span className="block">{selectedShift.name}</span>
+                              <span className="mt-0.5 block text-xs font-normal text-[#71827a]">
+                                {selectedShift.locationName || selectedLocation?.name} · {selectedShift.startTime}–{selectedShift.endTime}
+                              </span>
+                            </>
+                          ) : (isEnglish ? "No shift selected" : "Chưa chọn ca")}
                         </dd>
                       </div>
                     </div>

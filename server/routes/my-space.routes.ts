@@ -2132,7 +2132,13 @@ export function registerMySpaceRoutes(app: Express): void {
       res.json({
         locations: sharedLocations,
         locationId,
-        shifts: shifts.map(({ id, name, startTime, endTime }) => ({ id, name, startTime, endTime })),
+        shifts: shifts.map(({ id, name, startTime, endTime }) => ({
+          id,
+          name,
+          startTime,
+          endTime,
+          locationName: sharedLocations.find((location) => location.id === locationId)?.name ?? "",
+        })),
         days,
       });
     } catch (error) {
