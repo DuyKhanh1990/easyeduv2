@@ -161,3 +161,4 @@
 - [BIDV shared-gateway forwarding](bidv-shared-gateway-forwarding.md) — keep the common callback host, route by service_id, and authenticate internal forwards with a shared signature.
 - [CMC S3 streaming uploads](cmc-s3-streaming.md) — CMC accepted server-side SigV4 streaming with UNSIGNED-PAYLOAD; browser presigned PUT returned AccessDenied in the tested configuration.
 - [Teacher availability semantics](teacher-availability-semantics.md) — registrations are optional; an active registration constrains scheduling, but no active record means free availability.
+- [Teacher booking deposit receipt](teacher-booking-deposit-receipt.md) — registration-funded tuition uses a standard deposit-offset receipt, with one paired wallet transfer and no duplicate cash income.
