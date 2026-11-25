@@ -109,6 +109,24 @@ function getSlotStatus(day: Availability["days"][number] | undefined, shiftId: s
   return day?.slots.find((slot) => slot.shiftId === shiftId)?.status ?? "outside_availability";
 }
 
+function timeToMinutes(value: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})/.exec(value);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function shiftsOverlap(
+  a: Pick<Availability["shifts"][number], "startTime" | "endTime">,
+  b: Pick<Availability["shifts"][number], "startTime" | "endTime">,
+) {
+  const startA = timeToMinutes(a.startTime);
+  const endA = timeToMinutes(a.endTime);
+  const startB = timeToMinutes(b.startTime);
+  const endB = timeToMinutes(b.endTime);
+  return startA !== null && endA !== null && startB !== null && endB !== null
+    && startA < endB && endA > startB;
+}
+
 function getStatusLabel(status: SlotStatus, isEnglish: boolean) {
   if (status === "available") return isEnglish ? "Available" : "Còn chỗ";
   if (status === "busy") return isEnglish ? "Booked" : "Đã kín";
@@ -159,14 +177,14 @@ export function TeacherBookingDialog({
   const [focusedDate, setFocusedDate] = useState(() => new Date());
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [locationId, setLocationId] = useState("");
-  const [selectedShiftId, setSelectedShiftId] = useState("");
+  const [selectedShiftIds, setSelectedShiftIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (open) {
       setFocusedDate(new Date());
       setViewMode("week");
       setLocationId("");
-      setSelectedShiftId("");
+      setSelectedShiftIds([]);
     }
   }, [open, teacher.id, student.id]);
 
@@ -205,7 +223,7 @@ export function TeacherBookingDialog({
   }, [locationId, query.data, sharedLocations]);
 
   useEffect(() => {
-    setSelectedShiftId("");
+    setSelectedShiftIds([]);
   }, [focusedDate, locationId]);
 
   const dayMap = useMemo(
@@ -213,7 +231,7 @@ export function TeacherBookingDialog({
     [query.data?.days],
   );
   const selectedDay = dayMap.get(dateKey(focusedDate));
-  const selectedShift = query.data?.shifts.find((shift) => shift.id === selectedShiftId);
+  const selectedShifts = query.data?.shifts.filter((shift) => selectedShiftIds.includes(shift.id)) ?? [];
   const selectedLocation = sharedLocations.find((location) => location.id === locationId);
   const weekDays = Array.from({ length: 7 }, (_, index) => addDays(mondayOf(focusedDate), index));
   const monthStart = new Date(focusedDate.getFullYear(), focusedDate.getMonth(), 1);
@@ -229,7 +247,21 @@ export function TeacherBookingDialog({
 
   const goToDate = (date: Date) => {
     setFocusedDate(date);
-    setSelectedShiftId("");
+    setSelectedShiftIds([]);
+  };
+
+  const toggleShift = (shiftId: string) => {
+    const shift = query.data?.shifts.find((item) => item.id === shiftId);
+    if (!shift || getSlotStatus(selectedDay, shiftId) !== "available") return;
+
+    setSelectedShiftIds((current) => {
+      if (current.includes(shiftId)) return current.filter((id) => id !== shiftId);
+      const conflicts = current.some((id) => {
+        const selected = query.data?.shifts.find((item) => item.id === id);
+        return selected ? shiftsOverlap(selected, shift) : false;
+      });
+      return conflicts ? current : [...current, shiftId];
+    });
   };
 
   const moveWeek = (amount: number) => {
@@ -446,15 +478,22 @@ export function TeacherBookingDialog({
                       {query.data.shifts.map((shift) => {
                         const status = getSlotStatus(selectedDay, shift.id);
                         const isAvailable = status === "available";
-                        const isSelected = selectedShiftId === shift.id && isAvailable;
+                        const isSelected = selectedShiftIds.includes(shift.id) && isAvailable;
+                        const overlapsSelected = !isSelected && selectedShiftIds.some((selectedId) => {
+                          const selected = query.data.shifts.find((item) => item.id === selectedId);
+                          return selected ? shiftsOverlap(selected, shift) : false;
+                        });
                         return (
                           <button
                             key={shift.id}
                             type="button"
-                            disabled={!isAvailable}
+                            disabled={!isAvailable || overlapsSelected}
                             aria-pressed={isSelected}
-                            onClick={() => setSelectedShiftId(isSelected ? "" : shift.id)}
-                            className={`flex min-h-[76px] items-center justify-between gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5f9b8f] disabled:cursor-not-allowed ${isSelected ? "border-[#4e8e7f] bg-[#e7f3ed] ring-1 ring-[#4e8e7f]" : statusStyle(status)} ${isAvailable && !isSelected ? "hover:border-[#84b4a4] hover:bg-[#e7f3ed]" : ""}`}
+                            onClick={() => toggleShift(shift.id)}
+                            title={overlapsSelected
+                              ? (isEnglish ? "This shift overlaps another selected shift." : "Ca này trùng giờ với ca đã chọn.")
+                              : undefined}
+                            className={`flex min-h-[76px] items-center justify-between gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5f9b8f] disabled:cursor-not-allowed ${isSelected ? "border-[#4e8e7f] bg-[#e7f3ed] ring-1 ring-[#4e8e7f]" : overlapsSelected ? "border-[#e5e8e3] bg-[#f6f7f4] text-[#78827c]" : statusStyle(status)} ${isAvailable && !isSelected && !overlapsSelected ? "hover:border-[#84b4a4] hover:bg-[#e7f3ed]" : ""}`}
                           >
                             <span className="min-w-0">
                               <span className="block truncate text-sm font-semibold">{shift.name}</span>
@@ -470,7 +509,9 @@ export function TeacherBookingDialog({
                               {isSelected ? <Check className="h-4 w-4" /> : null}
                               {isSelected
                                 ? (isEnglish ? "Selected" : "Đã chọn")
-                                : getStatusLabel(status, isEnglish)}
+                                : overlapsSelected
+                                  ? (isEnglish ? "Overlaps" : "Trùng giờ")
+                                  : getStatusLabel(status, isEnglish)}
                             </span>
                           </button>
                         );
@@ -501,9 +542,11 @@ export function TeacherBookingDialog({
                 <p className="truncate text-xs text-[#71827a]">
                   {student.fullName} · {selectedLocation?.name ?? (isEnglish ? "Choose a center" : "Chọn cơ sở")}
                 </p>
-                {selectedShift && (
+                {selectedShifts.length > 0 && (
                   <p className="truncate text-[11px] font-medium text-[#405c53]">
-                    {selectedShift.name} · {selectedShift.startTime}–{selectedShift.endTime}
+                    {selectedShifts.length === 1
+                      ? `${selectedShifts[0].name} · ${selectedShifts[0].startTime}–${selectedShifts[0].endTime}`
+                      : (isEnglish ? `${selectedShifts.length} shifts selected` : `Đã chọn ${selectedShifts.length} ca`)}
                   </p>
                 )}
               </div>
@@ -559,13 +602,17 @@ export function TeacherBookingDialog({
                       <div className="min-w-0">
                         <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#829089]">{isEnglish ? "Class shift" : "Ca học"}</dt>
                         <dd className="mt-0.5 text-sm font-medium text-[#405c53]">
-                          {selectedShift ? (
-                            <>
-                              <span className="block">{selectedShift.name}</span>
-                              <span className="mt-0.5 block text-xs font-normal text-[#71827a]">
-                                {selectedShift.locationName || selectedLocation?.name} · {selectedShift.startTime}–{selectedShift.endTime}
-                              </span>
-                            </>
+                          {selectedShifts.length > 0 ? (
+                            <div className="space-y-1.5">
+                              {selectedShifts.map((shift) => (
+                                <div key={shift.id}>
+                                  <span className="block">{shift.name}</span>
+                                  <span className="mt-0.5 block text-xs font-normal text-[#71827a]">
+                                    {shift.locationName || selectedLocation?.name} · {shift.startTime}–{shift.endTime}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
                           ) : (isEnglish ? "No shift selected" : "Chưa chọn ca")}
                         </dd>
                       </div>

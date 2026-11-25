@@ -33,15 +33,6 @@ export function StudentScheduleRegistration() {
 
   return (
     <div className="space-y-4">
-      <header className="space-y-1">
-        <h1 className="text-xl font-bold text-foreground">
-          {t("mySpace.calendar.registrationTab")}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {t("mySpace.calendar.registrationIntro")}
-        </p>
-      </header>
-
       <Tabs defaultValue="personal-choice" className="space-y-4">
         <TabsList className="grid h-auto w-full grid-cols-2 rounded-xl bg-muted p-1 sm:w-fit">
           <TabsTrigger
