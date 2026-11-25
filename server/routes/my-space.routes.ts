@@ -37,6 +37,7 @@ import {
   staffAssignments,
   departments,
   roles,
+  users,
   studentSessions,
   classSessions,
   classSessionTeacherAssignments,
@@ -73,7 +74,7 @@ import {
   evaluationSubCriteria,
 } from "@shared/schema";
 import { storage } from "../storage";
-import { eq, and, gte, lte, sql, inArray, isNotNull, isNull, or, desc } from "drizzle-orm";
+import { eq, and, gte, lte, sql, inArray, isNotNull, isNull, or, desc, ne } from "drizzle-orm";
 import { uploadFileToS3FromStream } from "../lib/s3";
 import { addS3Bytes, recordFileUpload } from "../lib/storage-usage";
 import {
@@ -1791,6 +1792,50 @@ export function registerMySpaceRoutes(app: Express): void {
       res.status(204).send();
     } catch (err: any) {
       res.status(400).json({ message: err.message || "Không thể xoá nội dung cá nhân" });
+    }
+  });
+
+  // ── Student schedule registration: teacher directory ─────────────────────
+  app.get("/api/my-space/schedule-registration/teachers", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      const studentContext = await getStudentContext(user.id);
+      if (!studentContext.selfStudentId) {
+        return res.status(403).json({ message: "Tài khoản không phải học viên hoặc phụ huynh" });
+      }
+
+      const teachers = await db
+        .select({
+          id: staff.id,
+          fullName: staff.fullName,
+          code: staff.code,
+          avatarUrl: staff.avatarUrl,
+          roleNames: sql<string[]>`COALESCE(
+            array_agg(DISTINCT ${roles.name}) FILTER (WHERE ${roles.name} IS NOT NULL),
+            ARRAY[]::varchar[]
+          )`,
+        })
+        .from(staff)
+        .innerJoin(staffAssignments, eq(staffAssignments.staffId, staff.id))
+        .innerJoin(departments, eq(departments.id, staffAssignments.departmentId))
+        .leftJoin(roles, eq(roles.id, staffAssignments.roleId))
+        .innerJoin(users, eq(users.id, staff.userId))
+        .where(and(
+          eq(departments.name, "Phòng Đào tạo"),
+          eq(departments.isSystem, true),
+          eq(staff.status, "Hoạt động"),
+          eq(users.isActive, true),
+          ne(users.username, "admin"),
+        ))
+        .groupBy(staff.id, staff.fullName, staff.code, staff.avatarUrl)
+        .orderBy(staff.fullName);
+
+      res.json({ teachers });
+    } catch (error) {
+      console.error("Student schedule-registration teacher list error:", error);
+      res.status(500).json({ message: "Không thể tải danh sách giáo viên" });
     }
   });
 

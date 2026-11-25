@@ -2,6 +2,7 @@ import { CalendarDays } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLanguage } from "@/hooks/use-language";
+import { FreeChoiceTeacherList } from "./FreeChoiceTeacherList";
 
 function RegistrationPlaceholder({ description }: { description: string }) {
   const { t } = useLanguage();
@@ -61,17 +62,13 @@ export function StudentScheduleRegistration() {
 
         <TabsContent
           value="personal-choice"
-          forceMount
           className="mt-0 data-[state=inactive]:hidden"
         >
-          <RegistrationPlaceholder
-            description={t("mySpace.calendar.freeChoiceDescription")}
-          />
+          <FreeChoiceTeacherList />
         </TabsContent>
 
         <TabsContent
           value="existing-schedule"
-          forceMount
           className="mt-0 data-[state=inactive]:hidden"
         >
           <RegistrationPlaceholder

@@ -741,7 +741,6 @@ export function StudentCalendar() {
 
         <TabsContent
           value="schedule-registration"
-          forceMount
           className="mt-0 data-[state=inactive]:hidden"
         >
           <StudentScheduleRegistration />
