@@ -12,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TeacherBookingDetailsStep } from "./TeacherBookingDetailsStep";
 import {
   Dialog,
   DialogContent,
@@ -178,6 +179,9 @@ export function TeacherBookingDialog({
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [locationId, setLocationId] = useState("");
   const [selectedShiftIds, setSelectedShiftIds] = useState<string[]>([]);
+  const [bookingStep, setBookingStep] = useState<"schedule" | "details">("schedule");
+  const [selectedFeePackageId, setSelectedFeePackageId] = useState("");
+  const [learningMode, setLearningMode] = useState<"offline" | "online" | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -185,6 +189,9 @@ export function TeacherBookingDialog({
       setViewMode("week");
       setLocationId("");
       setSelectedShiftIds([]);
+      setBookingStep("schedule");
+      setSelectedFeePackageId("");
+      setLearningMode(null);
     }
   }, [open, teacher.id, student.id]);
 
@@ -286,6 +293,8 @@ export function TeacherBookingDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="block h-[94dvh] max-h-[94dvh] w-[99vw] max-w-[99vw] overflow-hidden border-[#d8e6df] bg-[#f8faf7] p-0 text-[#203c38] sm:rounded-[26px]">
         <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] md:grid-rows-1 md:grid-cols-[minmax(0,1fr)_280px] lg:grid-cols-[minmax(0,1fr)_320px]">
+          {bookingStep === "schedule" ? (
+          <>
           <main className="flex min-h-0 min-w-0 flex-col p-3 sm:p-4 lg:p-5">
             <div className="shrink-0 border-b border-[#e2eae5] pb-4">
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -550,8 +559,14 @@ export function TeacherBookingDialog({
                   </p>
                 )}
               </div>
-              <Button type="button" disabled size="sm" className="h-9 shrink-0 rounded-lg bg-[#4d857a] px-3 text-xs text-white opacity-60">
-                {isEnglish ? "Register" : "Đăng ký"}
+              <Button
+                type="button"
+                disabled={selectedShifts.length === 0}
+                onClick={() => setBookingStep("details")}
+                size="sm"
+                className="h-9 shrink-0 rounded-lg bg-[#4d857a] px-3 text-xs text-white disabled:opacity-60"
+              >
+                {isEnglish ? "Register now" : "Đăng ký ngay"}
               </Button>
             </div>
             <div className="hidden h-full min-h-0 flex-col md:flex">
@@ -622,15 +637,18 @@ export function TeacherBookingDialog({
                   <div className="border-t border-[#e7ede8] pt-4">
                     <Button
                       type="button"
-                      disabled
-                      className="min-h-11 w-full rounded-xl bg-[#4d857a] font-semibold text-white opacity-60"
-                      title={isEnglish ? "Booking submission will be available once the registration flow is ready." : "Tính năng đăng ký sẽ khả dụng khi hệ thống hoàn thiện."}
+                      disabled={selectedShifts.length === 0}
+                      onClick={() => setBookingStep("details")}
+                      className="min-h-11 w-full rounded-xl bg-[#4d857a] font-semibold text-white disabled:opacity-60"
+                      title={selectedShifts.length === 0
+                        ? (isEnglish ? "Select at least one shift first." : "Vui lòng chọn ít nhất một ca trước.")
+                        : undefined}
                     >
                       <GraduationCap className="mr-2 h-4 w-4" />
                       {isEnglish ? "Register now" : "Đăng ký ngay"}
                     </Button>
                     <p className="mt-2 text-center text-[11px] leading-5 text-[#7b8982]">
-                      {isEnglish ? "Submitting a registration is not available yet." : "Tính năng xác nhận đăng ký chưa khả dụng."}
+                      {isEnglish ? "Choose your shifts, then continue to select a package and learning mode." : "Chọn ca học, sau đó tiếp tục để chọn gói học phí và hình thức học."}
                     </p>
                   </div>
                 </div>
@@ -642,6 +660,23 @@ export function TeacherBookingDialog({
                 </p>
             </div>
           </aside>
+          </>
+          ) : (
+            <TeacherBookingDetailsStep
+              teacher={teacher}
+              student={student}
+              locationId={locationId}
+              locationName={selectedLocation?.name ?? ""}
+              dateLabel={selectedDateLabel}
+              selectedShifts={selectedShifts}
+              isEnglish={isEnglish}
+              selectedFeePackageId={selectedFeePackageId}
+              onFeePackageChange={setSelectedFeePackageId}
+              learningMode={learningMode}
+              onLearningModeChange={setLearningMode}
+              onBack={() => setBookingStep("schedule")}
+            />
+          )}
         </div>
       </DialogContent>
     </Dialog>
