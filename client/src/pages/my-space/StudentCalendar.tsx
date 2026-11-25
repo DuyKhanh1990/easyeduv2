@@ -653,6 +653,7 @@ export function StudentCalendar() {
     return (
       <FreeChoiceTeacherProfile
         teacherId={teacherId}
+        studentId={routeParams.get("studentId") ?? ""}
         search={routeParams.get("search") ?? ""}
       />
     );

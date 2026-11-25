@@ -53,6 +53,7 @@ import {
   invoicePaymentSchedule,
   leaveRequests,
   studentLeaveRequests,
+  studentLocations,
   staffRewards,
   staffAdvances,
   teacherAvailability,
@@ -1331,6 +1332,57 @@ async function getStudentContext(userId: string): Promise<StudentContext> {
   };
 }
 
+type ScheduleRegistrationStudent = {
+  id: string;
+  fullName: string;
+  code: string;
+  locations: Array<{ id: string; name: string }>;
+};
+
+async function getScheduleRegistrationStudents(userId: string): Promise<ScheduleRegistrationStudent[]> {
+  const context = await getStudentContext(userId);
+  const studentIds = context.isParent
+    ? context.studentIds
+    : context.selfStudentId
+      ? [context.selfStudentId]
+      : [];
+  if (studentIds.length === 0) return [];
+
+  const [studentRows, locationRows] = await Promise.all([
+    db.select({
+      id: students.id,
+      fullName: students.fullName,
+      code: students.code,
+    }).from(students)
+      .where(inArray(students.id, studentIds))
+      .orderBy(students.fullName),
+    db.select({
+      studentId: studentLocations.studentId,
+      id: locations.id,
+      name: locations.name,
+    }).from(studentLocations)
+      .innerJoin(locations, eq(locations.id, studentLocations.locationId))
+      .where(inArray(studentLocations.studentId, studentIds))
+      .orderBy(locations.name),
+  ]);
+
+  const locationsByStudent = new Map<string, ScheduleRegistrationStudent["locations"]>();
+  for (const location of locationRows) {
+    const current = locationsByStudent.get(location.studentId) ?? [];
+    if (!current.some((item) => item.id === location.id)) {
+      current.push({ id: location.id, name: location.name });
+      locationsByStudent.set(location.studentId, current);
+    }
+  }
+
+  return studentRows.map((student) => ({
+    ...student,
+    fullName: student.fullName ?? "",
+    code: student.code ?? "",
+    locations: locationsByStudent.get(student.id) ?? [],
+  }));
+}
+
 export function registerMySpaceRoutes(app: Express): void {
 
   app.get("/api/my-space/availability", async (req, res) => {
@@ -1798,6 +1850,24 @@ export function registerMySpaceRoutes(app: Express): void {
   });
 
   // ── Student schedule registration: teacher directory ─────────────────────
+  app.get("/api/my-space/schedule-registration/students", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const context = await getStudentContext(user.id);
+      if (!context.selfStudentId) {
+        return res.status(403).json({ message: "Tài khoản không phải học viên hoặc phụ huynh" });
+      }
+      res.json({
+        isParent: context.isParent,
+        students: await getScheduleRegistrationStudents(user.id),
+      });
+    } catch (error) {
+      console.error("Student schedule-registration student list error:", error);
+      res.status(500).json({ message: "Không thể tải danh sách học viên" });
+    }
+  });
+
   app.get("/api/my-space/schedule-registration/teachers", async (req, res) => {
     try {
       const user = req.user as any;
@@ -1808,7 +1878,16 @@ export function registerMySpaceRoutes(app: Express): void {
         return res.status(403).json({ message: "Tài khoản không phải học viên hoặc phụ huynh" });
       }
 
-      const teachers = await db
+      const eligibleStudents = await getScheduleRegistrationStudents(user.id);
+      const requestedStudentId = typeof req.query.studentId === "string" ? req.query.studentId : "";
+      const selectedStudent = eligibleStudents.find((student) => student.id === requestedStudentId)
+        ?? (requestedStudentId ? undefined : eligibleStudents.length === 1 ? eligibleStudents[0] : undefined);
+      if (!selectedStudent) {
+        return res.status(400).json({ message: "Vui lòng chọn học viên trước khi xem giáo viên" });
+      }
+
+      const locationIds = selectedStudent.locations.map((location) => location.id);
+      const teachers = locationIds.length > 0 ? await db
         .select({
           id: staff.id,
           fullName: staff.fullName,
@@ -1842,9 +1921,10 @@ export function registerMySpaceRoutes(app: Express): void {
           eq(staff.status, "Hoạt động"),
           eq(users.isActive, true),
           ne(users.username, "admin"),
+          inArray(staffAssignments.locationId, locationIds),
         ))
         .groupBy(staff.id, staff.fullName, staff.avatarUrl, staff.teachingSubjectIds, staffTeacherProfiles.profile)
-        .orderBy(staff.fullName);
+        .orderBy(staff.fullName) : [];
 
       const subjectIds = Array.from(new Set(teachers.flatMap((teacher) => teacher.teachingSubjectIds ?? [])));
       const subjectRows = subjectIds.length > 0
@@ -1855,6 +1935,7 @@ export function registerMySpaceRoutes(app: Express): void {
       const subjectNameById = new Map(subjectRows.map((subject) => [subject.id, subject.name]));
 
       res.json({
+        student: selectedStudent,
         teachers: teachers.map(({ teachingSubjectIds, ...teacher }) => ({
           ...teacher,
           teachingSubjects: (teachingSubjectIds ?? [])
@@ -1865,6 +1946,198 @@ export function registerMySpaceRoutes(app: Express): void {
     } catch (error) {
       console.error("Student schedule-registration teacher list error:", error);
       res.status(500).json({ message: "Không thể tải danh sách giáo viên" });
+    }
+  });
+
+  app.get("/api/my-space/schedule-registration/teachers/:teacherId/slots", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      const eligibleStudents = await getScheduleRegistrationStudents(user.id);
+      const requestedStudentId = typeof req.query.studentId === "string" ? req.query.studentId : "";
+      const selectedStudent = eligibleStudents.find((student) => student.id === requestedStudentId)
+        ?? (requestedStudentId ? undefined : eligibleStudents.length === 1 ? eligibleStudents[0] : undefined);
+      if (!selectedStudent) {
+        return res.status(403).json({ message: "Học viên không thuộc tài khoản này" });
+      }
+
+      const month = typeof req.query.month === "string" ? req.query.month : "";
+      const monthMatch = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(month);
+      if (!monthMatch) return res.status(400).json({ message: "Tháng không hợp lệ" });
+      const year = Number(monthMatch[1]);
+      const monthNumber = Number(monthMatch[2]);
+      const dateFrom = `${month}-01`;
+      const dateTo = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
+
+      const teacherLocationRows = await db
+        .selectDistinct({ id: locations.id, name: locations.name })
+        .from(staffAssignments)
+        .innerJoin(staff, eq(staff.id, staffAssignments.staffId))
+        .innerJoin(departments, eq(departments.id, staffAssignments.departmentId))
+        .innerJoin(users, eq(users.id, staff.userId))
+        .innerJoin(locations, eq(locations.id, staffAssignments.locationId))
+        .where(and(
+          eq(staff.id, req.params.teacherId),
+          eq(departments.name, "Phòng Đào tạo"),
+          eq(departments.isSystem, true),
+          eq(staff.status, "Hoạt động"),
+          eq(users.isActive, true),
+          ne(users.username, "admin"),
+        ));
+      const studentLocationIds = new Set(selectedStudent.locations.map((location) => location.id));
+      const sharedLocations = teacherLocationRows.filter((location) => studentLocationIds.has(location.id));
+      const requestedLocationId = typeof req.query.locationId === "string" ? req.query.locationId : "";
+      if (sharedLocations.length === 0) {
+        return res.json({ locations: [], locationId: null, shifts: [], days: [] });
+      }
+      if (requestedLocationId && !sharedLocations.some((location) => location.id === requestedLocationId)) {
+        return res.status(403).json({ message: "Học viên và giáo viên không cùng cơ sở đã chọn" });
+      }
+      const locationId = requestedLocationId
+        || (sharedLocations.length === 1 ? sharedLocations[0].id : null);
+      if (!locationId) {
+        return res.json({ locations: sharedLocations, locationId: null, shifts: [], days: [] });
+      }
+
+      const shifts = await storage.getShiftTemplates(locationId, "class");
+      shifts.sort((a, b) => a.startTime.localeCompare(b.startTime) || a.name.localeCompare(b.name));
+      const sessionRows = await db
+        .select({
+          id: classSessions.id,
+          date: classSessions.sessionDate,
+          teacherIds: classSessions.teacherIds,
+          shiftStart: shiftTemplates.startTime,
+          shiftEnd: shiftTemplates.endTime,
+        })
+        .from(classSessions)
+        .innerJoin(shiftTemplates, eq(shiftTemplates.id, classSessions.shiftTemplateId))
+        .where(and(
+          gte(classSessions.sessionDate, dateFrom),
+          lte(classSessions.sessionDate, dateTo),
+          sql`LOWER(COALESCE(${classSessions.status}, '')) NOT IN ('cancelled', 'canceled')`,
+          or(
+            sql`${classSessions.teacherIds} @> ARRAY[${req.params.teacherId}]::uuid[]`,
+            sql`EXISTS (
+              SELECT 1
+              FROM class_session_teacher_assignments csta
+              WHERE csta.class_session_id = ${classSessions.id}
+                AND csta.teacher_id = ${req.params.teacherId}
+            )`,
+          ),
+        ));
+      const sessionIds = sessionRows.map((session) => session.id);
+      const teacherTimeRows = sessionIds.length > 0
+        ? await db.select({
+            classSessionId: classSessionTeacherAssignments.classSessionId,
+            teacherId: classSessionTeacherAssignments.teacherId,
+            startTime: classSessionTeacherAssignments.startTime,
+            endTime: classSessionTeacherAssignments.endTime,
+          }).from(classSessionTeacherAssignments)
+            .where(and(
+              inArray(classSessionTeacherAssignments.classSessionId, sessionIds),
+              eq(classSessionTeacherAssignments.teacherId, req.params.teacherId),
+            ))
+        : [];
+      const timeBySession = new Map(teacherTimeRows.map((assignment) => [assignment.classSessionId, assignment]));
+
+      const [legacyAvailabilities, timeWindows] = await Promise.all([
+        db.select({
+          weekday: teacherAvailability.weekday,
+          shiftTemplateId: teacherAvailability.shiftTemplateId,
+          effectiveFrom: teacherAvailability.effectiveFrom,
+          effectiveTo: teacherAvailability.effectiveTo,
+        }).from(teacherAvailability)
+          .where(and(
+            eq(teacherAvailability.teacherId, req.params.teacherId),
+            eq(teacherAvailability.locationId, locationId),
+          )),
+        db.select({
+          weekday: teacherAvailabilityWindows.weekday,
+          startTime: teacherAvailabilityWindows.startTime,
+          endTime: teacherAvailabilityWindows.endTime,
+          effectiveFrom: teacherAvailabilityWindows.effectiveFrom,
+          effectiveTo: teacherAvailabilityWindows.effectiveTo,
+        }).from(teacherAvailabilityWindows)
+          .where(and(
+            eq(teacherAvailabilityWindows.teacherId, req.params.teacherId),
+            eq(teacherAvailabilityWindows.locationId, locationId),
+          )),
+      ]);
+
+      const dateAtBangkok = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Bangkok",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(new Date()).reduce<Record<string, string>>((parts, part) => {
+        if (part.type !== "literal") parts[part.type] = part.value;
+        return parts;
+      }, {});
+      const today = `${dateAtBangkok.year}-${dateAtBangkok.month}-${dateAtBangkok.day}`;
+      const normalizeDate = (value: unknown) => value == null ? null : String(value).slice(0, 10);
+      const normalizeTime = (value: unknown) => value == null ? "" : String(value).slice(0, 5);
+      const overlaps = (startA: string, endA: string, startB: string, endB: string) =>
+        startA < endB && endA > startB;
+      const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+      const days = Array.from({ length: daysInMonth }, (_, index) => {
+        const date = new Date(Date.UTC(year, monthNumber - 1, index + 1)).toISOString().slice(0, 10);
+        const weekday = new Date(`${date}T00:00:00.000Z`).getUTCDay();
+        const activeShiftAvailability = legacyAvailabilities.filter((availability) =>
+          availability.weekday === weekday
+          && (!normalizeDate(availability.effectiveFrom) || date >= normalizeDate(availability.effectiveFrom)!)
+          && (!normalizeDate(availability.effectiveTo) || date <= normalizeDate(availability.effectiveTo)!));
+        const activeTimeWindows = timeWindows.filter((window) =>
+          window.weekday === weekday
+          && (!normalizeDate(window.effectiveFrom) || date >= normalizeDate(window.effectiveFrom)!)
+          && (!normalizeDate(window.effectiveTo) || date <= normalizeDate(window.effectiveTo)!));
+        const hasAvailabilityRegistration = activeShiftAvailability.length > 0 || activeTimeWindows.length > 0;
+        const dateSessions = sessionRows.filter((session) => normalizeDate(session.date) === date);
+
+        return {
+          date,
+          weekday,
+          slots: shifts.map((shift) => {
+            const shiftStart = normalizeTime(shift.startTime);
+            const shiftEnd = normalizeTime(shift.endTime);
+            const isBusy = dateSessions.some((session) => {
+              const specific = timeBySession.get(session.id);
+              const assigned = Boolean(specific)
+                || (session.teacherIds ?? []).includes(req.params.teacherId);
+              if (!assigned) return false;
+              return overlaps(
+                specific ? normalizeTime(specific.startTime) : normalizeTime(session.shiftStart),
+                specific ? normalizeTime(specific.endTime) : normalizeTime(session.shiftEnd),
+                shiftStart,
+                shiftEnd,
+              );
+            });
+            const isWithinRegisteredAvailability = !hasAvailabilityRegistration
+              || activeShiftAvailability.some((availability) => availability.shiftTemplateId === shift.id)
+              || activeTimeWindows.some((window) =>
+                normalizeTime(window.startTime) <= shiftStart
+                && normalizeTime(window.endTime) >= shiftEnd);
+            const status = date < today
+              ? "past"
+              : isBusy
+                ? "busy"
+                : isWithinRegisteredAvailability
+                  ? "available"
+                  : "outside_availability";
+            return { shiftId: shift.id, status };
+          }),
+        };
+      });
+
+      res.json({
+        locations: sharedLocations,
+        locationId,
+        shifts: shifts.map(({ id, name, startTime, endTime }) => ({ id, name, startTime, endTime })),
+        days,
+      });
+    } catch (error) {
+      console.error("Student schedule-registration teacher slots error:", error);
+      res.status(500).json({ message: "Không thể tải lịch của giáo viên" });
     }
   });
 

@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/hooks/use-language";
+import { TeacherBookingDialog } from "@/components/my-space/TeacherBookingDialog";
 
 type TeacherProfile = {
   experienceValue: number | null;
@@ -29,6 +30,13 @@ type TrainingTeacher = {
 };
 
 type TeacherDirectoryResponse = { teachers: TrainingTeacher[] };
+type RegistrationStudent = {
+  id: string;
+  fullName: string;
+  code: string;
+  locations: { id: string; name: string }[];
+};
+type RegistrationStudentsResponse = { students: RegistrationStudent[] };
 
 function getInitials(fullName: string) {
   return fullName.trim().split(/\s+/).slice(-2).map((part) => part[0] ?? "").join("").toLocaleUpperCase("vi");
@@ -115,24 +123,43 @@ function ProfileSkeleton() {
 
 export function FreeChoiceTeacherProfile({
   teacherId,
+  studentId,
   search,
 }: {
   teacherId: string;
+  studentId: string;
   search: string;
 }) {
   const { lang } = useLanguage();
   const [, setLocation] = useLocation();
+  const [bookingOpen, setBookingOpen] = useState(false);
   const isEnglish = lang === "en";
-  const { data, isLoading, isError, refetch } = useQuery<TeacherDirectoryResponse>({
-    queryKey: ["/api/my-space/schedule-registration/teachers"],
+  const studentsQuery = useQuery<RegistrationStudentsResponse>({
+    queryKey: ["/api/my-space/schedule-registration/students"],
     queryFn: async () => {
-      const response = await fetch("/api/my-space/schedule-registration/teachers", { credentials: "include" });
+      const response = await fetch("/api/my-space/schedule-registration/students", { credentials: "include" });
+      if (!response.ok) throw new Error("Unable to load students");
+      return response.json();
+    },
+  });
+  const resolvedStudentId = studentId || (
+    studentsQuery.data?.students.length === 1 ? studentsQuery.data.students[0].id : ""
+  );
+  const teachersQuery = useQuery<TeacherDirectoryResponse>({
+    queryKey: ["/api/my-space/schedule-registration/teachers", resolvedStudentId],
+    enabled: Boolean(resolvedStudentId),
+    queryFn: async () => {
+      const params = new URLSearchParams({ studentId: resolvedStudentId });
+      const response = await fetch(`/api/my-space/schedule-registration/teachers?${params.toString()}`, { credentials: "include" });
       if (!response.ok) throw new Error("Unable to load teacher profile");
       return response.json();
     },
   });
+  const isLoading = studentsQuery.isLoading || teachersQuery.isLoading;
+  const isError = studentsQuery.isError || teachersQuery.isError;
+  const student = studentsQuery.data?.students.find((item) => item.id === resolvedStudentId);
 
-  const teacher = data?.teachers?.find((item) => item.id === teacherId);
+  const teacher = teachersQuery.data?.teachers?.find((item) => item.id === teacherId);
   const profile = teacher?.teacherProfile;
   const teachingExperience = withoutRatingMetrics(profile?.teachingExperience);
   const certificates = withoutRatingMetrics(profile?.certificates);
@@ -140,12 +167,13 @@ export function FreeChoiceTeacherProfile({
   const returnToList = () => {
     const params = new URLSearchParams();
     params.set("tab", "schedule-registration");
+    if (resolvedStudentId) params.set("studentId", resolvedStudentId);
     if (search) params.set("search", search);
     setLocation(`/my-space/calendar?${params.toString()}`);
   };
 
   if (isLoading) return <ProfileSkeleton />;
-  if (isError || !teacher) {
+  if (isError || !teacher || !student) {
     return (
       <main className="mx-auto flex min-h-[60vh] w-full max-w-5xl flex-col items-start justify-center px-4 py-10 sm:px-7">
         <Button variant="ghost" className="mb-6 -ml-3 gap-2 text-[#326b62]" onClick={returnToList}>
@@ -156,9 +184,19 @@ export function FreeChoiceTeacherProfile({
             {isEnglish ? "This profile is unavailable" : "Hồ sơ hiện chưa thể hiển thị"}
           </h1>
           <p className="mt-2 text-sm leading-6 text-[#79665c]">
-            {isEnglish ? "Please try again, or return to the teacher list." : "Vui lòng thử lại hoặc quay về danh sách giáo viên."}
+            {!resolvedStudentId
+              ? (isEnglish ? "Return to the list and select a student first." : "Vui lòng quay lại danh sách và chọn học viên trước.")
+              : (isEnglish ? "Please try again, or return to the teacher list." : "Vui lòng thử lại hoặc quay về danh sách giáo viên.")}
           </p>
-          {isError && <Button variant="outline" className="mt-4" onClick={() => refetch()}>{isEnglish ? "Try again" : "Thử lại"}</Button>}
+          {isError && (
+            <Button
+              variant="outline"
+              className="mt-4"
+              onClick={() => { void Promise.all([studentsQuery.refetch(), teachersQuery.refetch()]); }}
+            >
+              {isEnglish ? "Try again" : "Thử lại"}
+            </Button>
+          )}
         </section>
       </main>
     );
@@ -212,8 +250,8 @@ export function FreeChoiceTeacherProfile({
                 ) : <span />}
                 <Button
                   type="button"
-                  disabled
-                  className="min-h-9 shrink-0 rounded-lg bg-[#4d857a] px-3 text-xs text-white opacity-55"
+                  onClick={() => setBookingOpen(true)}
+                  className="min-h-9 shrink-0 rounded-lg bg-[#4d857a] px-3 text-xs text-white hover:bg-[#3d756a]"
                 >
                   <CalendarDays className="mr-1.5 h-3.5 w-3.5" />
                   {isEnglish ? "Register" : "Đăng ký học"}
@@ -249,15 +287,26 @@ export function FreeChoiceTeacherProfile({
 
           <footer className="flex flex-col items-stretch justify-between gap-3 border-t border-[#e4ebe7] pt-5 sm:flex-row sm:items-center">
             <p className="text-xs leading-5 text-[#788882]">
-              {isEnglish ? "Schedule registration is not available yet." : "Tính năng đăng ký học hiện chưa khả dụng."}
+              {isEnglish ? "Browse available times; submitting a registration will be added later." : "Bạn có thể xem ca còn trống; gửi đăng ký sẽ được bổ sung sau."}
             </p>
-            <Button type="button" disabled className="min-h-11 shrink-0 rounded-xl bg-[#4d857a] px-5 text-white opacity-55">
+            <Button type="button" onClick={() => setBookingOpen(true)} className="min-h-11 shrink-0 rounded-xl bg-[#4d857a] px-5 text-white hover:bg-[#3d756a]">
               <CalendarDays className="mr-2 h-4 w-4" />
               {isEnglish ? "Register to study" : "Đăng ký học"}
             </Button>
           </footer>
         </div>
       </div>
+      <TeacherBookingDialog
+        open={bookingOpen}
+        onOpenChange={setBookingOpen}
+        teacher={{
+          id: teacher.id,
+          fullName: teacher.fullName,
+          avatarUrl: teacher.avatarUrl,
+          teachingSubjects: teacher.teachingSubjects,
+        }}
+        student={student}
+      />
     </main>
   );
 }
