@@ -1817,7 +1817,7 @@ export function registerMySpaceRoutes(app: Express): void {
             experienceUnit: "year" | "month" | null;
             teachingExperience: string;
           } | null>`CASE
-            WHEN ${staffTeacherProfiles.staffId} IS NULL THEN NULL
+            WHEN ${staffTeacherProfiles.profile} IS NULL THEN NULL
             ELSE jsonb_build_object(
               'experienceValue', ${staffTeacherProfiles.profile}->'experienceValue',
               'experienceUnit', ${staffTeacherProfiles.profile}->'experienceUnit',
