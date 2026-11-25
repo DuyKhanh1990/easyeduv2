@@ -34,6 +34,7 @@ import { resolveScoreSheetAssessmentStatus } from "@shared/score-sheet-assessmen
 import {
   students,
   staff,
+  subjects,
   staffAssignments,
   staffTeacherProfiles,
   departments,
@@ -1812,6 +1813,7 @@ export function registerMySpaceRoutes(app: Express): void {
           id: staff.id,
           fullName: staff.fullName,
           avatarUrl: staff.avatarUrl,
+          teachingSubjectIds: staff.teachingSubjectIds,
           teacherProfile: sql<{
             experienceValue: number | null;
             experienceUnit: "year" | "month" | null;
@@ -1837,10 +1839,25 @@ export function registerMySpaceRoutes(app: Express): void {
           eq(users.isActive, true),
           ne(users.username, "admin"),
         ))
-        .groupBy(staff.id, staff.fullName, staff.avatarUrl, staffTeacherProfiles.profile)
+        .groupBy(staff.id, staff.fullName, staff.avatarUrl, staff.teachingSubjectIds, staffTeacherProfiles.profile)
         .orderBy(staff.fullName);
 
-      res.json({ teachers });
+      const subjectIds = Array.from(new Set(teachers.flatMap((teacher) => teacher.teachingSubjectIds ?? [])));
+      const subjectRows = subjectIds.length > 0
+        ? await db.select({ id: subjects.id, name: subjects.name })
+          .from(subjects)
+          .where(inArray(subjects.id, subjectIds))
+        : [];
+      const subjectNameById = new Map(subjectRows.map((subject) => [subject.id, subject.name]));
+
+      res.json({
+        teachers: teachers.map(({ teachingSubjectIds, ...teacher }) => ({
+          ...teacher,
+          teachingSubjects: (teachingSubjectIds ?? [])
+            .map((subjectId) => subjectNameById.get(subjectId))
+            .filter((name): name is string => Boolean(name)),
+        })),
+      });
     } catch (error) {
       console.error("Student schedule-registration teacher list error:", error);
       res.status(500).json({ message: "Không thể tải danh sách giáo viên" });

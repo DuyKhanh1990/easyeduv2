@@ -205,6 +205,7 @@ export const api = {
         address: z.string().optional().nullable(),
         status: z.string().optional(),
         dateOfBirth: z.string().optional().nullable(),
+        teachingSubjectIds: z.array(z.string().uuid()).optional(),
         assignments: z.array(z.object({
           locationId: z.string().uuid(),
           departmentId: z.string().uuid().optional().nullable(),
@@ -231,6 +232,7 @@ export const api = {
         address: z.string().optional().nullable(),
         status: z.string().optional(),
         dateOfBirth: z.string().optional().nullable(),
+        teachingSubjectIds: z.array(z.string().uuid()).optional(),
         assignments: z.array(z.object({
           locationId: z.string().uuid(),
           departmentId: z.string().uuid().optional().nullable(),

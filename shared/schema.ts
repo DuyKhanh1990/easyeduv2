@@ -569,6 +569,7 @@ export const staff = pgTable("staff", {
   code: varchar("code", { length: 50 }).notNull().unique(),
   fullName: varchar("full_name", { length: 255 }).notNull(),
   avatarUrl: text("avatar_url"),
+  teachingSubjectIds: uuid("teaching_subject_ids").array().notNull().default(sql`'{}'`),
   phone: varchar("phone", { length: 50 }),
   email: varchar("email", { length: 255 }),
   dateOfBirth: date("date_of_birth"),

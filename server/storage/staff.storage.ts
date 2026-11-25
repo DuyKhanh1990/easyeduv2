@@ -300,6 +300,7 @@ export async function getStaff(
     code: staff.code,
     fullName: staff.fullName,
     avatarUrl: staff.avatarUrl,
+    teachingSubjectIds: staff.teachingSubjectIds,
     phone: staff.phone,
     email: staff.email,
     dateOfBirth: staff.dateOfBirth,
@@ -424,6 +425,7 @@ export async function getStaff(
         code: s.code,
         fullName: s.fullName,
         avatarUrl: s.avatarUrl,
+        teachingSubjectIds: s.teachingSubjectIds ?? [],
         email: s.email,
         phone: s.phone,
         status: s.status,
@@ -624,6 +626,9 @@ export async function createStaff(insertData: any): Promise<Staff> {
 
       const [newStaff] = await tx.insert(staff).values({
         ...staffData,
+        teachingSubjectIds: Array.isArray(staffData.teachingSubjectIds)
+          ? Array.from(new Set(staffData.teachingSubjectIds.filter((id: unknown): id is string => typeof id === "string")))
+          : [],
         userId: user.id,
       }).returning();
 
@@ -699,6 +704,7 @@ export async function updateStaff(id: string, updates: any, allowedLocationIds: 
     omicallPasswords,
     voip24hExtensions,
     voip24hSipPasswords,
+    teachingSubjectIds,
     ...staffUpdates
   } = updates;
   const normalizedUsername = typeof username === "string" ? username.trim().toLowerCase() : "";
@@ -847,7 +853,17 @@ export async function updateStaff(id: string, updates: any, allowedLocationIds: 
     }
 
     const [updated] = await tx.update(staff)
-      .set({ ...staffUpdates, updatedAt: new Date() })
+      .set({
+        ...staffUpdates,
+        ...(teachingSubjectIds !== undefined
+          ? {
+              teachingSubjectIds: Array.isArray(teachingSubjectIds)
+                ? Array.from(new Set(teachingSubjectIds.filter((id: unknown): id is string => typeof id === "string")))
+                : [],
+            }
+          : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(staff.id, id))
       .returning();
     return updated;

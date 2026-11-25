@@ -759,6 +759,24 @@ async function getStaffLimitInfo(): Promise<{ limit: number | null; activeCount:
   };
 }
 
+async function normalizeStaffTeachingSubjectIds(value: unknown): Promise<string[]> {
+  const parsed = z.array(z.string().uuid()).max(100).safeParse(value ?? []);
+  if (!parsed.success) {
+    throw new Error("Danh sách bộ môn không hợp lệ.");
+  }
+
+  const ids = Array.from(new Set(parsed.data));
+  if (ids.length === 0) return ids;
+
+  const { subjects } = await import("@shared/schema");
+  const existingSubjects = await db
+    .select({ id: subjects.id })
+    .from(subjects)
+    .where(inArray(subjects.id, ids));
+  const existingIds = new Set(existingSubjects.map((subject) => subject.id));
+  return ids.filter((id) => existingIds.has(id));
+}
+
 export function registerConfigRoutes(app: Express): void {
   // Keep one audit trail for every mutation made from the education-config page.
   // Middleware coverage prevents newly added config endpoints from silently
@@ -1070,6 +1088,7 @@ export function registerConfigRoutes(app: Express): void {
   app.post(api.staff.create.path, async (req, res) => {
     try {
       const body = { ...req.body, dateOfBirth: sanitizeDateField(req.body.dateOfBirth) };
+      body.teachingSubjectIds = await normalizeStaffTeachingSubjectIds(body.teachingSubjectIds);
       const roleIds: string[] = Array.from(new Set<string>(
         (Array.isArray(body.roleIds) ? body.roleIds : [])
           .filter((roleId: unknown): roleId is string => typeof roleId === "string" && roleId.length > 0),
@@ -1113,6 +1132,9 @@ export function registerConfigRoutes(app: Express): void {
   app.put(api.staff.update.path, async (req, res) => {
     try {
       const body = { ...req.body, dateOfBirth: sanitizeDateField(req.body.dateOfBirth) };
+      if (Object.prototype.hasOwnProperty.call(body, "teachingSubjectIds")) {
+        body.teachingSubjectIds = await normalizeStaffTeachingSubjectIds(body.teachingSubjectIds);
+      }
       const before = (await storage.getStaff(req.allowedLocationIds, req.isSuperAdmin)).find((item: any) => item.id === req.params.id);
       const existingRoleIds: string[] = Array.isArray(before?.roleIds) ? before.roleIds : [];
       const submittedRoleIds = Array.isArray(body.roleIds) ? body.roleIds : existingRoleIds;
