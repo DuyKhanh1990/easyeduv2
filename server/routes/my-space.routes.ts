@@ -77,6 +77,10 @@ import {
   evaluationSubCriteria,
 } from "@shared/schema";
 import { storage } from "../storage";
+import {
+  confirmTeacherBooking,
+  getTeacherBookingOptions,
+} from "../storage/teacher-booking.storage";
 import { eq, and, gte, lte, sql, inArray, isNotNull, isNull, or, desc, ne } from "drizzle-orm";
 import { uploadFileToS3FromStream } from "../lib/s3";
 import { addS3Bytes, recordFileUpload } from "../lib/storage-usage";
@@ -2144,6 +2148,66 @@ export function registerMySpaceRoutes(app: Express): void {
     } catch (error) {
       console.error("Student schedule-registration teacher slots error:", error);
       res.status(500).json({ message: "Không thể tải lịch của giáo viên" });
+    }
+  });
+
+  app.get("/api/my-space/schedule-registration/options", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      const eligibleStudents = await getScheduleRegistrationStudents(user.id);
+      const studentId = typeof req.query.studentId === "string" ? req.query.studentId : "";
+      const locationId = typeof req.query.locationId === "string" ? req.query.locationId : "";
+      const selectedStudent = eligibleStudents.find((student) => student.id === studentId);
+      if (!selectedStudent) return res.status(403).json({ message: "Học viên không thuộc tài khoản này" });
+      if (!selectedStudent.locations.some((location) => location.id === locationId)) {
+        return res.status(403).json({ message: "Học viên không thuộc cơ sở đã chọn" });
+      }
+
+      res.json(await getTeacherBookingOptions({ studentId, locationId }));
+    } catch (error) {
+      console.error("Student schedule-registration options error:", error);
+      res.status(500).json({ message: "Không thể tải thông tin gói học phí" });
+    }
+  });
+
+  app.post("/api/my-space/schedule-registration/confirm", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      const bodySchema = z.object({
+        studentId: z.string().uuid(),
+        teacherId: z.string().uuid(),
+        locationId: z.string().uuid(),
+        sessionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        shiftIds: z.array(z.string().uuid()).min(1).max(20),
+        packageId: z.string().uuid(),
+        packageSource: z.enum(["existing", "new"]),
+        learningMode: z.enum(["offline", "online"]),
+        requestKey: z.string().uuid(),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Thông tin đăng ký chưa hợp lệ", errors: parsed.error.flatten() });
+      }
+
+      const eligibleStudents = await getScheduleRegistrationStudents(user.id);
+      const selectedStudent = eligibleStudents.find((student) => student.id === parsed.data.studentId);
+      if (!selectedStudent) return res.status(403).json({ message: "Học viên không thuộc tài khoản này" });
+      if (!selectedStudent.locations.some((location) => location.id === parsed.data.locationId)) {
+        return res.status(403).json({ message: "Học viên không thuộc cơ sở đã chọn" });
+      }
+
+      const result = await confirmTeacherBooking({
+        ...parsed.data,
+        userId: user.id,
+      });
+      res.status(result.duplicate ? 200 : 201).json(result);
+    } catch (error: any) {
+      console.error("Student schedule-registration confirm error:", error);
+      res.status(400).json({ message: error?.message || "Không thể xác nhận đăng ký lịch học" });
     }
   });
 
