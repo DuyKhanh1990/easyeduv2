@@ -458,11 +458,16 @@ function parseDateParam(search: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-function StudentCalendarView({ viewMode }: { viewMode: "calendar" | "month" }) {
+function StudentCalendarView({
+  viewMode,
+  todayRevision,
+}: {
+  viewMode: "calendar" | "month";
+  todayRevision: number;
+}) {
   const search = useSearch();
   const { lang, t } = useLanguage();
   const initDate = parseDateParam(search) ?? new Date();
-  const today = new Date();
   const [year, setYear] = useState(initDate.getFullYear());
   const [month, setMonth] = useState(initDate.getMonth());
   const [selectedDate, setSelectedDate] = useState(toDateString(initDate));
@@ -470,6 +475,14 @@ function StudentCalendarView({ viewMode }: { viewMode: "calendar" | "month" }) {
     session: MyCalendarSessionLight;
     date: string;
   } | null>(null);
+
+  useEffect(() => {
+    if (todayRevision === 0) return;
+    const now = new Date();
+    setYear(now.getFullYear());
+    setMonth(now.getMonth());
+    setSelectedDate(toDateString(now));
+  }, [todayRevision]);
 
   // Khi URL param ?date= thay đổi (VD: click noti khi đang ở trang này),
   // cập nhật state để hiển thị đúng ngày — useState chỉ init 1 lần nên cần effect này
@@ -507,24 +520,8 @@ function StudentCalendarView({ viewMode }: { viewMode: "calendar" | "month" }) {
     if (month === 11) { setYear((y) => y + 1); setMonth(0); }
     else setMonth((m) => m + 1);
   };
-  const goToToday = () => {
-    const now = new Date();
-    setYear(now.getFullYear()); setMonth(now.getMonth()); setSelectedDate(toDateString(now));
-  };
-
   return (
     <>
-      <div className="flex items-start justify-between">
-        <p className="text-sm text-muted-foreground mt-0.5">{formatMonthLabel(year, month, lang)}</p>
-        <button
-          onClick={goToToday}
-          data-testid="btn-today"
-          className="text-sm px-4 py-1.5 rounded-full border border-border bg-background hover:bg-secondary transition-colors font-medium"
-        >
-           {t("mySpace.calendar.today")}
-        </button>
-      </div>
-
       <div className="bg-card rounded-2xl border border-border p-4 space-y-4 shadow-sm">
         <div className="flex items-center justify-between">
           <button onClick={goToPrevMonth} data-testid="btn-prev-month" className="h-7 w-7 rounded-full bg-secondary hover:bg-secondary/70 flex items-center justify-center transition-colors">
@@ -640,28 +637,34 @@ function StudentCalendarView({ viewMode }: { viewMode: "calendar" | "month" }) {
 export function StudentCalendar() {
   const { t } = useLanguage();
   const [view, setView] = useState<"calendar" | "month" | "list">("calendar");
+  const [todayRevision, setTodayRevision] = useState(0);
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4 px-3 py-4 sm:space-y-5 sm:px-4 sm:py-6">
       <Tabs defaultValue="personal-calendar" className="space-y-4">
-        <TabsList className="grid h-auto w-full grid-cols-2 rounded-xl bg-muted p-1 sm:w-fit">
-          <TabsTrigger
-            value="personal-calendar"
-            data-testid="tab-personal-calendar"
-            className="min-h-10 rounded-lg px-4"
-          >
-            <CalendarDays className="mr-2 h-4 w-4" />
-            {t("mySpace.calendar.personalTab")}
-          </TabsTrigger>
-          <TabsTrigger
-            value="schedule-registration"
-            data-testid="tab-schedule-registration"
-            className="min-h-10 rounded-lg px-4"
-          >
-            <Calendar className="mr-2 h-4 w-4" />
-            {t("mySpace.calendar.registrationTab")}
-          </TabsTrigger>
-        </TabsList>
+        <div
+          className="flex flex-wrap items-center gap-2"
+          data-page-guide-anchor
+        >
+          <TabsList className="grid h-auto w-fit grid-cols-2 rounded-xl bg-muted p-1">
+            <TabsTrigger
+              value="personal-calendar"
+              data-testid="tab-personal-calendar"
+              className="min-h-10 rounded-lg px-4 data-[state=active]:!bg-primary data-[state=active]:!text-primary-foreground data-[state=active]:shadow-sm"
+            >
+              <CalendarDays className="mr-2 h-4 w-4" />
+              {t("mySpace.calendar.personalTab")}
+            </TabsTrigger>
+            <TabsTrigger
+              value="schedule-registration"
+              data-testid="tab-schedule-registration"
+              className="min-h-10 rounded-lg px-4 data-[state=active]:!bg-primary data-[state=active]:!text-primary-foreground data-[state=active]:shadow-sm"
+            >
+              <Calendar className="mr-2 h-4 w-4" />
+              {t("mySpace.calendar.registrationTab")}
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent
           value="personal-calendar"
@@ -703,6 +706,16 @@ export function StudentCalendar() {
                   {t("mySpace.calendar.calendarView")}
                 </button>
                 <button
+                  onClick={() => setTodayRevision((revision) => revision + 1)}
+                  data-testid="btn-today"
+                  className={cn(
+                    "flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:min-h-0 sm:flex-none",
+                    "text-muted-foreground hover:bg-background hover:text-foreground"
+                  )}
+                >
+                  {t("mySpace.calendar.today")}
+                </button>
+                <button
                   onClick={() => setView("month")}
                   data-testid="btn-view-month"
                   className={cn(
@@ -719,7 +732,11 @@ export function StudentCalendar() {
             </div>
           </div>
 
-          {view === "list" ? <StudentListView /> : <StudentCalendarView viewMode={view} />}
+          {view === "list" ? (
+            <StudentListView />
+          ) : (
+            <StudentCalendarView viewMode={view} todayRevision={todayRevision} />
+          )}
         </TabsContent>
 
         <TabsContent

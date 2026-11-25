@@ -46,14 +46,14 @@ export function StudentScheduleRegistration() {
           <TabsTrigger
             value="personal-choice"
             data-testid="tab-free-choice-registration"
-            className="min-h-10 whitespace-normal rounded-lg px-3 text-xs sm:px-4 sm:text-sm"
+            className="min-h-10 whitespace-normal rounded-lg px-3 text-xs data-[state=active]:!bg-primary data-[state=active]:!text-primary-foreground data-[state=active]:shadow-sm sm:px-4 sm:text-sm"
           >
             {t("mySpace.calendar.freeChoiceTab")}
           </TabsTrigger>
           <TabsTrigger
             value="existing-schedule"
             data-testid="tab-existing-schedule-registration"
-            className="min-h-10 whitespace-normal rounded-lg px-3 text-xs sm:px-4 sm:text-sm"
+            className="min-h-10 whitespace-normal rounded-lg px-3 text-xs data-[state=active]:!bg-primary data-[state=active]:!text-primary-foreground data-[state=active]:shadow-sm sm:px-4 sm:text-sm"
           >
             {t("mySpace.calendar.existingScheduleTab")}
           </TabsTrigger>
