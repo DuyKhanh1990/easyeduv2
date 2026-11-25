@@ -640,8 +640,14 @@ export function StudentCalendar() {
   const routeSearch = useSearch();
   const routeParams = new URLSearchParams(routeSearch);
   const teacherId = routeParams.get("teacher");
+  const initialTab = routeParams.get("tab") === "schedule-registration"
+    ? "schedule-registration"
+    : "personal-calendar";
+  const [activePageTab, setActivePageTab] = useState(initialTab);
   const [view, setView] = useState<"calendar" | "month" | "list">("calendar");
   const [todayRevision, setTodayRevision] = useState(0);
+
+  useEffect(() => setActivePageTab(initialTab), [initialTab]);
 
   if (teacherId) {
     return (
@@ -653,10 +659,15 @@ export function StudentCalendar() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-4 px-3 py-4 sm:space-y-5 sm:px-4 sm:py-6">
+    <div className={cn(
+      "mx-auto w-full",
+      activePageTab === "schedule-registration"
+        ? "max-w-[1440px] px-1 py-2 sm:px-2"
+        : "max-w-5xl space-y-4 px-3 py-4 sm:space-y-5 sm:px-4 sm:py-6"
+    )}>
       <Tabs
-        key={routeParams.get("tab") ?? "personal-calendar"}
-        defaultValue={routeParams.get("tab") === "schedule-registration" ? "schedule-registration" : "personal-calendar"}
+        value={activePageTab}
+        onValueChange={setActivePageTab}
         className="space-y-4"
       >
         <div
