@@ -2,7 +2,7 @@ import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Sidebar } from "./Sidebar";
 import { useAuth } from "@/hooks/use-auth";
-import { Redirect, useLocation } from "wouter";
+import { Redirect, useLocation, useSearch } from "wouter";
 import { motion } from "framer-motion";
 import { useTaskReminder } from "@/hooks/use-task-reminder";
 import { TaskReminderToastContainer } from "@/components/notifications/TaskReminderToast";
@@ -53,7 +53,11 @@ export function DashboardLayout({ children, fullscreen }: { children: ReactNode;
   const { data: user, isLoading } = useAuth();
   const { toasts, dismiss } = useTaskReminder();
   const [location] = useLocation();
-  const guidePageTitle = getGuidePageTitle(location);
+  const search = useSearch();
+  const guideLocation = `${location.split("?")[0]}${search ? `?${search.replace(/^\?/, "")}` : ""}`;
+  const isTeacherProfile = location.split("?")[0] === "/my-space/calendar"
+    && !!new URLSearchParams(search).get("teacher");
+  const guidePageTitle = getGuidePageTitle(guideLocation);
   const contentRef = useRef<HTMLDivElement>(null);
   const guideMountRef = useRef<HTMLDivElement | null>(null);
   const [guideMount, setGuideMount] = useState<HTMLDivElement | null>(null);
@@ -198,12 +202,12 @@ export function DashboardLayout({ children, fullscreen }: { children: ReactNode;
             {children}
           </div>
         ) : (
-          <main className="flex-1 overflow-y-auto scroll-smooth">
+          <main className={`flex-1 scroll-smooth ${isTeacherProfile ? "overflow-y-auto md:min-h-0 md:overflow-hidden" : "overflow-y-auto"}`}>
             <motion.div
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, ease: "easeOut" }}
-              className="h-full w-full p-4 md:p-6 lg:p-8"
+              className={`h-full w-full p-4 md:p-6 lg:p-8 ${isTeacherProfile ? "md:min-h-0" : ""}`}
             >
               {children}
             </motion.div>

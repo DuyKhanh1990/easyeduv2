@@ -171,18 +171,18 @@ export function FreeChoiceTeacherProfile({
     : "";
 
   return (
-    <main className="mx-auto min-h-[70vh] w-full max-w-[1440px] px-1 pb-12 pt-5 sm:px-2 sm:pb-16 sm:pt-8">
+    <main className="mx-auto w-full max-w-[1440px] px-1 py-2 sm:px-2 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
       <button
         type="button"
         onClick={returnToList}
-        className="group mb-5 inline-flex min-h-10 items-center gap-2 rounded-full px-3 text-sm font-medium text-[#47726a] transition-colors hover:bg-[#e8f2ed] hover:text-[#204f49] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5f9b8f]"
+        className="group mb-3 inline-flex min-h-10 shrink-0 items-center gap-2 self-start rounded-full px-3 text-sm font-medium text-[#47726a] transition-colors hover:bg-[#e8f2ed] hover:text-[#204f49] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5f9b8f] md:mb-2"
       >
         <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
         {isEnglish ? "Back to teachers" : "Quay lại danh sách"}
       </button>
 
-      <div className="grid items-start gap-5 md:grid-cols-[minmax(0,7fr)_minmax(0,13fr)]">
-        <aside className="self-start rounded-[26px] border border-[#d5e4de] bg-[#eaf3ef] shadow-[0_16px_50px_-36px_rgba(31,79,70,0.38)] md:sticky md:left-0 md:top-[7.25rem] lg:top-[7.75rem]">
+      <div className="grid items-start gap-5 md:min-h-0 md:flex-1 md:grid-cols-[minmax(0,7fr)_minmax(0,13fr)] md:items-center">
+        <aside className="rounded-[26px] border border-[#d5e4de] bg-[#eaf3ef] shadow-[0_16px_50px_-36px_rgba(31,79,70,0.38)] md:max-h-full md:self-center">
           <div className="p-4 sm:p-6">
             <div className="mx-auto aspect-[4/3] w-2/3 max-w-[16rem] overflow-hidden rounded-[22px] border-4 border-[#fffefa] bg-[#dcece8] shadow-[0_12px_26px_-14px_rgba(29,76,68,0.38)] md:aspect-[4/5]">
               <TeacherPortrait teacher={teacher} />
@@ -213,7 +213,7 @@ export function FreeChoiceTeacherProfile({
           </div>
         </aside>
 
-        <div className="min-w-0 space-y-5 rounded-[26px] border border-[#dce8e4] bg-[#fffefa] p-4 shadow-[0_16px_50px_-36px_rgba(31,79,70,0.32)] sm:space-y-6 sm:p-6 lg:p-7">
+        <div className="min-w-0 space-y-5 rounded-[26px] border border-[#dce8e4] bg-[#fffefa] p-4 shadow-[0_16px_50px_-36px_rgba(31,79,70,0.32)] sm:space-y-6 sm:p-6 lg:p-7 md:h-full md:overflow-y-auto md:overscroll-contain">
           <div className="border-b border-[#e4ebe7] pb-4">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#64847c]">
               {isEnglish ? "Professional background" : "Thông tin chuyên môn"}
