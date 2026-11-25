@@ -98,7 +98,6 @@ export function TeacherBookingDetailsStep({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [packageSource, setPackageSource] = useState<"existing" | "new">("existing");
-  const didInitializePackagesRef = useRef(false);
   const requestKeyRef = useRef<string | null>(null);
   const optionsQuery = useQuery<BookingOptions>({
     queryKey: ["/api/my-space/schedule-registration/options", student.id, locationId],
@@ -119,6 +118,7 @@ export function TeacherBookingDetailsStep({
     ? optionsQuery.data?.purchasedPackages ?? []
     : optionsQuery.data?.newPackages ?? [];
   const selectedPackage = availablePackages.find((item) => item.id === selectedFeePackageId);
+  const newPackages = optionsQuery.data?.newPackages ?? [];
   const selectedShiftCount = selectedShifts.length;
   const selectedPackageSessions = selectedPackage
     ? Number(packageSource === "existing" ? selectedPackage.remainingSessions : selectedPackage.sessions) || 0
@@ -130,6 +130,14 @@ export function TeacherBookingDetailsStep({
     : 0;
   const depositBalance = Number(optionsQuery.data?.depositBalance) || 0;
   const hasEnoughDeposit = packageSource === "existing" || depositBalance >= fullPackageAmount;
+  const depositHintIsEnough = packageSource === "new" && selectedPackage
+    ? hasEnoughDeposit
+    : newPackages.some((item) => {
+      const amount = item.type === "buổi"
+        ? (Number(item.fee) || 0) * (Number(item.sessions) || 0)
+        : Number(item.totalAmount) || 0;
+      return amount > 0 && depositBalance >= amount;
+    });
   const canConfirm = Boolean(
     selectedPackage
     && learningMode
@@ -141,28 +149,9 @@ export function TeacherBookingDetailsStep({
   );
 
   useEffect(() => {
-    if (!optionsQuery.data || didInitializePackagesRef.current) return;
-    didInitializePackagesRef.current = true;
-    const existing = optionsQuery.data.purchasedPackages;
-    const availableNew = optionsQuery.data.newPackages;
-    if (existing.length > 0) {
-      setPackageSource("existing");
-      if (!existing.some((item) => item.id === selectedFeePackageId)) {
-        onFeePackageChange(existing[0].id);
-      }
-    } else {
-      setPackageSource("new");
-      const firstAffordable = availableNew.find((item) => {
-        const amount = item.type === "buổi"
-          ? Number(item.fee) * Number(item.sessions)
-          : Number(item.totalAmount);
-        return amount > 0 && amount <= optionsQuery.data!.depositBalance;
-      });
-      if (!availableNew.some((item) => item.id === selectedFeePackageId)) {
-        onFeePackageChange(firstAffordable?.id ?? availableNew[0]?.id ?? "");
-      }
-    }
-  }, [optionsQuery.data, selectedFeePackageId, onFeePackageChange]);
+    if (!optionsQuery.data || optionsQuery.data.purchasedPackages.length > 0) return;
+    setPackageSource("new");
+  }, [optionsQuery.data]);
 
   const confirmMutation = useMutation({
     mutationFn: async () => {
@@ -238,14 +227,6 @@ export function TeacherBookingDetailsStep({
             <span className="text-[#9aa7a0]">—</span>
             <span className="text-[#87948d]">{isEnglish ? "Complete" : "Hoàn tất"}</span>
           </div>
-          <h2 className="mt-4 font-display text-xl font-semibold text-[#203c38]">
-            {isEnglish ? "Choose a tuition package" : "Chọn gói học phí"}
-          </h2>
-          <p className="mt-1 text-sm text-[#71827a]">
-            {isEnglish
-              ? "Choose a package for the selected student and center."
-              : "Chọn gói học phí phù hợp với học sinh và cơ sở đã chọn."}
-          </p>
         </header>
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto py-5">
@@ -273,39 +254,32 @@ export function TeacherBookingDetailsStep({
                       type="button"
                       aria-pressed={packageSource === "existing"}
                       onClick={() => {
+                        if (packageSource !== "existing") onFeePackageChange("");
                         setPackageSource("existing");
-                        onFeePackageChange(optionsQuery.data?.purchasedPackages[0]?.id ?? "");
                       }}
                       className={`min-h-10 rounded-xl border px-4 text-xs font-semibold transition-colors ${packageSource === "existing" ? "border-[#4d8c7d] bg-[#e8f3ed] text-[#28665d]" : "border-[#dce7e1] bg-white text-[#71827a] hover:bg-[#f5f8f5]"}`}
                     >
                       {isEnglish ? "Already purchased" : "Gói đã đăng ký trước"}
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    aria-pressed={packageSource === "new"}
-                    onClick={() => {
-                      setPackageSource("new");
-                      const firstAffordable = optionsQuery.data?.newPackages.find((item) => {
-                        const amount = item.type === "buổi"
-                          ? Number(item.fee) * Number(item.sessions)
-                          : Number(item.totalAmount);
-                        return amount > 0 && amount <= depositBalance;
-                      });
-                      onFeePackageChange(firstAffordable?.id ?? optionsQuery.data?.newPackages[0]?.id ?? "");
-                    }}
-                    className={`min-h-10 rounded-xl border px-4 text-xs font-semibold transition-colors ${packageSource === "new" ? "border-[#4d8c7d] bg-[#e8f3ed] text-[#28665d]" : "border-[#dce7e1] bg-white text-[#71827a] hover:bg-[#f5f8f5]"}`}
-                  >
-                    {isEnglish ? "New package with deposit" : "Gói mới theo Ví Đặt Cọc"}
-                  </button>
+                    <div className="flex flex-col items-start">
+                      <button
+                        type="button"
+                        aria-pressed={packageSource === "new"}
+                        onClick={() => {
+                          if (packageSource !== "new") onFeePackageChange("");
+                          setPackageSource("new");
+                        }}
+                        className={`min-h-10 rounded-xl border px-4 text-xs font-semibold transition-colors ${packageSource === "new" ? "border-[#4d8c7d] bg-[#e8f3ed] text-[#28665d]" : "border-[#dce7e1] bg-white text-[#71827a] hover:bg-[#f5f8f5]"}`}
+                      >
+                        {isEnglish ? "New package with deposit" : "Gói mới theo Ví Đặt Cọc"}
+                      </button>
+                      <p className={`mt-1 pl-1 text-[10px] leading-4 ${depositHintIsEnough ? "text-emerald-700" : "text-orange-700"}`}>
+                        {isEnglish ? "Deposit wallet: " : "Ví Đặt Cọc: "}
+                        {new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(depositBalance)} đ
+                      </p>
+                    </div>
                 </div>
-
-                {packageSource === "new" && (
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#dce7e1] bg-[#f1f7f3] px-4 py-3 text-sm">
-                    <span className="text-[#61776d]">{isEnglish ? "Deposit wallet balance" : "Số dư Ví Đặt Cọc"}</span>
-                    <strong className="font-display text-base text-[#28665d]">{currency(depositBalance, locale)}</strong>
-                  </div>
-                )}
 
                 {availablePackages.length ? (
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
