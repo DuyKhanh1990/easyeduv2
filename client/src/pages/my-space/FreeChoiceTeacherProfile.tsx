@@ -203,12 +203,22 @@ export function FreeChoiceTeacherProfile({
                   ))}
                 </div>
               )}
-              {experience && (
-                <div className="mt-5 flex items-start gap-2 border-t border-[#d4e3dd] pt-4 text-sm font-medium leading-6 text-[#45655e]">
-                  <BriefcaseBusiness className="mt-1 h-4 w-4 shrink-0 text-[#51887c]" />
-                  <span>{experience}</span>
-                </div>
-              )}
+              <div className="mt-5 flex items-center justify-between gap-3 border-t border-[#d4e3dd] pt-4">
+                {experience ? (
+                  <div className="flex min-w-0 items-start gap-2 text-sm font-medium leading-6 text-[#45655e]">
+                    <BriefcaseBusiness className="mt-1 h-4 w-4 shrink-0 text-[#51887c]" />
+                    <span>{experience}</span>
+                  </div>
+                ) : <span />}
+                <Button
+                  type="button"
+                  disabled
+                  className="min-h-9 shrink-0 rounded-lg bg-[#4d857a] px-3 text-xs text-white opacity-55"
+                >
+                  <CalendarDays className="mr-1.5 h-3.5 w-3.5" />
+                  {isEnglish ? "Register" : "Đăng ký học"}
+                </Button>
+              </div>
             </div>
           </div>
         </aside>
