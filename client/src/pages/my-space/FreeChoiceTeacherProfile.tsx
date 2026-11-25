@@ -4,7 +4,6 @@ import { useLocation } from "wouter";
 import {
   ArrowLeft,
   Award,
-  BookOpenText,
   BriefcaseBusiness,
   CalendarDays,
   Check,
@@ -172,7 +171,7 @@ export function FreeChoiceTeacherProfile({
     : "";
 
   return (
-    <main className="mx-auto min-h-[70vh] w-full max-w-6xl px-4 pb-12 pt-5 sm:px-7 sm:pb-16 sm:pt-8">
+    <main className="mx-auto min-h-[70vh] w-full max-w-[1440px] px-1 pb-12 pt-5 sm:px-2 sm:pb-16 sm:pt-8">
       <button
         type="button"
         onClick={returnToList}
@@ -183,9 +182,9 @@ export function FreeChoiceTeacherProfile({
       </button>
 
       <div className="grid items-start gap-5 md:grid-cols-[minmax(0,7fr)_minmax(0,13fr)]">
-        <aside className="overflow-hidden rounded-[26px] border border-[#d5e4de] bg-[#eaf3ef] shadow-[0_16px_50px_-36px_rgba(31,79,70,0.38)]">
+        <aside className="self-start rounded-[26px] border border-[#d5e4de] bg-[#eaf3ef] shadow-[0_16px_50px_-36px_rgba(31,79,70,0.38)] md:sticky md:left-0 md:top-4">
           <div className="p-4 sm:p-6">
-            <div className="mx-auto aspect-[4/3] max-w-sm overflow-hidden rounded-[22px] border-4 border-[#fffefa] bg-[#dcece8] shadow-[0_12px_26px_-14px_rgba(29,76,68,0.38)] md:aspect-[4/5]">
+            <div className="mx-auto aspect-[4/3] w-2/3 max-w-[16rem] overflow-hidden rounded-[22px] border-4 border-[#fffefa] bg-[#dcece8] shadow-[0_12px_26px_-14px_rgba(29,76,68,0.38)] md:aspect-[4/5]">
               <TeacherPortrait teacher={teacher} />
             </div>
             <div className="px-1 pb-2 pt-6 sm:px-2 sm:pt-7">
@@ -214,7 +213,7 @@ export function FreeChoiceTeacherProfile({
           </div>
         </aside>
 
-        <div className="min-w-0 space-y-5 rounded-[26px] border border-[#dce8e4] bg-[#fffefa] p-4 shadow-[0_16px_50px_-36px_rgba(31,79,70,0.32)] sm:space-y-6 sm:p-6 lg:p-7">
+        <div className="min-w-0 space-y-5 rounded-[26px] border border-[#dce8e4] bg-[#fffefa] p-4 shadow-[0_16px_50px_-36px_rgba(31,79,70,0.32)] sm:space-y-6 sm:p-6 lg:p-7 md:sticky md:top-4 md:h-[calc(100dvh-16rem)] md:overflow-y-auto md:overscroll-y-contain">
           <div className="border-b border-[#e4ebe7] pb-4">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#64847c]">
               {isEnglish ? "Professional background" : "Thông tin chuyên môn"}
