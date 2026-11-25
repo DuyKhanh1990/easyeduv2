@@ -182,7 +182,7 @@ export function FreeChoiceTeacherProfile({
       </button>
 
       <div className="grid items-start gap-5 md:grid-cols-[minmax(0,7fr)_minmax(0,13fr)]">
-        <aside className="self-start rounded-[26px] border border-[#d5e4de] bg-[#eaf3ef] shadow-[0_16px_50px_-36px_rgba(31,79,70,0.38)] md:sticky md:left-0 md:top-4">
+        <aside className="self-start rounded-[26px] border border-[#d5e4de] bg-[#eaf3ef] shadow-[0_16px_50px_-36px_rgba(31,79,70,0.38)] md:sticky md:left-0 md:top-[7.25rem] lg:top-[7.75rem]">
           <div className="p-4 sm:p-6">
             <div className="mx-auto aspect-[4/3] w-2/3 max-w-[16rem] overflow-hidden rounded-[22px] border-4 border-[#fffefa] bg-[#dcece8] shadow-[0_12px_26px_-14px_rgba(29,76,68,0.38)] md:aspect-[4/5]">
               <TeacherPortrait teacher={teacher} />
