@@ -1811,18 +1811,23 @@ export function registerMySpaceRoutes(app: Express): void {
         .select({
           id: staff.id,
           fullName: staff.fullName,
-          code: staff.code,
           avatarUrl: staff.avatarUrl,
-          teacherProfile: staffTeacherProfiles.profile,
-          roleNames: sql<string[]>`COALESCE(
-            array_agg(DISTINCT ${roles.name}) FILTER (WHERE ${roles.name} IS NOT NULL),
-            ARRAY[]::varchar[]
-          )`,
+          teacherProfile: sql<{
+            experienceValue: number | null;
+            experienceUnit: "year" | "month" | null;
+            teachingExperience: string;
+          } | null>`CASE
+            WHEN ${staffTeacherProfiles.staffId} IS NULL THEN NULL
+            ELSE jsonb_build_object(
+              'experienceValue', ${staffTeacherProfiles.profile}->'experienceValue',
+              'experienceUnit', ${staffTeacherProfiles.profile}->'experienceUnit',
+              'teachingExperience', ${staffTeacherProfiles.profile}->'teachingExperience'
+            )
+          END`,
         })
         .from(staff)
         .innerJoin(staffAssignments, eq(staffAssignments.staffId, staff.id))
         .innerJoin(departments, eq(departments.id, staffAssignments.departmentId))
-        .leftJoin(roles, eq(roles.id, staffAssignments.roleId))
         .leftJoin(staffTeacherProfiles, eq(staffTeacherProfiles.staffId, staff.id))
         .innerJoin(users, eq(users.id, staff.userId))
         .where(and(
@@ -1832,7 +1837,7 @@ export function registerMySpaceRoutes(app: Express): void {
           eq(users.isActive, true),
           ne(users.username, "admin"),
         ))
-        .groupBy(staff.id, staff.fullName, staff.code, staff.avatarUrl, staffTeacherProfiles.profile)
+        .groupBy(staff.id, staff.fullName, staff.avatarUrl, staffTeacherProfiles.profile)
         .orderBy(staff.fullName);
 
       res.json({ teachers });

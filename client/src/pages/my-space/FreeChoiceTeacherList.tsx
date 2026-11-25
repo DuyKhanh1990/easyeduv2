@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BriefcaseBusiness, Search, Users } from "lucide-react";
+import { ArrowRight, BriefcaseBusiness, CalendarDays, Search, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useLanguage } from "@/hooks/use-language";
@@ -9,17 +9,14 @@ type TeacherProfile = {
   experienceValue: number | null;
   experienceUnit: "year" | "month" | null;
   teachingExperience: string;
-  certificates: string;
-  achievements: string;
 };
 
 type TrainingTeacher = {
   id: string;
   fullName: string;
-  code: string;
   avatarUrl: string | null;
-  roleNames: string[];
   teacherProfile: TeacherProfile | null;
+  teachingSubjects?: string[];
 };
 
 type TeacherDirectoryResponse = {
@@ -40,7 +37,7 @@ function TeacherAvatar({ teacher }: { teacher: TrainingTeacher }) {
   const [imageFailed, setImageFailed] = useState(false);
 
   return (
-    <div className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-primary/10 sm:h-28 sm:w-28">
+    <div className="h-full w-full overflow-hidden rounded-xl bg-primary/10">
       {teacher.avatarUrl && !imageFailed ? (
         <img
           src={teacher.avatarUrl}
@@ -77,11 +74,9 @@ export function FreeChoiceTeacherList() {
     const keyword = search.trim().toLocaleLowerCase("vi");
     if (!keyword) return teachers;
     return teachers.filter((teacher) =>
-      [teacher.fullName, teacher.code, ...teacher.roleNames]
+      [teacher.fullName, ...(teacher.teachingSubjects ?? [])]
         .concat([
           teacher.teacherProfile?.teachingExperience ?? "",
-          teacher.teacherProfile?.certificates ?? "",
-          teacher.teacherProfile?.achievements ?? "",
         ])
         .some((value) => value.toLocaleLowerCase("vi").includes(keyword))
     );
@@ -151,31 +146,30 @@ export function FreeChoiceTeacherList() {
           {filteredTeachers.map((teacher) => {
             const profile = teacher.teacherProfile;
             const teachingExperience = profile?.teachingExperience?.trim() ?? "";
-            const certificates = profile?.certificates?.trim() ?? "";
-            const achievements = profile?.achievements?.trim() ?? "";
 
             return (
               <article
                 key={teacher.id}
-                className="flex min-h-40 flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md"
+                className="flex min-h-64 flex-col justify-between gap-4 rounded-2xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md"
               >
                 <div className="flex min-w-0 gap-4">
-                  <TeacherAvatar teacher={teacher} />
-                  <div className="min-w-0 flex-1">
-                    <h2 className="truncate text-base font-semibold text-foreground">
+                  <div className="w-[42%] max-w-[180px] shrink-0 self-start">
+                    <div className="aspect-[3/4]">
+                      <TeacherAvatar teacher={teacher} />
+                    </div>
+                  </div>
+                  <div className="min-w-0 flex-1 pt-1">
+                    <h2 className="line-clamp-2 text-lg font-semibold leading-tight text-foreground">
                       {teacher.fullName}
                     </h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {t("mySpace.calendar.staffCode")}: {teacher.code}
-                    </p>
-                    {teacher.roleNames.length > 0 && (
+                    {(teacher.teachingSubjects ?? []).length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-1.5">
-                        {teacher.roleNames.map((role) => (
+                        {teacher.teachingSubjects?.map((subject) => (
                           <span
-                            key={role}
+                            key={subject}
                             className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
                           >
-                            {role}
+                            {subject}
                           </span>
                         ))}
                       </div>
@@ -192,25 +186,9 @@ export function FreeChoiceTeacherList() {
                         </p>
                       )}
                     {teachingExperience && (
-                      <p className="mt-2 line-clamp-2 text-sm leading-5 text-muted-foreground">
+                      <p className="mt-3 line-clamp-3 text-sm leading-5 text-muted-foreground">
                         {teachingExperience}
                       </p>
-                    )}
-                    {(certificates || achievements) && (
-                      <div className="mt-2 space-y-1 text-xs text-muted-foreground">
-                        {certificates && (
-                          <p className="line-clamp-1">
-                            <span className="font-medium text-foreground">{t("mySpace.calendar.certificates")}:</span>{" "}
-                            {certificates}
-                          </p>
-                        )}
-                        {achievements && (
-                          <p className="line-clamp-1">
-                            <span className="font-medium text-foreground">{t("mySpace.calendar.achievements")}:</span>{" "}
-                            {achievements}
-                          </p>
-                        )}
-                      </div>
                     )}
                   </div>
                 </div>
@@ -220,9 +198,10 @@ export function FreeChoiceTeacherList() {
                     variant="ghost"
                     size="sm"
                     disabled
-                    className="whitespace-nowrap"
+                    className="whitespace-nowrap text-primary"
                   >
                     {t("mySpace.calendar.viewProfile")}
+                    <ArrowRight className="ml-1 h-4 w-4" />
                   </Button>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">
@@ -234,6 +213,7 @@ export function FreeChoiceTeacherList() {
                       disabled
                       className="whitespace-nowrap"
                     >
+                      <CalendarDays className="mr-2 h-4 w-4" />
                       {t("mySpace.calendar.registerStudy")}
                     </Button>
                   </div>
