@@ -213,7 +213,7 @@ export function FreeChoiceTeacherProfile({
           </div>
         </aside>
 
-        <div className="min-w-0 space-y-5 rounded-[26px] border border-[#dce8e4] bg-[#fffefa] p-4 shadow-[0_16px_50px_-36px_rgba(31,79,70,0.32)] sm:space-y-6 sm:p-6 lg:p-7 md:sticky md:top-4 md:h-[calc(100dvh-16rem)] md:overflow-y-auto md:overscroll-y-contain">
+        <div className="min-w-0 space-y-5 rounded-[26px] border border-[#dce8e4] bg-[#fffefa] p-4 shadow-[0_16px_50px_-36px_rgba(31,79,70,0.32)] sm:space-y-6 sm:p-6 lg:p-7">
           <div className="border-b border-[#e4ebe7] pb-4">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#64847c]">
               {isEnglish ? "Professional background" : "Thông tin chuyên môn"}
