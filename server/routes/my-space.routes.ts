@@ -80,6 +80,7 @@ import { storage } from "../storage";
 import {
   confirmTeacherBooking,
   getTeacherBookingOptions,
+  TeacherBookingValidationError,
 } from "../storage/teacher-booking.storage";
 import { eq, and, gte, lte, sql, inArray, isNotNull, isNull, or, desc, ne } from "drizzle-orm";
 import { uploadFileToS3FromStream } from "../lib/s3";
@@ -2207,7 +2208,8 @@ export function registerMySpaceRoutes(app: Express): void {
       res.status(result.duplicate ? 200 : 201).json(result);
     } catch (error: any) {
       console.error("Student schedule-registration confirm error:", error);
-      res.status(400).json({ message: error?.message || "Không thể xác nhận đăng ký lịch học" });
+      const status = error instanceof TeacherBookingValidationError ? 400 : 500;
+      res.status(status).json({ message: error?.message || "Không thể xác nhận đăng ký lịch học" });
     }
   });
 

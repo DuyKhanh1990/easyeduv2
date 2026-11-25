@@ -663,11 +663,13 @@ export function TeacherBookingDialog({
           </>
           ) : (
             <TeacherBookingDetailsStep
+              teacherId={teacher.id}
               teacher={teacher}
               student={student}
               locationId={locationId}
               locationName={selectedLocation?.name ?? ""}
               dateLabel={selectedDateLabel}
+              sessionDate={dateKey(focusedDate)}
               selectedShifts={selectedShifts}
               isEnglish={isEnglish}
               selectedFeePackageId={selectedFeePackageId}
@@ -675,6 +677,10 @@ export function TeacherBookingDialog({
               learningMode={learningMode}
               onLearningModeChange={setLearningMode}
               onBack={() => setBookingStep("schedule")}
+              onComplete={() => {
+                setBookingStep("schedule");
+                onOpenChange(false);
+              }}
             />
           )}
         </div>

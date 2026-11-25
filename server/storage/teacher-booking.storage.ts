@@ -4,7 +4,6 @@ import {
   eq,
   inArray,
   isNotNull,
-  ne,
   or,
   sql,
   classes,
@@ -29,11 +28,19 @@ import {
   teacherAvailabilityWindows,
   users,
 } from "./base";
+import { ne } from "drizzle-orm";
 import { getNextLocationCode } from "./finance.storage";
 import { calculateAutoInvoiceDepositTotals } from "@shared/invoice-deposit-accounting";
 
 const ZERO_ROOM_ID = "00000000-0000-0000-0000-000000000000";
 const REGISTRATION_INVOICE_CATEGORY = "Học phí theo đăng ký";
+
+export class TeacherBookingValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TeacherBookingValidationError";
+  }
+}
 
 type BookingOptionsInput = {
   studentId: string;
@@ -137,8 +144,10 @@ async function getPurchasedPackages(executor: any, studentId: string, locationId
       })
       .from(studentSessions)
       .innerJoin(classSessions, eq(classSessions.id, studentSessions.classSessionId))
+      .innerJoin(classes, eq(classes.id, classSessions.classId))
       .where(and(
         eq(studentSessions.studentId, studentId),
+        eq(classes.locationId, locationId),
         isNotNull(studentSessions.packageId),
         sql`LOWER(COALESCE(${studentSessions.status}, '')) NOT IN ('cancelled', 'canceled')`,
         sql`LOWER(COALESCE(${classSessions.status}, '')) NOT IN ('cancelled', 'canceled')`,
@@ -146,7 +155,9 @@ async function getPurchasedPackages(executor: any, studentId: string, locationId
       .groupBy(studentSessions.packageId),
   ]);
 
-  const usedByPackage = new Map(usedRows.map((row: any) => [row.packageId, Number(row.usedCount) || 0]));
+  const usedByPackage = new Map<string, number>(
+    usedRows.map((row: any) => [String(row.packageId), Number(row.usedCount) || 0]),
+  );
   const packageMap = new Map<string, {
     id: string;
     name: string;
@@ -201,6 +212,7 @@ async function getNewPackages(executor: any, locationId: string): Promise<FeePac
     .leftJoin(courseLocations, eq(courseLocations.courseId, courses.id))
     .where(and(
       eq(courseFeePackages.isActive, true),
+      eq(courses.isActive, true),
       or(
         eq(courses.locationId, locationId),
         eq(courseLocations.locationId, locationId),
@@ -257,7 +269,7 @@ async function assertTeacherAndStudentShareLocation(
       eq(studentLocations.locationId, input.locationId),
     ))
     .limit(1);
-  if (!studentLocation) throw new Error("Học viên không thuộc cơ sở đã chọn.");
+  if (!studentLocation) throw new TeacherBookingValidationError("Học viên không thuộc cơ sở đã chọn.");
 
   const [teacherAssignment] = await tx
     .select({ locationId: staffAssignments.locationId })
@@ -275,14 +287,14 @@ async function assertTeacherAndStudentShareLocation(
       eq(staffAssignments.locationId, input.locationId),
     ))
     .limit(1);
-  if (!teacherAssignment) throw new Error("Giáo viên không được phân công tại cơ sở đã chọn.");
+  if (!teacherAssignment) throw new TeacherBookingValidationError("Giáo viên không được phân công tại cơ sở đã chọn.");
 
   const [location] = await tx
     .select({ id: locations.id, name: locations.name })
     .from(locations)
     .where(eq(locations.id, input.locationId))
     .limit(1);
-  if (!location) throw new Error("Không tìm thấy cơ sở.");
+  if (!location) throw new TeacherBookingValidationError("Không tìm thấy cơ sở.");
   return location;
 }
 
@@ -303,6 +315,7 @@ async function getPackageForBooking(
       isActive: courseFeePackages.isActive,
       courseLocationId: courses.locationId,
       mappedLocationId: courseLocations.locationId,
+      courseIsActive: courses.isActive,
     })
     .from(courseFeePackages)
     .innerJoin(courses, eq(courses.id, courseFeePackages.courseId))
@@ -320,9 +333,9 @@ async function getPackageForBooking(
     && (row.courseLocationId === input.locationId || row.mappedLocationId === input.locationId)
     ? row
     : undefined;
-  if (!packageInLocation) throw new Error("Gói học phí không áp dụng tại cơ sở đã chọn.");
-  if (input.packageSource === "new" && !packageInLocation.isActive) {
-    throw new Error("Gói học phí này hiện không còn hoạt động.");
+  if (!packageInLocation) throw new TeacherBookingValidationError("Gói học phí không áp dụng tại cơ sở đã chọn.");
+  if (input.packageSource === "new" && (!packageInLocation.isActive || !packageInLocation.courseIsActive)) {
+    throw new TeacherBookingValidationError("Gói học phí này hiện không còn hoạt động.");
   }
   return packageInLocation;
 }
@@ -333,17 +346,17 @@ async function assertPackageCapacity(
   feePackage: FeePackageRow,
 ) {
   const packageSessions = configuredSessionCount(feePackage.sessions);
-  if (!packageSessions) throw new Error("Số buổi của gói học phí chưa được cấu hình hợp lệ.");
+  if (!packageSessions) throw new TeacherBookingValidationError("Số buổi của gói học phí chưa được cấu hình hợp lệ.");
   if (input.shiftIds.length > packageSessions) {
-    throw new Error(`Gói này có ${packageSessions} buổi, không thể đăng ký ${input.shiftIds.length} ca cùng lúc.`);
+    throw new TeacherBookingValidationError(`Gói này có ${packageSessions} buổi, không thể đăng ký ${input.shiftIds.length} ca cùng lúc.`);
   }
 
   if (input.packageSource === "existing") {
     const purchasedPackages = await getPurchasedPackages(tx, input.studentId, input.locationId);
     const purchased = purchasedPackages.find((item) => item.id === feePackage.id);
-    if (!purchased) throw new Error("Học viên chưa có gói học phí đã thanh toán còn buổi.");
+    if (!purchased) throw new TeacherBookingValidationError("Học viên chưa có gói học phí đã thanh toán còn buổi.");
     if (input.shiftIds.length > purchased.remainingSessions) {
-      throw new Error(`Gói này chỉ còn ${purchased.remainingSessions} buổi chưa xếp.`);
+      throw new TeacherBookingValidationError(`Gói này chỉ còn ${purchased.remainingSessions} buổi chưa xếp.`);
     }
     return { packageSessions, purchased, totalAmount: 0, depositBalance: 0 };
   }
@@ -353,10 +366,10 @@ async function assertPackageCapacity(
       ? Number(feePackage.fee) * packageSessions
       : feePackage.totalAmount,
   );
-  if (totalAmount <= 0) throw new Error("Giá gói học phí chưa được cấu hình hợp lệ.");
+  if (totalAmount <= 0) throw new TeacherBookingValidationError("Giá gói học phí chưa được cấu hình hợp lệ.");
   const depositBalance = await getDepositBalance(tx, input.studentId);
   if (depositBalance < totalAmount) {
-    throw new Error("Số dư Ví Đặt Cọc không đủ để thanh toán toàn bộ gói học phí.");
+    throw new TeacherBookingValidationError("Số dư Ví Đặt Cọc không đủ để thanh toán toàn bộ gói học phí.");
   }
   return { packageSessions, purchased: null, totalAmount, depositBalance };
 }
@@ -367,7 +380,7 @@ async function assertAvailability(
 ) {
   const todayAndTime = getBangkokDateAndTime();
   if (!isValidDateKey(input.sessionDate) || input.sessionDate < todayAndTime.date) {
-    throw new Error("Ngày học đã chọn không hợp lệ hoặc đã qua.");
+    throw new TeacherBookingValidationError("Ngày học đã chọn không hợp lệ hoặc đã qua.");
   }
 
   const shifts = await tx
@@ -386,7 +399,7 @@ async function assertAvailability(
       eq(shiftTemplates.type, "class"),
     ));
   if (shifts.length !== input.shiftIds.length || shifts.some((shift: any) => shift.status !== "active")) {
-    throw new Error("Một hoặc nhiều ca học không còn hoạt động tại cơ sở đã chọn.");
+    throw new TeacherBookingValidationError("Một hoặc nhiều ca học không còn hoạt động tại cơ sở đã chọn.");
   }
   shifts.sort((a: any, b: any) =>
     normalizeTime(a.startTime).localeCompare(normalizeTime(b.startTime)) || a.name.localeCompare(b.name, "vi"),
@@ -396,11 +409,11 @@ async function assertAvailability(
     const start = normalizeTime(shifts[index].startTime);
     const end = normalizeTime(shifts[index].endTime);
     if (input.sessionDate === todayAndTime.date && start <= todayAndTime.time) {
-      throw new Error("Ca học đã bắt đầu hoặc đã qua giờ bắt đầu.");
+      throw new TeacherBookingValidationError("Ca học đã bắt đầu hoặc đã qua giờ bắt đầu.");
     }
     for (let other = index + 1; other < shifts.length; other += 1) {
       if (overlaps(start, end, normalizeTime(shifts[other].startTime), normalizeTime(shifts[other].endTime))) {
-        throw new Error("Các ca được chọn bị trùng giờ với nhau.");
+        throw new TeacherBookingValidationError("Các ca được chọn bị trùng giờ với nhau.");
       }
     }
   }
@@ -440,7 +453,7 @@ async function assertAvailability(
       normalizeTime(row.startTime) <= normalizeTime(shift.startTime)
       && normalizeTime(row.endTime) >= normalizeTime(shift.endTime)),
   )) {
-    throw new Error("Giáo viên không đăng ký rảnh trong một hoặc nhiều ca đã chọn.");
+    throw new TeacherBookingValidationError("Giáo viên không đăng ký rảnh trong một hoặc nhiều ca đã chọn.");
   }
 
   const existingSessions = await tx
@@ -487,7 +500,7 @@ async function assertAvailability(
         normalizeTime(shift.endTime),
       );
     });
-    if (isBusy) throw new Error(`Ca ${shift.name} vừa được đăng ký hoặc không còn trống.`);
+    if (isBusy) throw new TeacherBookingValidationError(`Ca ${shift.name} vừa được đăng ký hoặc không còn trống.`);
   }
 
   return { shifts, weekday };
@@ -502,7 +515,7 @@ async function findExistingRequest(tx: any, input: ConfirmTeacherBookingInput) {
     .where(eq(classes.classCode, classCode))
     .limit(1);
   if (!existing) return null;
-  if (existing.studentId !== input.studentId) throw new Error("Mã đăng ký không hợp lệ.");
+  if (existing.studentId !== input.studentId) throw new TeacherBookingValidationError("Mã đăng ký không hợp lệ.");
   const [invoice] = await tx
     .select({ id: invoices.id, code: invoices.code })
     .from(invoices)
@@ -513,11 +526,11 @@ async function findExistingRequest(tx: any, input: ConfirmTeacherBookingInput) {
 
 export async function confirmTeacherBooking(input: ConfirmTeacherBookingInput) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.requestKey)) {
-    throw new Error("Mã đăng ký không hợp lệ.");
+    throw new TeacherBookingValidationError("Mã đăng ký không hợp lệ.");
   }
-  if (!isValidDateKey(input.sessionDate)) throw new Error("Ngày học không hợp lệ.");
+  if (!isValidDateKey(input.sessionDate)) throw new TeacherBookingValidationError("Ngày học không hợp lệ.");
   if (input.shiftIds.length === 0 || new Set(input.shiftIds).size !== input.shiftIds.length) {
-    throw new Error("Vui lòng chọn ca học hợp lệ.");
+    throw new TeacherBookingValidationError("Vui lòng chọn ca học hợp lệ.");
   }
 
   return db.transaction(async (tx) => {
@@ -542,7 +555,7 @@ export async function confirmTeacherBooking(input: ConfirmTeacherBookingInput) {
       .from(staff)
       .where(eq(staff.id, input.teacherId))
       .limit(1);
-    if (!student || !teacher) throw new Error("Không tìm thấy thông tin học viên hoặc giáo viên.");
+    if (!student || !teacher) throw new TeacherBookingValidationError("Không tìm thấy thông tin học viên hoặc giáo viên.");
 
     const classCode = `SR-${input.requestKey}`;
     const className = `Gia sư 1-1 · ${student.fullName || student.code} · ${teacher.fullName}`;
@@ -604,11 +617,15 @@ export async function confirmTeacherBooking(input: ConfirmTeacherBookingInput) {
       .returning({ id: studentClasses.id });
 
     const configuredCount = packageState.packageSessions;
-    const perSessionPrice = money(
+    const previouslyPaidPerSession = packageState.purchased
+      && packageState.purchased.totalSessions > 0
+      ? packageState.purchased.purchasedAmount / packageState.purchased.totalSessions
+      : null;
+    const perSessionPrice = money(previouslyPaidPerSession ?? (
       feePackage.type === "khoá"
         ? Number(feePackage.fee) / configuredCount
-        : feePackage.fee,
-    );
+        : feePackage.fee
+    ));
     await tx.insert(studentSessions).values(classSessionRows.map((session: any) => ({
       studentId: input.studentId,
       classId: createdClass.id,
@@ -675,7 +692,7 @@ export async function confirmTeacherBooking(input: ConfirmTeacherBookingInput) {
         vatRate: 0,
         vatAmount: "0.00",
         sortOrder: 0,
-        category: REGISTRATION_INVOICE_CATEGORY,
+        category: "Học phí",
       } as any);
 
       const formattedAmount = packageState.totalAmount.toLocaleString("vi-VN");

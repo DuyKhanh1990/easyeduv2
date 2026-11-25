@@ -334,6 +334,7 @@ app.use((req, res, next) => {
     const defaultCategories = [
       { name: "Đặt cọc", type: "income" },
       { name: "Học phí", type: "income" },
+      { name: "Học phí theo đăng ký", type: "income" },
       { name: "Kho", type: "income" },
       { name: "Chuyển lớp", type: "income" },
       { name: "Lương", type: "expense" },

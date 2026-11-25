@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   CalendarDays,
@@ -11,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 type FeePackage = {
   id: string;
@@ -20,21 +22,33 @@ type FeePackage = {
   sessions: number | string;
   totalAmount: number | string;
   courseName?: string;
+  remainingSessions?: number;
+  totalSessions?: number;
+  usedSessions?: number;
+};
+
+type BookingOptions = {
+  purchasedPackages: FeePackage[];
+  newPackages: FeePackage[];
+  depositBalance: number;
 };
 
 type BookingDetailsStepProps = {
+  teacherId: string;
   teacher: {
     fullName: string;
     avatarUrl: string | null;
     teachingSubjects: string[];
   };
   student: {
+    id: string;
     fullName: string;
     code: string;
   };
   locationId: string;
   locationName: string;
   dateLabel: string;
+  sessionDate: string;
   selectedShifts: {
     id: string;
     name: string;
@@ -48,6 +62,7 @@ type BookingDetailsStepProps = {
   learningMode: "offline" | "online" | null;
   onLearningModeChange: (mode: "offline" | "online") => void;
   onBack: () => void;
+  onComplete: () => void;
 };
 
 function initials(name: string) {
@@ -63,11 +78,13 @@ function currency(value: number | string, locale: string) {
 }
 
 export function TeacherBookingDetailsStep({
+  teacherId,
   teacher,
   student,
   locationId,
   locationName,
   dateLabel,
+  sessionDate,
   selectedShifts,
   isEnglish,
   selectedFeePackageId,
@@ -75,23 +92,124 @@ export function TeacherBookingDetailsStep({
   learningMode,
   onLearningModeChange,
   onBack,
+  onComplete,
 }: BookingDetailsStepProps) {
   const locale = isEnglish ? "en-US" : "vi-VN";
-  const packagesQuery = useQuery<FeePackage[]>({
-    queryKey: ["/api/fee-packages", locationId],
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [packageSource, setPackageSource] = useState<"existing" | "new">("existing");
+  const didInitializePackagesRef = useRef(false);
+  const requestKeyRef = useRef<string | null>(null);
+  const optionsQuery = useQuery<BookingOptions>({
+    queryKey: ["/api/my-space/schedule-registration/options", student.id, locationId],
     enabled: Boolean(locationId),
     queryFn: async () => {
-      const response = await fetch(
-        `/api/fee-packages?locationId=${encodeURIComponent(locationId)}`,
-        { credentials: "include" },
-      );
+      const params = new URLSearchParams({
+        studentId: student.id,
+        locationId,
+      });
+      const response = await fetch(`/api/my-space/schedule-registration/options?${params.toString()}`, { credentials: "include" });
       if (!response.ok) {
         throw new Error(isEnglish ? "Could not load tuition packages." : "Không thể tải gói học phí.");
       }
-      return response.json();
+      return response.json() as Promise<BookingOptions>;
     },
   });
-  const selectedPackage = packagesQuery.data?.find((item) => item.id === selectedFeePackageId);
+  const availablePackages = packageSource === "existing"
+    ? optionsQuery.data?.purchasedPackages ?? []
+    : optionsQuery.data?.newPackages ?? [];
+  const selectedPackage = availablePackages.find((item) => item.id === selectedFeePackageId);
+  const selectedShiftCount = selectedShifts.length;
+  const selectedPackageSessions = selectedPackage
+    ? Number(packageSource === "existing" ? selectedPackage.remainingSessions : selectedPackage.sessions) || 0
+    : 0;
+  const fullPackageAmount = selectedPackage
+    ? (selectedPackage.type === "buổi"
+      ? (Number(selectedPackage.fee) || 0) * (Number(selectedPackage.sessions) || 0)
+      : Number(selectedPackage.totalAmount) || 0)
+    : 0;
+  const depositBalance = Number(optionsQuery.data?.depositBalance) || 0;
+  const hasEnoughDeposit = packageSource === "existing" || depositBalance >= fullPackageAmount;
+  const canConfirm = Boolean(
+    selectedPackage
+    && learningMode
+    && selectedShiftCount > 0
+    && selectedShiftCount <= selectedPackageSessions
+    && hasEnoughDeposit
+    && !optionsQuery.isLoading
+    && !optionsQuery.isError
+  );
+
+  useEffect(() => {
+    if (!optionsQuery.data || didInitializePackagesRef.current) return;
+    didInitializePackagesRef.current = true;
+    const existing = optionsQuery.data.purchasedPackages;
+    const availableNew = optionsQuery.data.newPackages;
+    if (existing.length > 0) {
+      setPackageSource("existing");
+      if (!existing.some((item) => item.id === selectedFeePackageId)) {
+        onFeePackageChange(existing[0].id);
+      }
+    } else {
+      setPackageSource("new");
+      const firstAffordable = availableNew.find((item) => {
+        const amount = item.type === "buổi"
+          ? Number(item.fee) * Number(item.sessions)
+          : Number(item.totalAmount);
+        return amount > 0 && amount <= optionsQuery.data!.depositBalance;
+      });
+      if (!availableNew.some((item) => item.id === selectedFeePackageId)) {
+        onFeePackageChange(firstAffordable?.id ?? availableNew[0]?.id ?? "");
+      }
+    }
+  }, [optionsQuery.data, selectedFeePackageId, onFeePackageChange]);
+
+  const confirmMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedPackage || !learningMode) throw new Error(isEnglish ? "Complete the package and learning-mode selections." : "Vui lòng chọn gói học phí và hình thức học.");
+      if (!requestKeyRef.current) requestKeyRef.current = crypto.randomUUID();
+      const response = await fetch("/api/my-space/schedule-registration/confirm", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: student.id,
+          teacherId,
+          locationId,
+          sessionDate,
+          shiftIds: selectedShifts.map((shift) => shift.id),
+          packageId: selectedPackage.id,
+          packageSource,
+          learningMode,
+          requestKey: requestKeyRef.current,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.message || (isEnglish ? "Could not complete this registration." : "Không thể hoàn tất đăng ký."));
+      return result;
+    },
+    onSuccess: (result) => {
+      requestKeyRef.current = null;
+      toast({
+        title: isEnglish ? "Registration complete" : "Đăng ký thành công",
+        description: result.invoiceCode
+          ? `${isEnglish ? "Receipt" : "Phiếu thu"} ${result.invoiceCode} · ${result.bookedSessions} ${isEnglish ? "sessions booked" : "buổi đã xếp"} · ${result.remainingSessions} ${isEnglish ? "remaining" : "buổi còn lại"}`
+          : `${result.bookedSessions} ${isEnglish ? "sessions booked" : "buổi đã xếp"} · ${result.remainingSessions} ${isEnglish ? "remaining" : "buổi còn lại"}`,
+      });
+      void queryClient.invalidateQueries({ queryKey: ["/api/my-space/schedule-registration/options"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/my-space/schedule-registration/teachers"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/my-space/calendar/student"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/my-space/calendar/student/classes"] });
+      onComplete();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: isEnglish ? "Registration failed" : "Đăng ký chưa thành công",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const modeOptions = [
     {
@@ -139,25 +257,75 @@ export function TeacherBookingDetailsStep({
               </h3>
             </div>
 
-            {packagesQuery.isLoading ? (
+            {optionsQuery.isLoading ? (
               <div className="rounded-xl border border-[#dce7e1] bg-white p-4 text-sm text-[#71827a]">
                 {isEnglish ? "Loading packages…" : "Đang tải gói học phí…"}
               </div>
-            ) : packagesQuery.isError ? (
+            ) : optionsQuery.isError ? (
               <div role="alert" className="rounded-xl border border-[#ead3cb] bg-[#fff7f2] p-4 text-sm text-[#875446]">
                 {isEnglish ? "Could not load tuition packages. Please try again later." : "Không tải được gói học phí. Vui lòng thử lại sau."}
               </div>
-            ) : packagesQuery.data?.length ? (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {packagesQuery.data.map((feePackage) => {
+            ) : (
+              <>
+                <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label={isEnglish ? "Package payment type" : "Loại gói học phí"}>
+                  {optionsQuery.data?.purchasedPackages.length ? (
+                    <button
+                      type="button"
+                      aria-pressed={packageSource === "existing"}
+                      onClick={() => {
+                        setPackageSource("existing");
+                        onFeePackageChange(optionsQuery.data?.purchasedPackages[0]?.id ?? "");
+                      }}
+                      className={`min-h-10 rounded-xl border px-4 text-xs font-semibold transition-colors ${packageSource === "existing" ? "border-[#4d8c7d] bg-[#e8f3ed] text-[#28665d]" : "border-[#dce7e1] bg-white text-[#71827a] hover:bg-[#f5f8f5]"}`}
+                    >
+                      {isEnglish ? "Already purchased" : "Gói đã đăng ký trước"}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    aria-pressed={packageSource === "new"}
+                    onClick={() => {
+                      setPackageSource("new");
+                      const firstAffordable = optionsQuery.data?.newPackages.find((item) => {
+                        const amount = item.type === "buổi"
+                          ? Number(item.fee) * Number(item.sessions)
+                          : Number(item.totalAmount);
+                        return amount > 0 && amount <= depositBalance;
+                      });
+                      onFeePackageChange(firstAffordable?.id ?? optionsQuery.data?.newPackages[0]?.id ?? "");
+                    }}
+                    className={`min-h-10 rounded-xl border px-4 text-xs font-semibold transition-colors ${packageSource === "new" ? "border-[#4d8c7d] bg-[#e8f3ed] text-[#28665d]" : "border-[#dce7e1] bg-white text-[#71827a] hover:bg-[#f5f8f5]"}`}
+                  >
+                    {isEnglish ? "New package with deposit" : "Gói mới theo Ví Đặt Cọc"}
+                  </button>
+                </div>
+
+                {packageSource === "new" && (
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#dce7e1] bg-[#f1f7f3] px-4 py-3 text-sm">
+                    <span className="text-[#61776d]">{isEnglish ? "Deposit wallet balance" : "Số dư Ví Đặt Cọc"}</span>
+                    <strong className="font-display text-base text-[#28665d]">{currency(depositBalance, locale)}</strong>
+                  </div>
+                )}
+
+                {availablePackages.length ? (
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {availablePackages.map((feePackage) => {
                   const isSelected = selectedFeePackageId === feePackage.id;
+                  const sessionsAvailable = packageSource === "existing"
+                    ? Number(feePackage.remainingSessions) || 0
+                    : Number(feePackage.sessions) || 0;
+                  const amount = feePackage.type === "buổi"
+                    ? (Number(feePackage.fee) || 0) * (Number(feePackage.sessions) || 0)
+                    : Number(feePackage.totalAmount) || 0;
+                  const canAfford = packageSource === "existing" || depositBalance >= amount;
                   return (
                     <button
                       key={feePackage.id}
                       type="button"
+                      disabled={!canAfford}
                       aria-pressed={isSelected}
                       onClick={() => onFeePackageChange(feePackage.id)}
-                      className={`relative min-h-32 rounded-2xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5f9b8f] ${
+                      className={`relative min-h-32 rounded-2xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5f9b8f] disabled:cursor-not-allowed disabled:opacity-50 ${
                         isSelected
                           ? "border-[#4d8c7d] bg-[#eef7f2] ring-1 ring-[#4d8c7d]"
                           : "border-[#dce7e1] bg-[#fffefa] hover:border-[#a9c9bb] hover:bg-[#f8fbf8]"
@@ -171,15 +339,22 @@ export function TeacherBookingDetailsStep({
                         <span className="mt-1 block truncate text-xs text-[#71827a]">{feePackage.courseName}</span>
                       )}
                       <span className="mt-3 block text-xs text-[#71827a]">
-                        {Number(feePackage.sessions)} {isEnglish ? "sessions" : "buổi học"}
+                        {packageSource === "existing"
+                          ? `${sessionsAvailable} ${isEnglish ? "sessions available" : "buổi còn có thể xếp"}`
+                          : `${Number(feePackage.sessions)} ${isEnglish ? "sessions in package" : "buổi trong gói"}`}
                         {feePackage.type ? ` · ${feePackage.type}` : ""}
                       </span>
                       <span className="mt-1 block font-display text-base font-semibold text-[#28665d]">
-                        {currency(feePackage.totalAmount, locale)}
+                        {packageSource === "existing"
+                          ? `${Number(feePackage.usedSessions) || 0}/${Number(feePackage.totalSessions) || 0} ${isEnglish ? "booked" : "đã xếp"}`
+                          : currency(amount, locale)}
                       </span>
                       <span className="mt-0.5 block text-[11px] text-[#829089]">
-                        {isEnglish ? "Per session: " : "Đơn giá/buổi: "}
-                        {currency(feePackage.fee, locale)}
+                        {packageSource === "existing"
+                          ? (isEnglish ? "Previously paid; no new charge" : "Đã thu trước; không thu lại")
+                          : canAfford
+                            ? `${isEnglish ? "Per session: " : "Đơn giá/buổi: "}${currency(feePackage.fee, locale)}`
+                            : (isEnglish ? "Deposit balance is insufficient" : "Ví Đặt Cọc không đủ")}
                       </span>
                     </button>
                   );
@@ -187,10 +362,23 @@ export function TeacherBookingDetailsStep({
               </div>
             ) : (
               <div className="rounded-xl border border-dashed border-[#d7e3dc] bg-[#fffefa] p-5 text-sm text-[#71827a]">
-                {isEnglish
-                  ? "There are no active tuition packages at this center yet."
-                  : "Cơ sở này hiện chưa có gói học phí đang hoạt động."}
+                {packageSource === "existing"
+                  ? (isEnglish ? "No previously purchased package has sessions available." : "Không có gói đã thanh toán nào còn buổi để xếp.")
+                  : (isEnglish ? "There are no active packages at this center." : "Cơ sở này chưa có gói học phí đang hoạt động.")}
               </div>
+                )}
+                {selectedPackage && selectedShiftCount > selectedPackageSessions && (
+                  <p role="alert" className="mt-3 rounded-xl border border-[#ead3cb] bg-[#fff7f2] px-4 py-3 text-sm text-[#875446]">
+                    {packageSource === "existing"
+                      ? (isEnglish
+                        ? `This package has only ${selectedPackageSessions} sessions left to schedule.`
+                        : `Gói này chỉ còn ${selectedPackageSessions} buổi chưa xếp.`)
+                      : (isEnglish
+                        ? `This package includes ${selectedPackageSessions} sessions.`
+                        : `Gói này có ${selectedPackageSessions} buổi.`)}
+                  </p>
+                )}
+              </>
             )}
           </section>
 
@@ -256,7 +444,7 @@ export function TeacherBookingDetailsStep({
             <p className="truncate text-xs text-[#71827a]">{student.fullName} · {locationName}</p>
             {selectedPackage && (
               <p className="truncate text-[11px] text-[#405c53]">
-                {selectedPackage.name} · {currency(selectedPackage.totalAmount, locale)}
+                  {selectedPackage.name} · {selectedShiftCount}/{selectedPackageSessions}
               </p>
             )}
             {learningMode && (
@@ -266,12 +454,17 @@ export function TeacherBookingDetailsStep({
             )}
           </div>
           <div className="shrink-0 text-right">
-            <Button type="button" size="sm" disabled className="h-9 rounded-lg bg-[#4d857a] px-3 text-xs text-white opacity-60">
-              {isEnglish ? "Confirm" : "Xác nhận"}
+            <Button
+              type="button"
+              size="sm"
+              disabled={!canConfirm || confirmMutation.isPending}
+              onClick={() => confirmMutation.mutate()}
+              className="h-9 rounded-lg bg-[#4d857a] px-3 text-xs text-white disabled:opacity-50"
+            >
+              {confirmMutation.isPending
+                ? (isEnglish ? "Submitting…" : "Đang gửi…")
+                : (isEnglish ? "Confirm" : "Xác nhận")}
             </Button>
-            <p className="mt-1 max-w-32 text-[9px] leading-3 text-[#7b8982]">
-              {isEnglish ? "Preview only; not submitted." : "Giao diện xem trước; chưa gửi."}
-            </p>
           </div>
         </div>
 
@@ -344,7 +537,18 @@ export function TeacherBookingDetailsStep({
                   <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#829089]">{isEnglish ? "Tuition package" : "Gói học phí"}</dt>
                   <dd className="mt-0.5 font-medium text-[#405c53]">{selectedPackage?.name ?? (isEnglish ? "Not selected" : "Chưa chọn")}</dd>
                   {selectedPackage && (
-                    <dd className="text-xs text-[#71827a]">{currency(selectedPackage.totalAmount, locale)} · {Number(selectedPackage.sessions)} {isEnglish ? "sessions" : "buổi"}</dd>
+                    <>
+                      <dd className="text-xs text-[#71827a]">
+                        {packageSource === "existing"
+                          ? `${selectedShiftCount} ${isEnglish ? "booked now" : "buổi đăng ký lần này"} · ${Math.max(0, selectedPackageSessions - selectedShiftCount)} ${isEnglish ? "left to schedule" : "buổi còn để xếp"}`
+                          : `${selectedShiftCount}/${Number(selectedPackage.sessions)} ${isEnglish ? "booked now" : "buổi đã xếp"} · ${Math.max(0, Number(selectedPackage.sessions) - selectedShiftCount)} ${isEnglish ? "left to schedule" : "buổi còn để xếp"}`}
+                      </dd>
+                      <dd className="text-xs text-[#71827a]">
+                        {packageSource === "existing"
+                          ? (isEnglish ? "Already paid · no additional charge" : "Đã thu trước · không thu thêm")
+                          : `${isEnglish ? "Full package charge: " : "Thu đủ cả gói: "}${currency(fullPackageAmount, locale)}`}
+                      </dd>
+                    </>
                   )}
                 </div>
               </div>
@@ -355,21 +559,39 @@ export function TeacherBookingDetailsStep({
                   <dd className="mt-0.5 font-medium text-[#405c53]">{learningMode ? (learningMode === "online" ? "Online" : "Offline") : (isEnglish ? "Not selected" : "Chưa chọn")}</dd>
                 </div>
               </div>
+              {packageSource === "new" && (
+                <div className="flex gap-3">
+                  <CreditCard className="mt-0.5 h-4 w-4 shrink-0 text-[#6f9285]" />
+                  <div className="min-w-0">
+                    <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#829089]">{isEnglish ? "Payment" : "Thanh toán"}</dt>
+                    <dd className="mt-0.5 font-medium text-[#405c53]">{isEnglish ? "Deposit wallet" : "Ví Đặt Cọc"}</dd>
+                    <dd className="text-xs text-[#71827a]">
+                      {isEnglish ? "Balance: " : "Số dư: "}{currency(depositBalance, locale)}
+                      {hasEnoughDeposit
+                        ? ""
+                        : (isEnglish ? " · Not enough for the full package" : " · Không đủ thanh toán cả gói")}
+                    </dd>
+                  </div>
+                </div>
+              )}
             </dl>
           </div>
 
           <div className="mt-4 shrink-0">
             <Button
               type="button"
-              disabled
-              className="min-h-11 w-full rounded-xl bg-[#3678e8] font-semibold text-white opacity-60"
-              title={isEnglish ? "Submitting a booking is not available yet." : "Chức năng gửi đăng ký sẽ được bổ sung sau."}
+              disabled={!canConfirm || confirmMutation.isPending}
+              onClick={() => confirmMutation.mutate()}
+              className="min-h-11 w-full rounded-xl bg-[#3678e8] font-semibold text-white disabled:opacity-50"
             >
-              <Check className="mr-2 h-4 w-4" />
-              {isEnglish ? "Confirm registration" : "Xác nhận đăng ký"}
+              {confirmMutation.isPending
+                ? (isEnglish ? "Submitting…" : "Đang xác nhận…")
+                : <><Check className="mr-2 h-4 w-4" />{isEnglish ? "Confirm registration" : "Xác nhận đăng ký"}</>}
             </Button>
             <p className="mt-2 text-center text-[11px] leading-5 text-[#7b8982]">
-              {isEnglish ? "This is a preview. Registration is not submitted or saved." : "Đây là giao diện xem trước; chưa gửi hoặc lưu đăng ký."}
+              {packageSource === "new"
+                ? (isEnglish ? "The full package is paid from the deposit wallet." : "Hệ thống thu đủ giá gói từ Ví Đặt Cọc khi xác nhận.")
+                : (isEnglish ? "Previously paid packages are not charged again." : "Gói đã đăng ký trước sẽ không bị thu thêm lần nữa.")}
             </p>
           </div>
         </div>
