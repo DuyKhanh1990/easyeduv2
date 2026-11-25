@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, BriefcaseBusiness, CalendarDays, Search, Users } from "lucide-react";
+import { useLocation, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useLanguage } from "@/hooks/use-language";
@@ -9,6 +10,8 @@ type TeacherProfile = {
   experienceValue: number | null;
   experienceUnit: "year" | "month" | null;
   teachingExperience: string;
+  certificates?: string;
+  achievements?: string;
 };
 
 type TrainingTeacher = {
@@ -57,7 +60,10 @@ function TeacherAvatar({ teacher }: { teacher: TrainingTeacher }) {
 
 export function FreeChoiceTeacherList() {
   const { t } = useLanguage();
-  const [search, setSearch] = useState("");
+  const currentSearch = useSearch();
+  const [, setLocation] = useLocation();
+  const preservedSearch = new URLSearchParams(currentSearch).get("search") ?? "";
+  const [search, setSearch] = useState(preservedSearch);
   const { data, isLoading, isError } = useQuery<TeacherDirectoryResponse>({
     queryKey: ["/api/my-space/schedule-registration/teachers"],
     queryFn: async () => {
@@ -197,8 +203,15 @@ export function FreeChoiceTeacherList() {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    disabled
-                    className="whitespace-nowrap text-primary"
+                    onClick={() => {
+                      const params = new URLSearchParams();
+                      params.set("teacher", teacher.id);
+                      params.set("tab", "schedule-registration");
+                      if (search) params.set("search", search);
+                      setLocation(`/my-space/calendar?${params.toString()}`);
+                    }}
+                    className="whitespace-nowrap text-primary transition-colors hover:bg-primary/10"
+                    aria-label={`${t("mySpace.calendar.viewProfile")}: ${teacher.fullName}`}
                   >
                     {t("mySpace.calendar.viewProfile")}
                     <ArrowRight className="ml-1 h-4 w-4" />

@@ -1818,12 +1818,16 @@ export function registerMySpaceRoutes(app: Express): void {
             experienceValue: number | null;
             experienceUnit: "year" | "month" | null;
             teachingExperience: string;
+            certificates: string;
+            achievements: string;
           } | null>`CASE
             WHEN ${staffTeacherProfiles.profile} IS NULL THEN NULL
             ELSE jsonb_build_object(
               'experienceValue', ${staffTeacherProfiles.profile}->'experienceValue',
               'experienceUnit', ${staffTeacherProfiles.profile}->'experienceUnit',
-              'teachingExperience', ${staffTeacherProfiles.profile}->'teachingExperience'
+              'teachingExperience', ${staffTeacherProfiles.profile}->'teachingExperience',
+              'certificates', COALESCE(${staffTeacherProfiles.profile}->>'certificates', ''),
+              'achievements', COALESCE(${staffTeacherProfiles.profile}->>'achievements', '')
             )
           END`,
         })

@@ -9,6 +9,7 @@ import { CalendarMonthGrid } from "@/components/my-space/calendar/CalendarMonthG
 import { SessionCard } from "@/components/my-space/calendar/SessionCard";
 import { FeedbackModal } from "@/components/my-space/calendar/FeedbackModal";
 import { StudentScheduleRegistration } from "./StudentScheduleRegistration";
+import { FreeChoiceTeacherProfile } from "./FreeChoiceTeacherProfile";
 import { MyCalendarSessionLight, TeacherReview } from "@/types/my-calendar";
 import { useStudentCalendar } from "@/hooks/use-student-calendar";
 import { useOnlineLearningRules } from "@/hooks/use-online-learning-rules";
@@ -636,12 +637,28 @@ function StudentCalendarView({
 
 export function StudentCalendar() {
   const { t } = useLanguage();
+  const routeSearch = useSearch();
+  const routeParams = new URLSearchParams(routeSearch);
+  const teacherId = routeParams.get("teacher");
   const [view, setView] = useState<"calendar" | "month" | "list">("calendar");
   const [todayRevision, setTodayRevision] = useState(0);
 
+  if (teacherId) {
+    return (
+      <FreeChoiceTeacherProfile
+        teacherId={teacherId}
+        search={routeParams.get("search") ?? ""}
+      />
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4 px-3 py-4 sm:space-y-5 sm:px-4 sm:py-6">
-      <Tabs defaultValue="personal-calendar" className="space-y-4">
+      <Tabs
+        key={routeParams.get("tab") ?? "personal-calendar"}
+        defaultValue={routeParams.get("tab") === "schedule-registration" ? "schedule-registration" : "personal-calendar"}
+        className="space-y-4"
+      >
         <div
           className="flex flex-wrap items-center gap-2"
           data-page-guide-anchor
