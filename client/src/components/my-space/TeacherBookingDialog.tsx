@@ -342,6 +342,19 @@ export function TeacherBookingDialog({
                     {formatDate(focusedDate, { month: "long", year: "numeric" }, locale)}
                   </h2>
                 </div>
+                <Button
+                  type="button"
+                  disabled={selectedSlots.length === 0}
+                  onClick={() => setBookingStep("details")}
+                  size="sm"
+                  className="h-9 self-start rounded-lg bg-[#4d857a] px-3 text-xs font-semibold text-white hover:bg-[#3d7469] disabled:opacity-60 sm:ml-auto sm:mr-4 sm:self-auto"
+                  title={selectedSlots.length === 0
+                    ? (isEnglish ? "Select at least one shift first." : "Vui lòng chọn ít nhất một ca trước.")
+                    : undefined}
+                >
+                  <GraduationCap className="mr-1.5 h-4 w-4" />
+                  {isEnglish ? "Register now" : "Đăng ký ngay"}
+                </Button>
                 <div className="flex items-center gap-2 self-end">
                   <div className="inline-flex rounded-xl border border-[#dce7e1] bg-[#eef3ef] p-0.5" aria-label={isEnglish ? "Calendar view mode" : "Chế độ xem lịch"}>
                     <button
@@ -596,15 +609,6 @@ export function TeacherBookingDialog({
                   </p>
                 )}
               </div>
-              <Button
-                type="button"
-                disabled={selectedSlots.length === 0}
-                onClick={() => setBookingStep("details")}
-                size="sm"
-                className="h-9 shrink-0 rounded-lg bg-[#4d857a] px-3 text-xs text-white disabled:opacity-60"
-              >
-                {isEnglish ? "Register now" : "Đăng ký ngay"}
-              </Button>
             </div>
             <div className="hidden h-full min-h-0 flex-col md:flex">
                 <div className="mb-4">
@@ -612,8 +616,8 @@ export function TeacherBookingDialog({
                   <h2 className="mt-1 font-display text-lg font-semibold text-[#294640]">{isEnglish ? "Your selection" : "Tóm tắt lựa chọn"}</h2>
                 </div>
 
-                <div className="rounded-2xl border border-[#d9e5dd] bg-[#fffefa] p-4">
-                  <div className="flex items-center gap-3 border-b border-[#e7ede8] pb-4">
+                <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-[#d9e5dd] bg-[#fffefa] p-4">
+                  <div className="flex shrink-0 items-center gap-3 border-b border-[#e7ede8] pb-4">
                     <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-[#d7e4dc] bg-[#dcece8]">
                       <TeacherAvatar teacher={teacher} />
                     </div>
@@ -626,7 +630,7 @@ export function TeacherBookingDialog({
                     </div>
                   </div>
 
-                  <dl className="space-y-4 py-4">
+                  <dl className="flex min-h-0 flex-1 flex-col py-4">
                     <div className="flex gap-3">
                       <Users className="mt-0.5 h-4 w-4 shrink-0 text-[#6f9285]" />
                       <div className="min-w-0">
@@ -642,11 +646,11 @@ export function TeacherBookingDialog({
                         <dd className="mt-0.5 truncate text-sm font-medium text-[#405c53]">{selectedLocation?.name ?? (isEnglish ? "No center selected" : "Chưa chọn cơ sở")}</dd>
                       </div>
                     </div>
-                    <div className="flex gap-3">
+                    <div className="flex min-h-0 flex-1 gap-3">
                       <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-[#6f9285]" />
-                      <div className="min-w-0">
+                      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                         <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#829089]">{isEnglish ? "Selected shifts" : "Ca học đã chọn"}</dt>
-                        <dd className="mt-1 space-y-2 text-sm font-medium text-[#b7652e]">
+                        <dd className="mt-1 min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 text-sm font-medium text-[#b7652e]">
                           {selectedSlots.length > 0 ? (
                             selectedSessions.flatMap((session) => session.shifts.map((shift) => ({
                               session,
@@ -667,23 +671,6 @@ export function TeacherBookingDialog({
                     </div>
                   </dl>
 
-                  <div className="border-t border-[#e7ede8] pt-4">
-                    <Button
-                      type="button"
-                      disabled={selectedSlots.length === 0}
-                      onClick={() => setBookingStep("details")}
-                      className="min-h-11 w-full rounded-xl bg-[#4d857a] font-semibold text-white disabled:opacity-60"
-                      title={selectedSlots.length === 0
-                        ? (isEnglish ? "Select at least one shift first." : "Vui lòng chọn ít nhất một ca trước.")
-                        : undefined}
-                    >
-                      <GraduationCap className="mr-2 h-4 w-4" />
-                      {isEnglish ? "Register now" : "Đăng ký ngay"}
-                    </Button>
-                    <p className="mt-2 text-center text-[11px] leading-5 text-[#7b8982]">
-                      {isEnglish ? "Choose your shifts, then continue to select a package and learning mode." : "Chọn ca học, sau đó tiếp tục để chọn gói học phí và hình thức học."}
-                    </p>
-                  </div>
                 </div>
 
                 <p className="mt-3 text-xs leading-5 text-[#74837c]">
