@@ -107,6 +107,21 @@ function formatDate(date: Date, options: Intl.DateTimeFormatOptions = {}, locale
   }).format(date);
 }
 
+function formatSelectedDate(date: Date, isEnglish: boolean) {
+  if (isEnglish) {
+    return new Intl.DateTimeFormat("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(date);
+  }
+  const weekday = WEEKDAYS_VI[(date.getDay() + 6) % 7];
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${weekday}, ${day}/${month}/${date.getFullYear()}`;
+}
+
 function initials(name: string) {
   return name.trim().split(/\s+/).slice(-2).map((part) => part[0] ?? "").join("").toLocaleUpperCase("vi");
 }
@@ -256,10 +271,10 @@ export function TeacherBookingDialog({
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, slots]) => ({
         sessionDate: date,
-        dateLabel: formatDate(parseDate(date), { weekday: "long", year: "numeric" }, locale),
+        dateLabel: formatSelectedDate(parseDate(date), isEnglish),
         shifts: slots.map((slot) => slot.shift),
       }));
-  }, [locale, selectedSlots]);
+  }, [isEnglish, selectedSlots]);
   const weekDays = Array.from({ length: 7 }, (_, index) => addDays(mondayOf(focusedDate), index));
   const monthStart = new Date(focusedDate.getFullYear(), focusedDate.getMonth(), 1);
   const monthEnd = new Date(focusedDate.getFullYear(), focusedDate.getMonth() + 1, 0);
@@ -506,7 +521,7 @@ export function TeacherBookingDialog({
 
                 {!query.isLoading && !query.isError && availabilityReady && (
                   query.data?.shifts.length ? (
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                       {query.data.shifts.map((shift) => {
                         const status = getSlotStatus(selectedDay, shift.id);
                         const isAvailable = status === "available";
@@ -628,37 +643,24 @@ export function TeacherBookingDialog({
                       </div>
                     </div>
                     <div className="flex gap-3">
-                      <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-[#6f9285]" />
-                      <div className="min-w-0">
-                        <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#829089]">{isEnglish ? "Selected dates" : "Ngày học đã chọn"}</dt>
-                        <dd className="mt-0.5 space-y-1 text-sm font-medium capitalize text-[#405c53]">
-                          {selectedSessions.length > 0
-                            ? selectedSessions.map((session) => <div key={session.sessionDate}>{session.dateLabel}</div>)
-                            : (isEnglish ? "No date selected" : "Chưa chọn ngày")}
-                        </dd>
-                      </div>
-                    </div>
-                    <div className="flex gap-3">
                       <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-[#6f9285]" />
                       <div className="min-w-0">
-                        <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#829089]">{isEnglish ? "Class shift" : "Ca học"}</dt>
-                        <dd className="mt-0.5 text-sm font-medium text-[#405c53]">
+                        <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#829089]">{isEnglish ? "Selected shifts" : "Ca học đã chọn"}</dt>
+                        <dd className="mt-1 space-y-2 text-sm font-medium text-[#b7652e]">
                           {selectedSlots.length > 0 ? (
-                            <div className="space-y-1.5">
-                              {selectedSessions.map((session) => (
-                                <div key={session.sessionDate} className="space-y-1.5">
-                                  <span className="block text-xs font-semibold capitalize text-[#71827a]">{session.dateLabel}</span>
-                                  {session.shifts.map((shift) => (
-                                    <div key={`${session.sessionDate}:${shift.id}`}>
-                                      <span className="block">{shift.name}</span>
-                                      <span className="mt-0.5 block text-xs font-normal text-[#71827a]">
-                                        {shift.locationName || selectedLocation?.name} · {shift.startTime}–{shift.endTime}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              ))}
-                            </div>
+                            selectedSessions.flatMap((session) => session.shifts.map((shift) => ({
+                              session,
+                              shift,
+                            }))).map(({ session, shift }, index) => (
+                              <div key={`${session.sessionDate}:${shift.id}`} className="rounded-lg bg-[#fff7ed] px-2.5 py-2">
+                                <span className="block text-xs font-semibold text-[#a95727]">
+                                  {index + 1}. {shift.name}: {shift.locationName || selectedLocation?.name}
+                                </span>
+                                <span className="mt-0.5 block text-[11px] font-medium text-[#c4773e]">
+                                  {shift.startTime} – {shift.endTime} · {session.dateLabel}
+                                </span>
+                              </div>
+                            ))
                           ) : (isEnglish ? "No shift selected" : "Chưa chọn ca")}
                         </dd>
                       </div>
