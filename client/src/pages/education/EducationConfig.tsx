@@ -39,6 +39,7 @@ import { useAutoInvoicePolicy } from "@/hooks/use-auto-invoice-policy";
 import { usePastSchedulePolicy } from "@/hooks/use-past-schedule-policy";
 import { useSessionReviewPublicationPolicy } from "@/hooks/use-session-review-publication-policy";
 import {
+  EDUCATION_OTHER_CONFIG_RESOURCE,
   AUTO_INVOICE_FEATURE_PERMISSION_RESOURCE,
   PAST_SCHEDULE_FEATURE_PERMISSION_RESOURCE,
   SESSION_REVIEW_PUBLICATION_FEATURE_PERMISSION_RESOURCE,
@@ -2406,6 +2407,111 @@ function SessionReviewPublicationConfigCard({ canEdit }: { canEdit: boolean }) {
   );
 }
 
+function PersonalScheduleRegistrationConfigCard({ canEdit }: { canEdit: boolean }) {
+  const { toast } = useToast();
+  const policyQuery = useQuery<{
+    registrationAdvanceHours: number;
+    cancellationAdvanceHours: number;
+  }>({
+    queryKey: ["/api/system-settings/personal-schedule-registration"],
+    queryFn: async () => {
+      const response = await fetch("/api/system-settings/personal-schedule-registration", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Không thể tải cấu hình thời gian đăng ký lịch.");
+      return response.json();
+    },
+  });
+  const [registrationAdvanceHours, setRegistrationAdvanceHours] = useState(0);
+  const [cancellationAdvanceHours, setCancellationAdvanceHours] = useState(0);
+
+  useEffect(() => {
+    if (!policyQuery.data) return;
+    setRegistrationAdvanceHours(policyQuery.data.registrationAdvanceHours);
+    setCancellationAdvanceHours(policyQuery.data.cancellationAdvanceHours);
+  }, [policyQuery.data]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => apiRequest("PUT", "/api/system-settings/personal-schedule-registration", {
+      registrationAdvanceHours,
+      cancellationAdvanceHours,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/system-settings/personal-schedule-registration"] });
+      toast({ title: "Đã lưu cấu hình thời gian đăng ký lịch" });
+    },
+    onError: (error: any) => toast({ title: "Lỗi khi lưu", description: error.message, variant: "destructive" }),
+  });
+
+  return (
+    <Card className="h-full w-full">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base font-semibold">
+          <Settings2 className="h-4 w-4" />
+          Thời gian đăng ký lịch học theo nhu cầu cá nhân
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {policyQuery.isError ? (
+          <div className="space-y-2">
+            <p className="text-sm text-destructive">Không thể tải cấu hình thời gian đăng ký lịch.</p>
+            <Button type="button" variant="outline" onClick={() => policyQuery.refetch()}>
+              Thử tải lại
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="personal-schedule-registration-hours">Đăng ký trước giờ bắt đầu (giờ)</Label>
+                <Input
+                  id="personal-schedule-registration-hours"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={registrationAdvanceHours}
+                  onChange={(event) => setRegistrationAdvanceHours(Math.max(0, Number.parseInt(event.target.value, 10) || 0))}
+                  disabled={!canEdit || policyQuery.isFetching || saveMutation.isPending}
+                />
+                <p className="text-xs text-muted-foreground">
+                  0 giờ: không yêu cầu đăng ký trước thêm giờ.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="personal-schedule-cancellation-hours">Hủy trước giờ bắt đầu (giờ)</Label>
+                <Input
+                  id="personal-schedule-cancellation-hours"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={cancellationAdvanceHours}
+                  onChange={(event) => setCancellationAdvanceHours(Math.max(0, Number.parseInt(event.target.value, 10) || 0))}
+                  disabled={!canEdit || policyQuery.isFetching || saveMutation.isPending}
+                />
+                <p className="text-xs text-muted-foreground">
+                  0 giờ: không yêu cầu hủy trước thêm giờ.
+                </p>
+              </div>
+            </div>
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+              Cấu hình hiện được lưu để dùng ở bước nối quy tắc đăng ký và hủy ca; hiện chưa thay đổi hành vi đăng ký.
+            </p>
+            {canEdit && (
+              <Button
+                type="button"
+                onClick={() => saveMutation.mutate()}
+                disabled={!policyQuery.data || policyQuery.isFetching || saveMutation.isPending}
+              >
+                {saveMutation.isPending ? "Đang lưu…" : "Lưu cấu hình"}
+              </Button>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function EducationConfig() {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
@@ -2689,10 +2795,14 @@ export default function EducationConfig() {
               ) : myPerms === null ? (
                 <Card><CardContent className="p-6 text-sm text-muted-foreground">Bạn không có quyền xem mục cấu hình này.</CardContent></Card>
               ) : (myPerms.isSuperAdmin
+                || myPerms.permissions[EDUCATION_OTHER_CONFIG_RESOURCE]?.canView
                 || myPerms.permissions[AUTO_INVOICE_FEATURE_PERMISSION_RESOURCE]?.canView
                 || myPerms.permissions[PAST_SCHEDULE_FEATURE_PERMISSION_RESOURCE]?.canView
                 || myPerms.permissions[SESSION_REVIEW_PUBLICATION_FEATURE_PERMISSION_RESOURCE]?.canView) ? (
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  {(myPerms.isSuperAdmin || myPerms.permissions[EDUCATION_OTHER_CONFIG_RESOURCE]?.canView) && (
+                    <PersonalScheduleRegistrationConfigCard canEdit={buildTabPerm(myPerms, "other-config").canEdit} />
+                  )}
                   {(myPerms.isSuperAdmin || myPerms.permissions[AUTO_INVOICE_FEATURE_PERMISSION_RESOURCE]?.canView) && (
                     <AutoInvoiceConfigTab canEdit={buildTabPerm(myPerms, "other-config").canEdit} />
                   )}

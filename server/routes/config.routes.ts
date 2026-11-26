@@ -101,6 +101,7 @@ function getBangkokDateOnly(): string {
 const SCORE_CONVERSION_SETTINGS_KEY = "scoreConversionTemplates";
 const SCORE_SHEET_TEMPLATE_SETTINGS_KEY = "scoreSheetTemplates";
 const SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY = "scoreSheetAssessments";
+const PERSONAL_SCHEDULE_REGISTRATION_SETTINGS_KEY = "personalScheduleRegistrationPolicy";
 const SCORE_CONVERSION_PERMISSION_RESOURCE = SCORE_CONVERSION_ASSESSMENTS_PERMISSION;
 
 function parseScoreConversionTemplates(value: string): ScoreConversionTemplate[] {
@@ -563,7 +564,7 @@ async function recordCourseAudit(req: any, data: {
 }
 
 async function recordEducationConfigAudit(req: any, data: {
-  resource: "classroom" | "subject" | "evaluation_criteria" | "evaluation_sub_criteria" | "shift" | "attendance_fee" | "attendance_limit" | "auto_invoice" | "session_review_publication" | "score_category" | "score_sheet" | "score_conversion_template" | "online_learning" | "location" | "department" | "role" | "permission" | "holiday";
+  resource: "classroom" | "subject" | "evaluation_criteria" | "evaluation_sub_criteria" | "shift" | "attendance_fee" | "attendance_limit" | "auto_invoice" | "session_review_publication" | "personal_schedule_registration" | "score_category" | "score_sheet" | "score_conversion_template" | "online_learning" | "location" | "department" | "role" | "permission" | "holiday";
   action: "created" | "updated" | "deleted";
   scope?: "education-config" | "settings";
   entityId?: string | null;
@@ -663,6 +664,19 @@ async function getEducationConfigSnapshot(resource: string, path: string, body?:
       return await getSessionReviewPublicationPolicy();
     } catch (error) {
       console.error("[education-config-audit] failed to snapshot session review publication settings:", error);
+      return null;
+    }
+  }
+  if (resource === "personal_schedule_registration" && id === "personal-schedule-registration") {
+    try {
+      const { systemSettings } = await import("@shared/schema");
+      const [row] = await db.select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, PERSONAL_SCHEDULE_REGISTRATION_SETTINGS_KEY))
+        .limit(1);
+      return row?.value ? JSON.parse(row.value) : null;
+    } catch (error) {
+      console.error("[education-config-audit] failed to snapshot personal schedule registration settings:", error);
       return null;
     }
   }
@@ -796,6 +810,7 @@ export function registerConfigRoutes(app: Express): void {
       [/^\/system-settings\/attendance-limit$/, "attendance_limit"],
       [/^\/system-settings\/auto-invoice$/, "auto_invoice"],
       [/^\/system-settings\/session-review-publication$/, "session_review_publication"],
+      [/^\/system-settings\/personal-schedule-registration$/, "personal_schedule_registration"],
     ];
     const settingsResourceByPath: Array<[RegExp, string]> = [
       [/^\/locations(?:\/|$)/, "location"],
@@ -3079,6 +3094,56 @@ export function registerConfigRoutes(app: Express): void {
     } catch (err: any) {
       if (err instanceof z.ZodError) return res.status(400).json({ message: "Dữ liệu cấu hình không hợp lệ.", errors: err.errors });
       res.status(500).json({ message: err.message || "Không thể lưu cấu hình công bố nhận xét học viên." });
+    }
+  });
+
+  app.get("/api/system-settings/personal-schedule-registration", async (req, res) => {
+    try {
+      if (!await hasEducationConfigPermission(req, EDUCATION_OTHER_CONFIG_RESOURCE, "canView")) {
+        return res.status(403).json({ message: "Bạn không có quyền xem cấu hình thời gian đăng ký lịch." });
+      }
+      const { systemSettings } = await import("@shared/schema");
+      const [row] = await db.select({ value: systemSettings.value })
+        .from(systemSettings)
+        .where(eq(systemSettings.key, PERSONAL_SCHEDULE_REGISTRATION_SETTINGS_KEY))
+        .limit(1);
+      if (!row) return res.json({ registrationAdvanceHours: 0, cancellationAdvanceHours: 0 });
+      const payload = z.object({
+        registrationAdvanceHours: z.number().int().nonnegative(),
+        cancellationAdvanceHours: z.number().int().nonnegative(),
+      }).parse(JSON.parse(row.value));
+      return res.json(payload);
+    } catch (err: any) {
+      if (err instanceof z.ZodError || err instanceof SyntaxError) {
+        return res.status(500).json({ message: "Cấu hình thời gian đăng ký lịch không hợp lệ." });
+      }
+      return res.status(500).json({ message: err.message || "Không thể tải cấu hình thời gian đăng ký lịch." });
+    }
+  });
+
+  app.put("/api/system-settings/personal-schedule-registration", async (req, res) => {
+    try {
+      if (!await hasEducationConfigPermission(req, EDUCATION_OTHER_CONFIG_RESOURCE, "canEdit")) {
+        return res.status(403).json({ message: "Bạn không có quyền sửa cấu hình thời gian đăng ký lịch." });
+      }
+      const payload = z.object({
+        registrationAdvanceHours: z.number().int().nonnegative(),
+        cancellationAdvanceHours: z.number().int().nonnegative(),
+      }).strict().parse(req.body);
+      const { systemSettings } = await import("@shared/schema");
+      const value = JSON.stringify(payload);
+      await db.insert(systemSettings)
+        .values({ key: PERSONAL_SCHEDULE_REGISTRATION_SETTINGS_KEY, value })
+        .onConflictDoUpdate({
+          target: systemSettings.key,
+          set: { value, updatedAt: new Date() },
+        });
+      return res.json(payload);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: "Thời gian phải là số giờ nguyên từ 0 trở lên.", errors: err.errors });
+      }
+      return res.status(500).json({ message: err.message || "Không thể lưu cấu hình thời gian đăng ký lịch." });
     }
   });
 
