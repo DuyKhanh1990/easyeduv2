@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
-  CalendarDays,
   Check,
   Clock3,
   CreditCard,
@@ -122,6 +121,11 @@ export function TeacherBookingDetailsStep({
   const selectedShiftCount = selectedSessions.reduce((total, session) => total + session.shifts.length, 0);
   const selectedPackageSessions = selectedPackage
     ? Number(packageSource === "existing" ? selectedPackage.remainingSessions : selectedPackage.sessions) || 0
+    : 0;
+  const selectedPackageTotalSessions = selectedPackage
+    ? Number(packageSource === "existing"
+      ? selectedPackage.totalSessions
+      : selectedPackage.sessions) || 0
     : 0;
   const fullPackageAmount = selectedPackage
     ? (selectedPackage.type === "buổi"
@@ -487,30 +491,21 @@ export function TeacherBookingDetailsStep({
                 </div>
               </div>
               <div className="flex gap-3">
-                <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-[#6f9285]" />
-                <div className="min-w-0">
-                  <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#829089]">{isEnglish ? "Lesson date" : "Ngày học"}</dt>
-                  <dd className="mt-0.5 space-y-1 capitalize text-[#405c53]">
-                    {selectedSessions.map((session) => (
-                      <div key={session.sessionDate}>{session.dateLabel}</div>
-                    ))}
-                  </dd>
-                </div>
-              </div>
-              <div className="flex gap-3">
                 <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-[#6f9285]" />
                 <div className="min-w-0">
                   <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#829089]">{isEnglish ? "Selected shifts" : "Các ca đã chọn"}</dt>
-                  <dd className="mt-1 space-y-2 text-[#405c53]">
-                    {selectedSessions.map((session) => (
-                      <div key={session.sessionDate} className="space-y-1.5">
-                        <span className="block text-xs font-semibold capitalize text-[#71827a]">{session.dateLabel}</span>
-                        {session.shifts.map((shift) => (
-                          <div key={`${session.sessionDate}:${shift.id}`}>
-                            <span className="block font-medium">{shift.name}</span>
-                            <span className="block text-xs text-[#71827a]">{shift.locationName || locationName} · {shift.startTime}–{shift.endTime}</span>
-                          </div>
-                        ))}
+                  <dd className="mt-1 space-y-2 text-[#b7652e]">
+                    {selectedSessions.flatMap((session) => session.shifts.map((shift) => ({
+                      session,
+                      shift,
+                    }))).map(({ session, shift }, index) => (
+                      <div key={`${session.sessionDate}:${shift.id}`} className="rounded-lg bg-[#fff7ed] px-2.5 py-2">
+                        <span className="block text-xs font-semibold text-[#a95727]">
+                          {index + 1}. {shift.name}: {shift.locationName || locationName}
+                        </span>
+                        <span className="mt-0.5 block text-[11px] font-medium text-[#c4773e]">
+                          {shift.startTime} – {shift.endTime} · {session.dateLabel}
+                        </span>
                       </div>
                     ))}
                   </dd>
@@ -520,20 +515,25 @@ export function TeacherBookingDetailsStep({
                 <CreditCard className="mt-0.5 h-4 w-4 shrink-0 text-[#6f9285]" />
                 <div className="min-w-0">
                   <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#829089]">{isEnglish ? "Tuition package" : "Gói học phí"}</dt>
-                  <dd className="mt-0.5 font-medium text-[#405c53]">{selectedPackage?.name ?? (isEnglish ? "Not selected" : "Chưa chọn")}</dd>
+                  {!selectedPackage && (
+                    <dd className="mt-0.5 font-medium text-[#405c53]">{isEnglish ? "Not selected" : "Chưa chọn"}</dd>
+                  )}
                   {selectedPackage && (
-                    <>
-                      <dd className="text-xs text-[#71827a]">
+                    <dd className="mt-1 rounded-lg bg-[#fff7ed] px-2.5 py-2 text-[#b7652e]">
+                      <span className="block text-xs font-semibold text-[#a95727]">{selectedPackage.name}</span>
+                      <span className="mt-0.5 block text-[11px] font-medium text-[#c4773e]">
+                        {isEnglish ? "Booked: " : "Đăng ký: "}
+                        {selectedShiftCount}/{selectedPackageTotalSessions}
+                        {" · "}
+                        {isEnglish ? "Remaining: " : "Còn lại: "}
+                        {Math.max(0, selectedPackageSessions - selectedShiftCount)}
+                      </span>
+                      <span className="mt-0.5 block text-[11px] font-medium text-[#c4773e]">
                         {packageSource === "existing"
-                          ? `${selectedShiftCount} ${isEnglish ? "booked now" : "buổi đăng ký lần này"} · ${Math.max(0, selectedPackageSessions - selectedShiftCount)} ${isEnglish ? "left to schedule" : "buổi còn để xếp"}`
-                          : `${selectedShiftCount}/${Number(selectedPackage.sessions)} ${isEnglish ? "booked now" : "buổi đã xếp"} · ${Math.max(0, Number(selectedPackage.sessions) - selectedShiftCount)} ${isEnglish ? "left to schedule" : "buổi còn để xếp"}`}
-                      </dd>
-                      <dd className="text-xs text-[#71827a]">
-                        {packageSource === "existing"
-                          ? (isEnglish ? "Already paid · no additional charge" : "Đã thu trước · không thu thêm")
-                          : `${isEnglish ? "Full package charge: " : "Thu đủ cả gói: "}${currency(fullPackageAmount, locale)}`}
-                      </dd>
-                    </>
+                          ? (isEnglish ? "Previously paid" : "Đã thu tiền trước")
+                          : (isEnglish ? "Paid from deposit wallet" : "Thu từ Ví Đặt Cọc")}
+                      </span>
+                    </dd>
                   )}
                 </div>
               </div>
