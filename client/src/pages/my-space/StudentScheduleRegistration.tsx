@@ -81,7 +81,7 @@ export function StudentScheduleRegistration() {
         </TabsContent>
       </Tabs>
       <Dialog open={teacherDirectoryOpen} onOpenChange={setTeacherDirectoryOpen}>
-        <DialogContent className="flex max-h-[92vh] max-w-6xl flex-col overflow-hidden">
+        <DialogContent className="flex max-h-[92dvh] w-[99vw] max-w-[99vw] flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>{t("mySpace.calendar.teacherDirectoryTitle")}</DialogTitle>
           </DialogHeader>
