@@ -2494,7 +2494,7 @@ function PersonalScheduleRegistrationConfigCard({ canEdit }: { canEdit: boolean 
               </div>
             </div>
             <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-              Cấu hình hiện được lưu để dùng ở bước nối quy tắc đăng ký và hủy ca; hiện chưa thay đổi hành vi đăng ký.
+              Thời gian đăng ký đã được áp dụng khi chọn và xác nhận ca. Thời hạn hủy sẽ có hiệu lực khi bổ sung luồng hủy ca.
             </p>
             {canEdit && (
               <Button

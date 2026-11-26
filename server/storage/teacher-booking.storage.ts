@@ -24,6 +24,7 @@ import {
   students,
   studentSessions,
   studentWalletTransactions,
+  systemSettings,
   teacherAvailability,
   teacherAvailabilityWindows,
   users,
@@ -31,6 +32,12 @@ import {
 import { like, ne } from "drizzle-orm";
 import { getNextLocationCode } from "./finance.storage";
 import { calculateAutoInvoiceDepositTotals } from "@shared/invoice-deposit-accounting";
+import {
+  DEFAULT_PERSONAL_SCHEDULE_REGISTRATION_POLICY,
+  PERSONAL_SCHEDULE_REGISTRATION_SETTINGS_KEY,
+  isPersonalScheduleRegistrationOpen,
+  type PersonalScheduleRegistrationPolicy,
+} from "@shared/personal-schedule-registration";
 
 const ZERO_ROOM_ID = "00000000-0000-0000-0000-000000000000";
 const REGISTRATION_INVOICE_CATEGORY = "Học phí theo đăng ký";
@@ -94,6 +101,37 @@ function getBangkokDateAndTime() {
   return {
     date: `${parts.year}-${parts.month}-${parts.day}`,
     time: `${parts.hour}:${parts.minute}`,
+  };
+}
+
+export async function getPersonalScheduleRegistrationPolicy(executor: any = db): Promise<PersonalScheduleRegistrationPolicy> {
+  const [row] = await executor.select({ value: systemSettings.value })
+    .from(systemSettings)
+    .where(eq(systemSettings.key, PERSONAL_SCHEDULE_REGISTRATION_SETTINGS_KEY))
+    .limit(1);
+  if (!row) return DEFAULT_PERSONAL_SCHEDULE_REGISTRATION_POLICY;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(row.value);
+  } catch {
+    throw new Error("Cấu hình thời gian đăng ký lịch không hợp lệ.");
+  }
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Cấu hình thời gian đăng ký lịch không hợp lệ.");
+  }
+  const value = parsed as Partial<PersonalScheduleRegistrationPolicy>;
+  if (
+    !Number.isInteger(value.registrationAdvanceHours)
+    || Number(value.registrationAdvanceHours) < 0
+    || !Number.isInteger(value.cancellationAdvanceHours)
+    || Number(value.cancellationAdvanceHours) < 0
+  ) {
+    throw new Error("Cấu hình thời gian đăng ký lịch không hợp lệ.");
+  }
+  return {
+    registrationAdvanceHours: Number(value.registrationAdvanceHours),
+    cancellationAdvanceHours: Number(value.cancellationAdvanceHours),
   };
 }
 
@@ -384,6 +422,7 @@ async function assertAvailability(
   tx: any,
   input: ConfirmTeacherBookingInput,
   selection: ConfirmTeacherBookingInput["sessions"][number],
+  registrationPolicy: PersonalScheduleRegistrationPolicy,
 ) {
   const todayAndTime = getBangkokDateAndTime();
   if (!isValidDateKey(selection.sessionDate) || selection.sessionDate < todayAndTime.date) {
@@ -415,8 +454,16 @@ async function assertAvailability(
   for (let index = 0; index < shifts.length; index += 1) {
     const start = normalizeTime(shifts[index].startTime);
     const end = normalizeTime(shifts[index].endTime);
-    if (selection.sessionDate === todayAndTime.date && start <= todayAndTime.time) {
-      throw new TeacherBookingValidationError("Ca học đã bắt đầu hoặc đã qua giờ bắt đầu.");
+    if (!isPersonalScheduleRegistrationOpen(
+      selection.sessionDate,
+      start,
+      registrationPolicy.registrationAdvanceHours,
+    )) {
+      throw new TeacherBookingValidationError(
+        registrationPolicy.registrationAdvanceHours > 0
+          ? `Ca học cần được đăng ký trước ít nhất ${registrationPolicy.registrationAdvanceHours} giờ.`
+          : "Ca học đã bắt đầu hoặc đã qua giờ bắt đầu.",
+      );
     }
     for (let other = index + 1; other < shifts.length; other += 1) {
       if (overlaps(start, end, normalizeTime(shifts[other].startTime), normalizeTime(shifts[other].endTime))) {
@@ -563,8 +610,9 @@ export async function confirmTeacherBooking(input: ConfirmTeacherBookingInput) {
     const location = await assertTeacherAndStudentShareLocation(tx, input);
     const feePackage = await getPackageForBooking(tx, input);
     const packageState = await assertPackageCapacity(tx, input, feePackage);
+    const registrationPolicy = await getPersonalScheduleRegistrationPolicy(tx);
     const scheduledSlots = (await Promise.all(input.sessions.map(async (selection) => {
-      const { shifts, weekday } = await assertAvailability(tx, input, selection);
+      const { shifts, weekday } = await assertAvailability(tx, input, selection, registrationPolicy);
       return shifts.map((shift: any) => ({ sessionDate: selection.sessionDate, weekday, shift }));
     }))).flat().sort((a, b) =>
       a.sessionDate.localeCompare(b.sessionDate)

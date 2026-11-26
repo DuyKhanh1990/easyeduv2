@@ -79,9 +79,11 @@ import {
 import { storage } from "../storage";
 import {
   confirmTeacherBooking,
+  getPersonalScheduleRegistrationPolicy,
   getTeacherBookingOptions,
   TeacherBookingValidationError,
 } from "../storage/teacher-booking.storage";
+import { isPersonalScheduleRegistrationOpen } from "@shared/personal-schedule-registration";
 import { eq, and, gte, lte, sql, inArray, isNotNull, isNull, or, desc, ne } from "drizzle-orm";
 import { uploadFileToS3FromStream } from "../lib/s3";
 import { addS3Bytes, recordFileUpload } from "../lib/storage-usage";
@@ -2005,6 +2007,7 @@ export function registerMySpaceRoutes(app: Express): void {
         return res.json({ locations: sharedLocations, locationId: null, shifts: [], days: [] });
       }
 
+      const registrationPolicy = await getPersonalScheduleRegistrationPolicy();
       const shifts = await storage.getShiftTemplates(locationId, "class");
       shifts.sort((a, b) => a.startTime.localeCompare(b.startTime) || a.name.localeCompare(b.name));
       const sessionRows = await db
@@ -2122,13 +2125,20 @@ export function registerMySpaceRoutes(app: Express): void {
               || activeTimeWindows.some((window) =>
                 normalizeTime(window.startTime) <= shiftStart
                 && normalizeTime(window.endTime) >= shiftEnd);
+            const isRegistrationOpen = isPersonalScheduleRegistrationOpen(
+              date,
+              shiftStart,
+              registrationPolicy.registrationAdvanceHours,
+            );
             const status = date < today
               ? "past"
               : isBusy
                 ? "busy"
-                : isWithinRegisteredAvailability
-                  ? "available"
-                  : "outside_availability";
+                : !isWithinRegisteredAvailability
+                  ? "outside_availability"
+                  : isRegistrationOpen
+                    ? "available"
+                    : "registration_closed";
             return { shiftId: shift.id, status };
           }),
         };
@@ -2137,6 +2147,7 @@ export function registerMySpaceRoutes(app: Express): void {
       res.json({
         locations: sharedLocations,
         locationId,
+        registrationAdvanceHours: registrationPolicy.registrationAdvanceHours,
         shifts: shifts.map(({ id, name, startTime, endTime }) => ({
           id,
           name,

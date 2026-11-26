@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useLanguage } from "@/hooks/use-language";
+import { isPersonalScheduleRegistrationOpen } from "@shared/personal-schedule-registration";
 
 type Teacher = {
   id: string;
@@ -41,11 +42,12 @@ type Student = {
   locations: { id: string; name: string }[];
 };
 
-type SlotStatus = "available" | "busy" | "outside_availability" | "past";
+type SlotStatus = "available" | "busy" | "outside_availability" | "past" | "registration_closed";
 
 type Availability = {
   locations: { id: string; name: string }[];
   locationId: string | null;
+  registrationAdvanceHours?: number;
   shifts: { id: string; name: string; startTime: string; endTime: string; locationName: string }[];
   days: {
     date: string;
@@ -149,10 +151,15 @@ function shiftsOverlap(
     && startA < endB && endA > startB;
 }
 
-function getStatusLabel(status: SlotStatus, isEnglish: boolean) {
+function getStatusLabel(status: SlotStatus, isEnglish: boolean, registrationAdvanceHours = 0) {
   if (status === "available") return isEnglish ? "Available" : "Còn chỗ";
   if (status === "busy") return isEnglish ? "Booked" : "Đã kín";
   if (status === "past") return isEnglish ? "Past" : "Đã qua";
+  if (status === "registration_closed") {
+    return registrationAdvanceHours > 0
+      ? (isEnglish ? `Book at least ${registrationAdvanceHours}h ahead` : `Cần đăng ký trước ${registrationAdvanceHours} giờ`)
+      : (isEnglish ? "Already started" : "Đã bắt đầu");
+  }
   return isEnglish ? "Unavailable" : "Không khả dụng";
 }
 
@@ -165,6 +172,9 @@ function statusStyle(status: SlotStatus) {
   }
   if (status === "past") {
     return "border-[#e3e6e1] bg-[#f1f2ef] text-[#7b837d]";
+  }
+  if (status === "registration_closed") {
+    return "border-[#e5e8e3] bg-[#f6f7f4] text-[#78827c]";
   }
   return "border-[#e5e8e3] bg-[#f6f7f4] text-[#78827c]";
 }
@@ -200,6 +210,7 @@ export function TeacherBookingDialog({
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [locationId, setLocationId] = useState("");
   const [selectedSlots, setSelectedSlots] = useState<SelectedBookingSlot[]>([]);
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const [bookingStep, setBookingStep] = useState<"schedule" | "details">("schedule");
   const [selectedFeePackageId, setSelectedFeePackageId] = useState("");
   const [learningMode, setLearningMode] = useState<"offline" | "online" | null>(null);
@@ -237,6 +248,7 @@ export function TeacherBookingDialog({
       if (!response.ok) throw new Error(isEnglish ? "Unable to load schedule" : "Không thể tải lịch học");
       return response.json() as Promise<Availability>;
     },
+    refetchInterval: open ? 60_000 : false,
   });
 
   const sharedLocations = useMemo(() => {
@@ -258,6 +270,29 @@ export function TeacherBookingDialog({
     () => new Map((query.data?.days ?? []).map((day) => [day.date, day])),
     [query.data?.days],
   );
+  const registrationAdvanceHours = query.data?.registrationAdvanceHours ?? 0;
+  const getEffectiveSlotStatus = (sessionDate: string, shiftId: string): SlotStatus => {
+    const status = getSlotStatus(dayMap.get(sessionDate), shiftId);
+    if (status !== "available") return status;
+    const shift = query.data?.shifts.find((item) => item.id === shiftId);
+    if (!shift) return status;
+    return isPersonalScheduleRegistrationOpen(
+      sessionDate,
+      shift.startTime,
+      registrationAdvanceHours,
+      clockNow,
+    ) ? "available" : "registration_closed";
+  };
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setInterval(() => setClockNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [open]);
+  useEffect(() => {
+    setSelectedSlots((current) => current.filter((slot) =>
+      getEffectiveSlotStatus(slot.date, slot.shift.id) === "available",
+    ));
+  }, [clockNow, dayMap, query.data?.registrationAdvanceHours, query.data?.shifts]);
   const selectedDay = dayMap.get(dateKey(focusedDate));
   const focusedDateKey = dateKey(focusedDate);
   const selectedLocation = sharedLocations.find((location) => location.id === locationId);
@@ -297,7 +332,7 @@ export function TeacherBookingDialog({
     if (!shift) return;
     const currentDate = dateKey(focusedDate);
     const alreadySelected = selectedSlots.some((item) => item.date === currentDate && item.shift.id === shiftId);
-    if (!alreadySelected && getSlotStatus(selectedDay, shiftId) !== "available") return;
+    if (!alreadySelected && getEffectiveSlotStatus(currentDate, shiftId) !== "available") return;
 
     setSelectedSlots((current) => {
       if (alreadySelected) {
@@ -407,7 +442,9 @@ export function TeacherBookingDialog({
                   <div className="grid grid-cols-7 gap-1 sm:gap-2">
                     {weekDays.map((date, index) => {
                       const day = dayMap.get(dateKey(date));
-                      const availableCount = availabilityReady ? day?.slots.filter((slot) => slot.status === "available").length ?? 0 : 0;
+                      const availableCount = availabilityReady ? day?.slots.filter((slot) =>
+                        getEffectiveSlotStatus(dateKey(date), slot.shiftId) === "available",
+                      ).length ?? 0 : 0;
                       const active = dateKey(date) === dateKey(focusedDate);
                       return (
                         <button
@@ -443,7 +480,9 @@ export function TeacherBookingDialog({
                     {monthCells.map((date, index) => {
                       if (!date) return <div key={`empty-${index}`} className="min-h-[24px] sm:min-h-[28px]" />;
                       const day = dayMap.get(dateKey(date));
-                      const availableCount = availabilityReady ? day?.slots.filter((slot) => slot.status === "available").length ?? 0 : 0;
+                      const availableCount = availabilityReady ? day?.slots.filter((slot) =>
+                        getEffectiveSlotStatus(dateKey(date), slot.shiftId) === "available",
+                      ).length ?? 0 : 0;
                       const busyCount = availabilityReady ? day?.slots.filter((slot) => slot.status === "busy").length ?? 0 : 0;
                       const active = dateKey(date) === dateKey(focusedDate);
                       return (
@@ -537,7 +576,7 @@ export function TeacherBookingDialog({
                   query.data?.shifts.length ? (
                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                       {query.data.shifts.map((shift) => {
-                        const status = getSlotStatus(selectedDay, shift.id);
+                        const status = getEffectiveSlotStatus(focusedDateKey, shift.id);
                         const isAvailable = status === "available";
                         const isSelected = selectedSlots.some((item) => item.date === focusedDateKey && item.shift.id === shift.id);
                         const overlapsSelected = !isSelected && selectedSlots.some((item) =>
@@ -552,6 +591,12 @@ export function TeacherBookingDialog({
                             onClick={() => toggleShift(shift.id)}
                             title={overlapsSelected
                               ? (isEnglish ? "This shift overlaps another selected shift." : "Ca này trùng giờ với ca đã chọn.")
+                              : status === "registration_closed"
+                                ? (registrationAdvanceHours > 0
+                                  ? (isEnglish
+                                    ? `Must be booked at least ${registrationAdvanceHours} hours before start.`
+                                    : `Cần đăng ký trước giờ bắt đầu ít nhất ${registrationAdvanceHours} giờ.`)
+                                  : (isEnglish ? "This shift has already started." : "Ca học đã bắt đầu."))
                               : undefined}
                             className={`flex min-h-[76px] items-center justify-between gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5f9b8f] disabled:cursor-not-allowed ${isSelected ? "border-[#4e8e7f] bg-[#e7f3ed] ring-1 ring-[#4e8e7f]" : overlapsSelected ? "border-[#e5e8e3] bg-[#f6f7f4] text-[#78827c]" : statusStyle(status)} ${isAvailable && !isSelected && !overlapsSelected ? "hover:border-[#84b4a4] hover:bg-[#e7f3ed]" : ""}`}
                           >
@@ -571,7 +616,7 @@ export function TeacherBookingDialog({
                                 ? (isEnglish ? "Selected" : "Đã chọn")
                                 : overlapsSelected
                                   ? (isEnglish ? "Overlaps" : "Trùng giờ")
-                                  : getStatusLabel(status, isEnglish)}
+                                  : getStatusLabel(status, isEnglish, registrationAdvanceHours)}
                             </span>
                           </button>
                         );

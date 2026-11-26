@@ -86,6 +86,7 @@ import {
   getSessionReviewPublicationPolicy,
   SESSION_REVIEW_PUBLICATION_SETTINGS_KEY,
 } from "../lib/session-review-publication-policy";
+import { PERSONAL_SCHEDULE_REGISTRATION_SETTINGS_KEY } from "@shared/personal-schedule-registration";
 
 function getBangkokDateOnly(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -101,7 +102,6 @@ function getBangkokDateOnly(): string {
 const SCORE_CONVERSION_SETTINGS_KEY = "scoreConversionTemplates";
 const SCORE_SHEET_TEMPLATE_SETTINGS_KEY = "scoreSheetTemplates";
 const SCORE_SHEET_ASSESSMENTS_SETTINGS_KEY = "scoreSheetAssessments";
-const PERSONAL_SCHEDULE_REGISTRATION_SETTINGS_KEY = "personalScheduleRegistrationPolicy";
 const SCORE_CONVERSION_PERMISSION_RESOURCE = SCORE_CONVERSION_ASSESSMENTS_PERMISSION;
 
 function parseScoreConversionTemplates(value: string): ScoreConversionTemplate[] {
