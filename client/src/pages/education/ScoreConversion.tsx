@@ -1657,32 +1657,33 @@ export default function ScoreConversion() {
                 </div>
 
                 {viewMode === "students" ? (
-                  assignedScoreSheetStudentsQuery.isLoading ? (
-                    <div className="flex min-h-52 items-center justify-center text-sm text-muted-foreground">
-                      Đang tải danh sách học viên...
-                    </div>
-                  ) : assignedScoreSheetStudentsQuery.isError ? (
-                    <div className="flex min-h-52 flex-col items-center justify-center gap-3 p-6 text-center">
-                      <p className="text-sm text-destructive">
-                        {assignedScoreSheetStudentsQuery.error instanceof Error
-                          ? assignedScoreSheetStudentsQuery.error.message
-                          : "Không thể tải danh sách học viên."}
-                      </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => assignedScoreSheetStudentsQuery.refetch()}
-                      >
-                        Thử lại
-                      </Button>
-                    </div>
-                  ) : sortedStudentDates.length === 0 ? (
-                    <div className="flex min-h-52 items-center justify-center p-6 text-sm text-muted-foreground">
-                      Không có học viên phù hợp với bộ lọc.
-                    </div>
-                  ) : (
-                    <div className="space-y-4 p-3 sm:p-4">
-                      {sortedStudentDates.map((dateKey) => {
+                  <div className="max-h-[min(70vh,680px)] overflow-auto overscroll-contain">
+                    {assignedScoreSheetStudentsQuery.isLoading ? (
+                      <div className="flex min-h-52 items-center justify-center text-sm text-muted-foreground">
+                        Đang tải danh sách học viên...
+                      </div>
+                    ) : assignedScoreSheetStudentsQuery.isError ? (
+                      <div className="flex min-h-52 flex-col items-center justify-center gap-3 p-6 text-center">
+                        <p className="text-sm text-destructive">
+                          {assignedScoreSheetStudentsQuery.error instanceof Error
+                            ? assignedScoreSheetStudentsQuery.error.message
+                            : "Không thể tải danh sách học viên."}
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => assignedScoreSheetStudentsQuery.refetch()}
+                        >
+                          Thử lại
+                        </Button>
+                      </div>
+                    ) : sortedStudentDates.length === 0 ? (
+                      <div className="flex min-h-52 items-center justify-center p-6 text-sm text-muted-foreground">
+                        Không có học viên phù hợp với bộ lọc.
+                      </div>
+                    ) : (
+                      <div className="space-y-4 p-3 sm:p-4">
+                        {sortedStudentDates.map((dateKey) => {
                         const sessionGroups = Object.values(studentResultsByDate[dateKey] ?? {});
                         const totalStudents = sessionGroups.reduce(
                           (total, group) => total + group.students.length,
@@ -1902,9 +1903,10 @@ export default function ScoreConversion() {
                             </div>
                           </section>
                         );
-                      })}
-                    </div>
-                  )
+                        })}
+                      </div>
+                    )}
+                  </div>
                 ) : (
                 <div className="max-h-[min(70vh,680px)] overflow-auto">
                   <table
