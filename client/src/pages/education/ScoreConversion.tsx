@@ -956,24 +956,11 @@ export default function ScoreConversion() {
   return (
     <DashboardLayout>
       <div className="p-4 md:p-6">
-        <div
-          className="mb-6 flex flex-wrap items-center justify-between gap-4"
-          data-page-guide-anchor
-        >
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
-              <BarChart3 className="h-5 w-5 text-emerald-700 dark:text-emerald-300" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold">Bảng điểm quy đổi</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Lưu mẫu thang điểm quốc tế và cấu hình riêng của trung tâm.
-              </p>
-            </div>
-          </div>
-        </div>
         <Tabs value={activeConfigTab} onValueChange={setActiveConfigTab} className="space-y-4">
-          <TabsList className="flex h-auto flex-wrap justify-start gap-2 rounded-none bg-transparent p-0">
+          <TabsList
+            className="flex h-auto flex-wrap justify-start gap-2 rounded-none bg-transparent p-0"
+            data-page-guide-anchor
+          >
             {canViewConversionConfig && <TabsTrigger
               value="international"
               className="gap-1.5 rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
@@ -1023,9 +1010,9 @@ export default function ScoreConversion() {
                     </Button>
                   </div>
                 ) : templatesQuery.data?.length ? (
-                  <div className="overflow-x-auto">
+                  <div className="max-h-[min(70vh,680px)] overflow-auto">
                     <table className="w-full min-w-[760px] text-left text-sm">
-                      <thead className="border-b bg-muted/40 text-muted-foreground">
+                      <thead className="sticky top-0 z-10 border-b bg-muted/95 text-muted-foreground">
                         <tr>
                           <th className="px-4 py-3 font-medium">Loại bài kiểm tra</th>
                           <th className="px-4 py-3 font-medium">Phần thi</th>
@@ -1152,9 +1139,9 @@ export default function ScoreConversion() {
                     </Button>
                   </div>
                 ) : scoreSheetTemplatesQuery.data?.length ? (
-                  <div className="overflow-x-auto">
+                  <div className="max-h-[min(70vh,680px)] overflow-auto">
                     <table className="w-full min-w-[680px] text-left text-sm">
-                      <thead className="border-b bg-muted/40 text-muted-foreground">
+                      <thead className="sticky top-0 z-10 border-b bg-muted/95 text-muted-foreground">
                         <tr>
                           <th className="px-4 py-3 font-medium">Mã</th>
                           <th className="px-4 py-3 font-medium">Tên bảng điểm</th>
