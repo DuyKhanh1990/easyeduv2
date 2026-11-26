@@ -100,7 +100,7 @@
 - [Grade book roster snapshot](grade-book-roster-snapshot.md) — danh sách học viên được chốt lúc tạo; học viên active phát sinh sau đó chỉ được thêm thủ công.
 - [Child invoice adjustments](invoice-schedule-adjustments.md) — từng hóa đơn con tự sở hữu dòng hàng, điều chỉnh, tổng tiền và trạng thái thanh toán.
 - [Mockup sandbox screenshots](mockup-sandbox-screenshots.md) — screenshot isolated previews from the sandbox URL; appPreview paths load the main app instead.
-- [Score-sheet template configuration](score-sheet-template-configuration.md) — scoring keeps its saved snapshot; linked templates supply current deadlines and evaluation criteria.
+- [Score-sheet template configuration](score-sheet-template-configuration.md) — new or edited student attempts use latest settings; untouched and published results stay unchanged.
 - [Score-sheet category order snapshots](score-sheet-category-order.md) — existing gradebooks keep their category order when a shared score sheet is reordered; new books use the new order.
 - [Score conversion publication](score-assessment-publication.md) — publish state belongs to each class session; students only see their enrolled session's policy-selected result.
 - [Score conversion status and publication](score-assessment-individual-publication.md) — keep processing separate; retain completion criteria and use exam date for in-progress status.
