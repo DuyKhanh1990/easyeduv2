@@ -4,6 +4,7 @@ import {
   eq,
   inArray,
   isNotNull,
+  lte,
   or,
   sql,
   classes,
@@ -25,19 +26,24 @@ import {
   studentSessions,
   studentWalletTransactions,
   systemSettings,
+  teacherBookingBatches,
+  teacherBookingClassSeries,
+  teacherBookingSlots,
   teacherAvailability,
   teacherAvailabilityWindows,
   users,
 } from "./base";
-import { like, ne } from "drizzle-orm";
+import { asc, like, ne } from "drizzle-orm";
 import { getNextLocationCode } from "./finance.storage";
 import { calculateAutoInvoiceDepositTotals } from "@shared/invoice-deposit-accounting";
 import {
   DEFAULT_PERSONAL_SCHEDULE_REGISTRATION_POLICY,
+  getPersonalScheduleCancellationCutoff,
   PERSONAL_SCHEDULE_REGISTRATION_SETTINGS_KEY,
   isPersonalScheduleRegistrationOpen,
   type PersonalScheduleRegistrationPolicy,
 } from "@shared/personal-schedule-registration";
+import { teacherBookingSchemaIsReady } from "./teacher-booking-schema";
 
 const ZERO_ROOM_ID = "00000000-0000-0000-0000-000000000000";
 const REGISTRATION_INVOICE_CATEGORY = "Học phí theo đăng ký";
@@ -46,6 +52,13 @@ export class TeacherBookingValidationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "TeacherBookingValidationError";
+  }
+}
+
+export class TeacherBookingSchemaNotReadyError extends Error {
+  constructor() {
+    super("Chức năng đặt lịch đang chờ đồng bộ các bảng dữ liệu mới.");
+    this.name = "TeacherBookingSchemaNotReadyError";
   }
 }
 
@@ -156,7 +169,7 @@ function money(value: unknown): number {
 }
 
 async function getPurchasedPackages(executor: any, studentId: string, locationId: string) {
-  const [purchases, usedRows] = await Promise.all([
+  const [purchases, usedRows, depositRows, reservedRows] = await Promise.all([
     executor
       .select({
         packageId: invoiceItems.packageId,
@@ -192,6 +205,35 @@ async function getPurchasedPackages(executor: any, studentId: string, locationId
         sql`LOWER(COALESCE(${classSessions.status}, '')) NOT IN ('cancelled', 'canceled')`,
       ))
       .groupBy(studentSessions.packageId),
+    executor
+      .select({
+        packageId: teacherBookingBatches.packageId,
+        sessionCount: sql<number>`COUNT(${teacherBookingSlots.id})::int`,
+        purchasedAmount: sql<string>`COALESCE(SUM(${teacherBookingSlots.sessionPrice}), 0)::text`,
+      })
+      .from(teacherBookingSlots)
+      .innerJoin(teacherBookingBatches, eq(teacherBookingBatches.id, teacherBookingSlots.batchId))
+      .where(and(
+        eq(teacherBookingBatches.studentId, studentId),
+        eq(teacherBookingBatches.locationId, locationId),
+        eq(teacherBookingBatches.packageSource, "new"),
+        eq(teacherBookingSlots.status, "finalized"),
+      ))
+      .groupBy(teacherBookingBatches.packageId),
+    executor
+      .select({
+        packageId: teacherBookingBatches.packageId,
+        reservedCount: sql<number>`COUNT(${teacherBookingSlots.id})::int`,
+      })
+      .from(teacherBookingSlots)
+      .innerJoin(teacherBookingBatches, eq(teacherBookingBatches.id, teacherBookingSlots.batchId))
+      .where(and(
+        eq(teacherBookingBatches.studentId, studentId),
+        eq(teacherBookingBatches.locationId, locationId),
+        eq(teacherBookingBatches.packageSource, "existing"),
+        eq(teacherBookingSlots.status, "pending"),
+      ))
+      .groupBy(teacherBookingBatches.packageId),
   ]);
 
   const usedByPackage = new Map<string, number>(
@@ -221,13 +263,25 @@ async function getPurchasedPackages(executor: any, studentId: string, locationId
     packageMap.set(row.packageId, current);
   }
 
+  for (const row of depositRows) {
+    const current = packageMap.get(row.packageId);
+    if (!current) continue;
+    current.totalSessions += Math.max(0, Number(row.sessionCount) || 0);
+    current.purchasedAmount += Number(row.purchasedAmount) || 0;
+  }
+
+  const reservedByPackage = new Map<string, number>(
+    reservedRows.map((row: any) => [String(row.packageId), Number(row.reservedCount) || 0]),
+  );
+
   return [...packageMap.values()]
     .map((item) => {
       const usedSessions = usedByPackage.get(item.id) ?? 0;
+      const reservedSessions = reservedByPackage.get(item.id) ?? 0;
       return {
         ...item,
         usedSessions,
-        remainingSessions: Math.max(0, item.totalSessions - usedSessions),
+        remainingSessions: Math.max(0, item.totalSessions - usedSessions - reservedSessions),
       };
     })
     .filter((item) => item.remainingSessions > 0)
@@ -260,25 +314,47 @@ async function getNewPackages(executor: any, locationId: string): Promise<FeePac
     .orderBy(courses.name, courseFeePackages.name);
 }
 
-async function getDepositBalance(executor: any, studentId: string): Promise<number> {
-  const rows = await executor
-    .select({
-      type: studentWalletTransactions.type,
-      amount: studentWalletTransactions.amount,
-    })
-    .from(studentWalletTransactions)
-    .where(and(
-      eq(studentWalletTransactions.studentId, studentId),
-      eq(studentWalletTransactions.category, "Đặt cọc"),
-    ));
+async function getDepositBalance(
+  executor: any,
+  studentId: string,
+  excludedPendingSlotIds: string[] = [],
+): Promise<number> {
+  const [rows, pendingReservations] = await Promise.all([
+    executor
+      .select({
+        type: studentWalletTransactions.type,
+        amount: studentWalletTransactions.amount,
+      })
+      .from(studentWalletTransactions)
+      .where(and(
+        eq(studentWalletTransactions.studentId, studentId),
+        eq(studentWalletTransactions.category, "Đặt cọc"),
+      )),
+    executor
+      .select({
+        id: teacherBookingSlots.id,
+        amount: teacherBookingSlots.sessionPrice,
+      })
+      .from(teacherBookingSlots)
+      .innerJoin(teacherBookingBatches, eq(teacherBookingBatches.id, teacherBookingSlots.batchId))
+      .where(and(
+        eq(teacherBookingBatches.studentId, studentId),
+        eq(teacherBookingBatches.packageSource, "new"),
+        eq(teacherBookingSlots.status, "pending"),
+      )),
+  ]);
 
-  return money(rows.reduce((balance: number, row: any) => {
+  const walletBalance = rows.reduce((balance: number, row: any) => {
     const amount = Number(row.amount) || 0;
     return balance + (row.type === "credit" ? amount : -amount);
-  }, 0));
+  }, 0);
+  const reservedBalance = pendingReservations.reduce((sum: number, row: any) =>
+    excludedPendingSlotIds.includes(String(row.id)) ? sum : sum + (Number(row.amount) || 0), 0);
+  return money(Math.max(0, walletBalance - reservedBalance));
 }
 
 export async function getTeacherBookingOptions(input: BookingOptionsInput) {
+  if (!(await teacherBookingSchemaIsReady())) throw new TeacherBookingSchemaNotReadyError();
   const [purchasedPackages, packages, depositBalance] = await Promise.all([
     getPurchasedPackages(db, input.studentId, input.locationId),
     getNewPackages(db, input.locationId),
@@ -396,26 +472,31 @@ async function assertPackageCapacity(
     if (selectedSessionCount > purchased.remainingSessions) {
       throw new TeacherBookingValidationError(`Gói này chỉ còn ${purchased.remainingSessions} buổi chưa xếp.`);
     }
-    return { packageSessions: purchased.totalSessions, purchased, totalAmount: 0, depositBalance: 0 };
+    return {
+      packageSessions: purchased.totalSessions,
+      purchased,
+      totalAmount: 0,
+      depositBalance: 0,
+      perSessionPrice: money(purchased.purchasedAmount / purchased.totalSessions),
+    };
   }
 
   const packageSessions = configuredSessionCount(feePackage.sessions);
   if (!packageSessions) throw new TeacherBookingValidationError("Số buổi của gói học phí chưa được cấu hình hợp lệ.");
-  if (selectedSessionCount > packageSessions) {
+  if (feePackage.type !== "buổi" && selectedSessionCount > packageSessions) {
     throw new TeacherBookingValidationError(`Gói này có ${packageSessions} buổi, không thể đăng ký ${selectedSessionCount} ca cùng lúc.`);
   }
 
-  const totalAmount = money(
-    feePackage.type === "buổi"
-      ? Number(feePackage.fee) * packageSessions
-      : feePackage.totalAmount,
-  );
+  const perSessionPrice = money(feePackage.type === "buổi"
+    ? feePackage.fee
+    : Number(feePackage.totalAmount) / packageSessions);
+  const totalAmount = money(perSessionPrice * selectedSessionCount);
   if (totalAmount <= 0) throw new TeacherBookingValidationError("Giá gói học phí chưa được cấu hình hợp lệ.");
   const depositBalance = await getDepositBalance(tx, input.studentId);
   if (depositBalance < totalAmount) {
-    throw new TeacherBookingValidationError("Số dư Ví Đặt Cọc không đủ để thanh toán toàn bộ gói học phí.");
+    throw new TeacherBookingValidationError("Số dư Ví Đặt Cọc không đủ cho các buổi đã chọn.");
   }
-  return { packageSessions, purchased: null, totalAmount, depositBalance };
+  return { packageSessions, purchased: null, totalAmount, depositBalance, perSessionPrice };
 }
 
 async function assertAvailability(
@@ -531,6 +612,19 @@ async function assertAvailability(
         )`,
       ),
     ));
+  const pendingHolds = await tx
+    .select({
+      startTime: teacherBookingSlots.startTime,
+      endTime: teacherBookingSlots.endTime,
+    })
+    .from(teacherBookingSlots)
+    .innerJoin(teacherBookingBatches, eq(teacherBookingBatches.id, teacherBookingSlots.batchId))
+    .where(and(
+      eq(teacherBookingSlots.teacherId, input.teacherId),
+      eq(teacherBookingSlots.sessionDate, selection.sessionDate),
+      eq(teacherBookingSlots.status, "pending"),
+      eq(teacherBookingBatches.locationId, input.locationId),
+    ));
   const busySessionIds = existingSessions.map((session: any) => session.id);
   const teacherTimeRows = busySessionIds.length > 0
     ? await tx.select({
@@ -545,7 +639,12 @@ async function assertAvailability(
   const timeBySession = new Map(teacherTimeRows.map((row: any) => [row.classSessionId, row]));
 
   for (const shift of shifts) {
-    const isBusy = existingSessions.some((session: any) => {
+    const isBusy = pendingHolds.some((hold: any) => overlaps(
+      normalizeTime(hold.startTime),
+      normalizeTime(hold.endTime),
+      normalizeTime(shift.startTime),
+      normalizeTime(shift.endTime),
+    )) || existingSessions.some((session: any) => {
       const specific: any = timeBySession.get(session.id);
       return overlaps(
         specific ? normalizeTime(specific.startTime) : normalizeTime(session.startTime),
@@ -558,6 +657,384 @@ async function assertAvailability(
   }
 
   return { shifts, weekday };
+}
+
+type BookingSlotRecord = {
+  id: string;
+  batchId: string;
+  teacherId: string;
+  sessionDate: string;
+  shiftTemplateId: string;
+  startTime: string;
+  endTime: string;
+  cancellationCutoffAt: Date;
+  sessionPrice: string | number;
+  status: string;
+  packageId: string;
+  packageSource: "existing" | "new";
+  packageName: string;
+  packageType: string;
+  learningMode: "offline" | "online";
+  studentId: string;
+  userId: string;
+  locationId: string;
+};
+
+async function getBookingSlot(tx: any, slotId: string): Promise<BookingSlotRecord | null> {
+  const [row] = await tx
+    .select({
+      id: teacherBookingSlots.id,
+      batchId: teacherBookingSlots.batchId,
+      teacherId: teacherBookingSlots.teacherId,
+      sessionDate: teacherBookingSlots.sessionDate,
+      shiftTemplateId: teacherBookingSlots.shiftTemplateId,
+      startTime: teacherBookingSlots.startTime,
+      endTime: teacherBookingSlots.endTime,
+      cancellationCutoffAt: teacherBookingSlots.cancellationCutoffAt,
+      sessionPrice: teacherBookingSlots.sessionPrice,
+      status: teacherBookingSlots.status,
+      packageId: teacherBookingBatches.packageId,
+      packageSource: teacherBookingBatches.packageSource,
+      packageName: teacherBookingBatches.packageName,
+      packageType: teacherBookingBatches.packageType,
+      learningMode: teacherBookingBatches.learningMode,
+      studentId: teacherBookingBatches.studentId,
+      userId: teacherBookingBatches.userId,
+      locationId: teacherBookingBatches.locationId,
+    })
+    .from(teacherBookingSlots)
+    .innerJoin(teacherBookingBatches, eq(teacherBookingBatches.id, teacherBookingSlots.batchId))
+    .where(eq(teacherBookingSlots.id, slotId))
+    .limit(1);
+  return row ? { ...row, sessionDate: normalizeDate(row.sessionDate) } as BookingSlotRecord : null;
+}
+
+async function getOrCreateTutorClass(
+  tx: any,
+  booking: BookingSlotRecord,
+  classCodeFallback: string,
+) {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`teacher-booking-series:${booking.studentId}:${booking.locationId}:${booking.packageId}`}))`);
+
+  let [series] = await tx
+    .select({ id: teacherBookingClassSeries.id, classId: teacherBookingClassSeries.classId })
+    .from(teacherBookingClassSeries)
+    .where(and(
+      eq(teacherBookingClassSeries.studentId, booking.studentId),
+      eq(teacherBookingClassSeries.locationId, booking.locationId),
+      eq(teacherBookingClassSeries.packageId, booking.packageId),
+    ))
+    .limit(1);
+  if (series) return series.classId;
+
+  const [legacyClass] = await tx
+    .select({ id: classes.id })
+    .from(classes)
+    .innerJoin(studentClasses, eq(studentClasses.classId, classes.id))
+    .where(and(
+      eq(classes.locationId, booking.locationId),
+      eq(classes.feePackageId, booking.packageId),
+      eq(classes.classType, "tutor"),
+      like(classes.classCode, "SR-%"),
+      eq(studentClasses.studentId, booking.studentId),
+    ))
+    .orderBy(asc(classes.createdAt))
+    .limit(1);
+  if (legacyClass) {
+    [series] = await tx
+      .insert(teacherBookingClassSeries)
+      .values({
+        studentId: booking.studentId,
+        locationId: booking.locationId,
+        packageId: booking.packageId,
+        classId: legacyClass.id,
+      })
+      .onConflictDoNothing()
+      .returning({ id: teacherBookingClassSeries.id, classId: teacherBookingClassSeries.classId });
+    if (series) return series.classId;
+    const [racedSeries] = await tx
+      .select({ classId: teacherBookingClassSeries.classId })
+      .from(teacherBookingClassSeries)
+      .where(and(
+        eq(teacherBookingClassSeries.studentId, booking.studentId),
+        eq(teacherBookingClassSeries.locationId, booking.locationId),
+        eq(teacherBookingClassSeries.packageId, booking.packageId),
+      ))
+      .limit(1);
+    if (racedSeries) return racedSeries.classId;
+  }
+
+  const [student] = await tx
+    .select({ fullName: students.fullName, code: students.code })
+    .from(students)
+    .where(eq(students.id, booking.studentId))
+    .limit(1);
+  const [feePackage] = await tx
+    .select({ courseId: courses.id, courseName: courses.name })
+    .from(courseFeePackages)
+    .innerJoin(courses, eq(courses.id, courseFeePackages.courseId))
+    .where(eq(courseFeePackages.id, booking.packageId))
+    .limit(1);
+  if (!student || !feePackage) {
+    throw new TeacherBookingValidationError("Không tìm thấy thông tin học viên hoặc gói học phí.");
+  }
+  const displayName = student.fullName || student.code || "Học viên";
+  const className = `Gia sư 1-1 · ${displayName} · ${booking.packageName}`.slice(0, 255);
+  const [createdClass] = await tx
+    .insert(classes)
+    .values({
+      classCode: classCodeFallback,
+      name: className,
+      locationId: booking.locationId,
+      createdBy: booking.userId,
+      programId: null,
+      courseId: feePackage.courseId,
+      managerIds: [],
+      teacherIds: [booking.teacherId],
+      shiftTemplateIds: [booking.shiftTemplateId],
+      feePackageId: booking.packageId,
+      weekdays: [new Date(`${booking.sessionDate}T00:00:00.000Z`).getUTCDay()],
+      scheduleConfig: null,
+      teachersConfig: null,
+      startDate: booking.sessionDate,
+      endDate: booking.sessionDate,
+      maxStudents: 1,
+      learningFormat: booking.learningMode,
+      status: "active",
+      scheduleGenerated: true,
+      classType: "tutor",
+    } as any)
+    .returning({ id: classes.id });
+  await tx.insert(teacherBookingClassSeries).values({
+    studentId: booking.studentId,
+    locationId: booking.locationId,
+    packageId: booking.packageId,
+    classId: createdClass.id,
+  });
+  return createdClass.id;
+}
+
+async function finalizeBookingSlotInTransaction(
+  tx: any,
+  slotId: string,
+  options: { force?: boolean } = {},
+) {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`teacher-booking-finalize:${slotId}`}))`);
+  const booking = await getBookingSlot(tx, slotId);
+  if (!booking || booking.status !== "pending") return booking ? { status: booking.status } : null;
+  const now = new Date();
+  const cutoff = new Date(booking.cancellationCutoffAt);
+  if (!options.force && now < cutoff) return { status: "pending" };
+
+  const [shift] = await tx
+    .select({ name: shiftTemplates.name, status: shiftTemplates.status })
+    .from(shiftTemplates)
+    .where(and(
+      eq(shiftTemplates.id, booking.shiftTemplateId),
+      eq(shiftTemplates.locationId, booking.locationId),
+    ))
+    .limit(1);
+  if (!shift || shift.status !== "active") {
+    throw new TeacherBookingValidationError("Ca học không còn hoạt động; cần kiểm tra đăng ký này.");
+  }
+
+  if (booking.packageSource === "new") {
+    const depositBalance = await getDepositBalance(tx, booking.studentId, [booking.id]);
+    if (depositBalance < money(booking.sessionPrice)) {
+      throw new TeacherBookingValidationError("Ví Đặt Cọc không còn đủ cho buổi này. Vui lòng nạp thêm để hoàn tất.");
+    }
+  }
+
+  const classId = await getOrCreateTutorClass(tx, booking, `SR-${booking.batchId}`);
+  const [classRow] = await tx
+    .select({
+      name: classes.name,
+      teacherIds: classes.teacherIds,
+      shiftTemplateIds: classes.shiftTemplateIds,
+      weekdays: classes.weekdays,
+      startDate: classes.startDate,
+      endDate: classes.endDate,
+    })
+    .from(classes)
+    .where(eq(classes.id, classId))
+    .limit(1);
+  if (!classRow) throw new TeacherBookingValidationError("Không tìm thấy lớp 1-1 cần nối buổi.");
+
+  const weekday = new Date(`${booking.sessionDate}T00:00:00.000Z`).getUTCDay();
+  const sessionIndexRows = await tx
+    .select({ value: sql<number>`COALESCE(MAX(${classSessions.sessionIndex}), 0)::int` })
+    .from(classSessions)
+    .where(eq(classSessions.classId, classId));
+  const sessionIndex = Number(sessionIndexRows[0]?.value ?? 0) + 1;
+  const [classSession] = await tx
+    .insert(classSessions)
+    .values({
+      classId,
+      sessionDate: booking.sessionDate,
+      weekday,
+      shiftTemplateId: booking.shiftTemplateId,
+      roomId: ZERO_ROOM_ID,
+      teacherIds: [booking.teacherId],
+      learningFormat: booking.learningMode,
+      status: "scheduled",
+      sessionIndex,
+    })
+    .returning({ id: classSessions.id });
+
+  const [studentClass] = await tx
+    .select({
+      id: studentClasses.id,
+      totalSessions: studentClasses.totalSessions,
+      attendedSessions: studentClasses.attendedSessions,
+      remainingSessions: studentClasses.remainingSessions,
+      startDate: studentClasses.startDate,
+      endDate: studentClasses.endDate,
+      scheduledWeekdays: studentClasses.scheduledWeekdays,
+    })
+    .from(studentClasses)
+    .where(and(
+      eq(studentClasses.classId, classId),
+      eq(studentClasses.studentId, booking.studentId),
+    ))
+    .limit(1);
+  let studentClassId = studentClass?.id;
+  if (!studentClass) {
+    const [createdEnrollment] = await tx
+      .insert(studentClasses)
+      .values({
+        studentId: booking.studentId,
+        classId,
+        status: "active",
+        startDate: booking.sessionDate,
+        endDate: booking.sessionDate,
+        totalSessions: 1,
+        attendedSessions: 0,
+        remainingSessions: 1,
+        scheduledWeekdays: [weekday],
+        createdBy: booking.userId,
+      } as any)
+      .returning({ id: studentClasses.id });
+    studentClassId = createdEnrollment.id;
+  } else {
+    const currentWeekdays = studentClass.scheduledWeekdays ?? [];
+    const startDate = normalizeDate(studentClass.startDate);
+    const endDate = normalizeDate(studentClass.endDate);
+    await tx.update(studentClasses).set({
+      totalSessions: (Number(studentClass.totalSessions) || 0) + 1,
+      remainingSessions: (Number(studentClass.remainingSessions) || 0) + 1,
+      startDate: !startDate || booking.sessionDate < startDate ? booking.sessionDate : startDate,
+      endDate: !endDate || booking.sessionDate > endDate ? booking.sessionDate : endDate,
+      scheduledWeekdays: [...new Set([...currentWeekdays, weekday])].sort((a, b) => a - b),
+      updatedAt: now,
+    }).where(eq(studentClasses.id, studentClass.id));
+  }
+
+  const [studentSession] = await tx
+    .insert(studentSessions)
+    .values({
+      studentId: booking.studentId,
+      classId,
+      studentClassId,
+      classSessionId: classSession.id,
+      status: "scheduled",
+      attendanceStatus: "pending",
+      packageId: booking.packageId,
+      packageType: booking.packageType,
+      sessionPrice: money(booking.sessionPrice).toFixed(2),
+      sessionSource: "normal",
+      isPaid: true,
+      sessionOrder: sessionIndex,
+    } as any)
+    .returning({ id: studentSessions.id });
+
+  const existingTeachers = classRow.teacherIds ?? [];
+  const existingShiftIds = classRow.shiftTemplateIds ?? [];
+  const existingWeekdays = classRow.weekdays ?? [];
+  const startDate = normalizeDate(classRow.startDate);
+  const endDate = normalizeDate(classRow.endDate);
+  await tx.update(classes).set({
+    teacherIds: [...new Set([...existingTeachers, booking.teacherId])],
+    shiftTemplateIds: [...new Set([...existingShiftIds, booking.shiftTemplateId])],
+    weekdays: [...new Set([...existingWeekdays, weekday])].sort((a, b) => a - b),
+    startDate: !startDate || booking.sessionDate < startDate ? booking.sessionDate : startDate,
+    endDate: !endDate || booking.sessionDate > endDate ? booking.sessionDate : endDate,
+    updatedAt: now,
+  }).where(eq(classes.id, classId));
+
+  if (booking.packageSource === "new") {
+    const amount = money(booking.sessionPrice);
+    const formattedAmount = amount.toLocaleString("vi-VN");
+    await tx.insert(studentWalletTransactions).values([
+      {
+        studentId: booking.studentId,
+        type: "debit",
+        amount: amount.toFixed(2),
+        category: "Đặt cọc",
+        action: `Trừ Ví Đặt Cọc cho buổi đăng ký ${booking.sessionDate} · ${shift.name}: ${formattedAmount} đ`,
+        classId,
+        className: classRow.name,
+        createdBy: booking.userId,
+      },
+      {
+        studentId: booking.studentId,
+        type: "credit",
+        amount: amount.toFixed(2),
+        category: "Học phí",
+        action: `Chuyển từ Ví Đặt Cọc sang Ví Học Phí cho buổi ${booking.sessionDate} · ${shift.name}: ${formattedAmount} đ`,
+        classId,
+        className: classRow.name,
+        createdBy: booking.userId,
+      },
+    ] as any);
+  }
+
+  await tx.update(teacherBookingSlots).set({
+    status: "finalized",
+    classId,
+    classSessionId: classSession.id,
+    studentSessionId: studentSession.id,
+    finalizedAt: now,
+    failureReason: null,
+    updatedAt: now,
+  }).where(and(
+    eq(teacherBookingSlots.id, booking.id),
+    eq(teacherBookingSlots.status, "pending"),
+  ));
+  return { status: "finalized", classId, classSessionId: classSession.id };
+}
+
+async function findExistingBookingBatch(tx: any, input: ConfirmTeacherBookingInput) {
+  const [batch] = await tx
+    .select({
+      id: teacherBookingBatches.id,
+      studentId: teacherBookingBatches.studentId,
+    })
+    .from(teacherBookingBatches)
+    .where(eq(teacherBookingBatches.requestKey, input.requestKey))
+    .limit(1);
+  if (!batch) return null;
+  if (batch.studentId !== input.studentId) throw new TeacherBookingValidationError("Mã đăng ký không hợp lệ.");
+  const slots = await tx
+    .select({
+      status: teacherBookingSlots.status,
+      classId: teacherBookingSlots.classId,
+    })
+    .from(teacherBookingSlots)
+    .where(eq(teacherBookingSlots.batchId, batch.id));
+  const bookedSessions = slots.filter((slot: any) => slot.status === "finalized").length;
+  const pendingSessions = slots.filter((slot: any) => slot.status === "pending").length;
+  const cancelledSessions = slots.filter((slot: any) => slot.status === "cancelled").length;
+  return {
+    batchId: batch.id,
+    classId: slots.find((slot: any) => slot.classId)?.classId ?? null,
+    duplicate: true,
+    status: pendingSessions > 0 ? (bookedSessions > 0 ? "partial" : "pending") : cancelledSessions > 0 ? "cancelled" : "finalized",
+    bookedSessions,
+    pendingSessions,
+    cancelledSessions,
+    invoiceId: null,
+    invoiceCode: null,
+  };
 }
 
 async function findExistingRequest(tx: any, input: ConfirmTeacherBookingInput) {
@@ -578,7 +1055,7 @@ async function findExistingRequest(tx: any, input: ConfirmTeacherBookingInput) {
   return { classId: existing.classId, invoiceId: invoice?.id ?? null, invoiceCode: invoice?.code ?? null, duplicate: true };
 }
 
-export async function confirmTeacherBooking(input: ConfirmTeacherBookingInput) {
+async function confirmTeacherBookingLegacy(input: ConfirmTeacherBookingInput) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.requestKey)) {
     throw new TeacherBookingValidationError("Mã đăng ký không hợp lệ.");
   }
@@ -598,6 +1075,7 @@ export async function confirmTeacherBooking(input: ConfirmTeacherBookingInput) {
   }
 
   return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.studentId}))`);
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`teacher-booking-student:${input.studentId}`}))`);
     const selectedDates = [...new Set(input.sessions.map((session) => session.sessionDate))].sort();
     for (const sessionDate of selectedDates) {
@@ -822,4 +1300,270 @@ export async function confirmTeacherBooking(input: ConfirmTeacherBookingInput) {
       locationName: location.name,
     };
   });
+}
+
+export async function confirmTeacherBooking(input: ConfirmTeacherBookingInput) {
+  if (!(await teacherBookingSchemaIsReady())) throw new TeacherBookingSchemaNotReadyError();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.requestKey)) {
+    throw new TeacherBookingValidationError("Mã đăng ký không hợp lệ.");
+  }
+  const totalSelected = input.sessions.reduce((total, session) => total + session.shiftIds.length, 0);
+  const selectedKeys = input.sessions.flatMap((session) =>
+    session.shiftIds.map((shiftId) => `${session.sessionDate}:${shiftId}`));
+  if (
+    totalSelected === 0
+    || input.sessions.some((session) =>
+      !isValidDateKey(session.sessionDate)
+      || session.shiftIds.length === 0
+      || new Set(session.shiftIds).size !== session.shiftIds.length)
+    || new Set(input.sessions.map((session) => session.sessionDate)).size !== input.sessions.length
+    || new Set(selectedKeys).size !== selectedKeys.length
+  ) {
+    throw new TeacherBookingValidationError("Vui lòng chọn các ca học hợp lệ, không trùng nhau.");
+  }
+
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`teacher-booking-student:${input.studentId}`}))`);
+    const selectedDates = [...new Set(input.sessions.map((session) => session.sessionDate))].sort();
+    for (const sessionDate of selectedDates) {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`teacher-booking-slot:${input.teacherId}:${sessionDate}`}))`);
+    }
+
+    const previous = await findExistingBookingBatch(tx, input);
+    if (previous) return previous;
+
+    const location = await assertTeacherAndStudentShareLocation(tx, input);
+    const feePackage = await getPackageForBooking(tx, input);
+    const packageState = await assertPackageCapacity(tx, input, feePackage);
+    const registrationPolicy = await getPersonalScheduleRegistrationPolicy(tx);
+    const scheduledSlots = (await Promise.all(input.sessions.map(async (selection) => {
+      const { shifts, weekday } = await assertAvailability(tx, input, selection, registrationPolicy);
+      return shifts.map((shift: any) => ({ sessionDate: selection.sessionDate, weekday, shift }));
+    }))).flat().sort((a, b) =>
+      a.sessionDate.localeCompare(b.sessionDate)
+      || normalizeTime(a.shift.startTime).localeCompare(normalizeTime(b.shift.startTime))
+      || a.shift.name.localeCompare(b.shift.name, "vi"),
+    );
+
+    const [batch] = await tx
+      .insert(teacherBookingBatches)
+      .values({
+        requestKey: input.requestKey,
+        userId: input.userId,
+        studentId: input.studentId,
+        locationId: input.locationId,
+        packageId: feePackage.id,
+        packageSource: input.packageSource,
+        packageName: feePackage.name,
+        packageType: feePackage.type,
+        learningMode: input.learningMode,
+      })
+      .returning({ id: teacherBookingBatches.id });
+
+    const now = new Date();
+    const slotRows = scheduledSlots.map(({ shift, sessionDate }) => {
+      const cancellationCutoffAt = getPersonalScheduleCancellationCutoff(
+        sessionDate,
+        normalizeTime(shift.startTime),
+        registrationPolicy.cancellationAdvanceHours,
+      );
+      if (!cancellationCutoffAt) {
+        throw new TeacherBookingValidationError("Không tính được hạn hủy của ca đã chọn.");
+      }
+      return {
+        batchId: batch.id,
+        teacherId: input.teacherId,
+        sessionDate,
+        shiftTemplateId: shift.id,
+        startTime: normalizeTime(shift.startTime),
+        endTime: normalizeTime(shift.endTime),
+        cancellationCutoffAt,
+        sessionPrice: packageState.perSessionPrice.toFixed(2),
+      };
+    });
+    const createdSlots = await tx
+      .insert(teacherBookingSlots)
+      .values(slotRows)
+      .returning({ id: teacherBookingSlots.id, cancellationCutoffAt: teacherBookingSlots.cancellationCutoffAt });
+
+    const shouldFinalizeImmediately = registrationPolicy.cancellationAdvanceHours === 0;
+    const finalizedSlotIds: string[] = [];
+    for (const slot of createdSlots) {
+      if (shouldFinalizeImmediately || new Date(slot.cancellationCutoffAt) <= now) {
+        await finalizeBookingSlotInTransaction(tx, slot.id, { force: shouldFinalizeImmediately });
+        finalizedSlotIds.push(slot.id);
+      }
+    }
+
+    const finalized = await tx
+      .select({
+        id: teacherBookingSlots.id,
+        status: teacherBookingSlots.status,
+        classId: teacherBookingSlots.classId,
+      })
+      .from(teacherBookingSlots)
+      .where(eq(teacherBookingSlots.batchId, batch.id));
+    const bookedSessions = finalized.filter((slot: any) => slot.status === "finalized").length;
+    const pendingSessions = finalized.filter((slot: any) => slot.status === "pending").length;
+    const classId = finalized.find((slot: any) => slot.classId)?.classId ?? null;
+    return {
+      batchId: batch.id,
+      classId,
+      invoiceId: null,
+      invoiceCode: null,
+      duplicate: false,
+      status: pendingSessions > 0 ? (bookedSessions > 0 ? "partial" : "pending") : "finalized",
+      packageId: feePackage.id,
+      packageName: feePackage.name,
+      totalSessions: packageState.packageSessions,
+      bookedSessions,
+      pendingSessions,
+      remainingSessions: packageState.purchased
+        ? Math.max(0, packageState.purchased.remainingSessions - totalSelected)
+        : Math.max(0, packageState.packageSessions - bookedSessions),
+      locationName: location.name,
+    };
+  });
+}
+
+export async function getStudentTeacherBookingRegistrations(studentIds: string[]) {
+  if (studentIds.length === 0) return [];
+  if (!(await teacherBookingSchemaIsReady())) throw new TeacherBookingSchemaNotReadyError();
+  const rows = await db
+    .select({
+      id: teacherBookingSlots.id,
+      batchId: teacherBookingBatches.id,
+      studentId: teacherBookingBatches.studentId,
+      studentName: students.fullName,
+      studentCode: students.code,
+      teacherId: teacherBookingSlots.teacherId,
+      teacherName: staff.fullName,
+      sessionDate: teacherBookingSlots.sessionDate,
+      shiftId: teacherBookingSlots.shiftTemplateId,
+      shiftName: shiftTemplates.name,
+      startTime: teacherBookingSlots.startTime,
+      endTime: teacherBookingSlots.endTime,
+      status: teacherBookingSlots.status,
+      cancellationCutoffAt: teacherBookingSlots.cancellationCutoffAt,
+      packageId: teacherBookingBatches.packageId,
+      packageName: teacherBookingBatches.packageName,
+      packageSource: teacherBookingBatches.packageSource,
+      classId: teacherBookingSlots.classId,
+      classCode: classes.classCode,
+      className: classes.name,
+      createdAt: teacherBookingSlots.createdAt,
+      failureReason: teacherBookingSlots.failureReason,
+    })
+    .from(teacherBookingSlots)
+    .innerJoin(teacherBookingBatches, eq(teacherBookingBatches.id, teacherBookingSlots.batchId))
+    .innerJoin(students, eq(students.id, teacherBookingBatches.studentId))
+    .innerJoin(staff, eq(staff.id, teacherBookingSlots.teacherId))
+    .innerJoin(shiftTemplates, eq(shiftTemplates.id, teacherBookingSlots.shiftTemplateId))
+    .leftJoin(classes, eq(classes.id, teacherBookingSlots.classId))
+    .where(inArray(teacherBookingBatches.studentId, studentIds))
+    .orderBy(asc(teacherBookingSlots.sessionDate), asc(teacherBookingSlots.startTime), asc(teacherBookingSlots.createdAt));
+  const now = Date.now();
+  return rows.map((row: any) => ({
+    ...row,
+    sessionDate: normalizeDate(row.sessionDate),
+    startTime: normalizeTime(row.startTime),
+    endTime: normalizeTime(row.endTime),
+    cancellationCutoffAt: new Date(row.cancellationCutoffAt).toISOString(),
+    canCancel: row.status === "pending" && new Date(row.cancellationCutoffAt).getTime() > now,
+  }));
+}
+
+async function processTeacherBookingSlot(slotId: string, cancelIfEligible: boolean) {
+  return db.transaction(async (tx) => {
+    const booking = await getBookingSlot(tx, slotId);
+    if (!booking) throw new TeacherBookingValidationError("Không tìm thấy buổi đăng ký.");
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${booking.studentId}))`);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`teacher-booking-student:${booking.studentId}`}))`);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`teacher-booking-slot:${booking.teacherId}:${booking.sessionDate}`}))`);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`teacher-booking-finalize:${slotId}`}))`);
+    const current = await getBookingSlot(tx, slotId);
+    if (!current) throw new TeacherBookingValidationError("Không tìm thấy buổi đăng ký.");
+    if (current.status !== "pending") return { id: current.id, status: current.status };
+    const now = new Date();
+    const cutoff = new Date(current.cancellationCutoffAt);
+    if (cancelIfEligible && now < cutoff) {
+      await tx.update(teacherBookingSlots).set({
+        status: "cancelled",
+        cancelledAt: now,
+        failureReason: null,
+        updatedAt: now,
+      }).where(and(
+        eq(teacherBookingSlots.id, slotId),
+        eq(teacherBookingSlots.status, "pending"),
+      ));
+      return { id: current.id, status: "cancelled" };
+    }
+    const result = await finalizeBookingSlotInTransaction(tx, slotId, { force: false });
+    return { id: current.id, status: result?.status ?? "pending" };
+  });
+}
+
+export async function cancelStudentTeacherBookingSlots(studentIds: string[], slotIds: string[]) {
+  if (!(await teacherBookingSchemaIsReady())) throw new TeacherBookingSchemaNotReadyError();
+  const uniqueSlotIds = [...new Set(slotIds)];
+  if (uniqueSlotIds.length === 0) throw new TeacherBookingValidationError("Chọn ít nhất một buổi cần hủy.");
+  const results = [];
+  for (const slotId of uniqueSlotIds) {
+    const [owner] = await db
+      .select({ studentId: teacherBookingBatches.studentId })
+      .from(teacherBookingSlots)
+      .innerJoin(teacherBookingBatches, eq(teacherBookingBatches.id, teacherBookingSlots.batchId))
+      .where(eq(teacherBookingSlots.id, slotId))
+      .limit(1);
+    if (!owner || !studentIds.includes(owner.studentId)) {
+      throw new TeacherBookingValidationError("Không có quyền hủy một hoặc nhiều buổi đã chọn.");
+    }
+    try {
+      results.push(await processTeacherBookingSlot(slotId, true));
+    } catch (error: any) {
+      const message = error?.message || "Không thể chốt buổi đăng ký.";
+      await db.update(teacherBookingSlots).set({
+        failureReason: message,
+        updatedAt: new Date(),
+      }).where(and(
+        eq(teacherBookingSlots.id, slotId),
+        eq(teacherBookingSlots.status, "pending"),
+      ));
+      results.push({ id: slotId, status: "pending", failureReason: message });
+    }
+  }
+  return results;
+}
+
+export async function finalizeDueStudentTeacherBookings(limit = 100) {
+  if (!(await teacherBookingSchemaIsReady())) return { due: 0, finalized: 0 };
+  const due = await db
+    .select({ id: teacherBookingSlots.id })
+    .from(teacherBookingSlots)
+    .where(and(
+      eq(teacherBookingSlots.status, "pending"),
+      lte(teacherBookingSlots.cancellationCutoffAt, new Date()),
+    ))
+    .orderBy(asc(teacherBookingSlots.cancellationCutoffAt), asc(teacherBookingSlots.createdAt))
+    .limit(Math.max(1, Math.min(500, Math.trunc(limit))));
+
+  let finalized = 0;
+  for (const item of due) {
+    try {
+      const result = await processTeacherBookingSlot(item.id, false);
+      if (result.status === "finalized") finalized += 1;
+    } catch (error: any) {
+      console.error("[TeacherBooking] Finalization failed:", error?.message ?? error);
+      await db.update(teacherBookingSlots).set({
+        failureReason: error?.message || "Không thể chốt buổi đăng ký.",
+        updatedAt: new Date(),
+      }).where(and(
+        eq(teacherBookingSlots.id, item.id),
+        eq(teacherBookingSlots.status, "pending"),
+      )).catch((updateError: any) => {
+        console.error("[TeacherBooking] Could not store finalization error:", updateError?.message ?? updateError);
+      });
+    }
+  }
+  return { due: due.length, finalized };
 }

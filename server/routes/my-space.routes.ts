@@ -75,14 +75,20 @@ import {
   scoreSheetAssessmentStudentAttempts,
   evaluationCriteria,
   evaluationSubCriteria,
+  teacherBookingBatches,
+  teacherBookingSlots,
 } from "@shared/schema";
 import { storage } from "../storage";
 import {
   confirmTeacherBooking,
+  cancelStudentTeacherBookingSlots,
+  getStudentTeacherBookingRegistrations,
   getPersonalScheduleRegistrationPolicy,
   getTeacherBookingOptions,
+  TeacherBookingSchemaNotReadyError,
   TeacherBookingValidationError,
 } from "../storage/teacher-booking.storage";
+import { teacherBookingSchemaIsReady } from "../storage/teacher-booking-schema";
 import { isPersonalScheduleRegistrationOpen } from "@shared/personal-schedule-registration";
 import { eq, and, gte, lte, sql, inArray, isNotNull, isNull, or, desc, ne } from "drizzle-orm";
 import { uploadFileToS3FromStream } from "../lib/s3";
@@ -2034,6 +2040,23 @@ export function registerMySpaceRoutes(app: Express): void {
             )`,
           ),
         ));
+      const pendingBookingRows = await teacherBookingSchemaIsReady()
+        ? await db
+          .select({
+            date: teacherBookingSlots.sessionDate,
+            startTime: teacherBookingSlots.startTime,
+            endTime: teacherBookingSlots.endTime,
+          })
+          .from(teacherBookingSlots)
+          .innerJoin(teacherBookingBatches, eq(teacherBookingBatches.id, teacherBookingSlots.batchId))
+          .where(and(
+            eq(teacherBookingSlots.teacherId, req.params.teacherId),
+            eq(teacherBookingSlots.status, "pending"),
+            eq(teacherBookingBatches.locationId, locationId),
+            gte(teacherBookingSlots.sessionDate, dateFrom),
+            lte(teacherBookingSlots.sessionDate, dateTo),
+          ))
+        : [];
       const sessionIds = sessionRows.map((session) => session.id);
       const teacherTimeRows = sessionIds.length > 0
         ? await db.select({
@@ -2108,7 +2131,10 @@ export function registerMySpaceRoutes(app: Express): void {
           slots: shifts.map((shift) => {
             const shiftStart = normalizeTime(shift.startTime);
             const shiftEnd = normalizeTime(shift.endTime);
-            const isBusy = dateSessions.some((session) => {
+            const isBusy = pendingBookingRows.some((hold) =>
+              normalizeDate(hold.date) === date
+              && overlaps(normalizeTime(hold.startTime), normalizeTime(hold.endTime), shiftStart, shiftEnd))
+              || dateSessions.some((session) => {
               const specific = timeBySession.get(session.id);
               const assigned = Boolean(specific)
                 || (session.teacherIds ?? []).includes(req.params.teacherId);
@@ -2180,7 +2206,33 @@ export function registerMySpaceRoutes(app: Express): void {
       res.json(await getTeacherBookingOptions({ studentId, locationId }));
     } catch (error) {
       console.error("Student schedule-registration options error:", error);
+      if (error instanceof TeacherBookingSchemaNotReadyError) {
+        return res.status(503).json({ message: error.message });
+      }
       res.status(500).json({ message: "Không thể tải thông tin gói học phí" });
+    }
+  });
+
+  app.get("/api/my-space/schedule-registration/registrations", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const eligibleStudents = await getScheduleRegistrationStudents(user.id);
+      const requestedStudentId = typeof req.query.studentId === "string" ? req.query.studentId : "";
+      if (requestedStudentId && !eligibleStudents.some((student) => student.id === requestedStudentId)) {
+        return res.status(403).json({ message: "Học viên không thuộc tài khoản này" });
+      }
+      const studentIds = requestedStudentId
+        ? [requestedStudentId]
+        : eligibleStudents.map((student) => student.id);
+      const registrations = await getStudentTeacherBookingRegistrations(studentIds);
+      res.json({ registrations });
+    } catch (error) {
+      console.error("Student schedule-registration list error:", error);
+      if (error instanceof TeacherBookingSchemaNotReadyError) {
+        return res.status(503).json({ message: error.message });
+      }
+      res.status(500).json({ message: "Không thể tải danh sách lịch đã đăng ký" });
     }
   });
 
@@ -2226,8 +2278,38 @@ export function registerMySpaceRoutes(app: Express): void {
       res.status(result.duplicate ? 200 : 201).json(result);
     } catch (error: any) {
       console.error("Student schedule-registration confirm error:", error);
+      if (error instanceof TeacherBookingSchemaNotReadyError) {
+        return res.status(503).json({ message: error.message });
+      }
       const status = error instanceof TeacherBookingValidationError ? 400 : 500;
       res.status(status).json({ message: error?.message || "Không thể xác nhận đăng ký lịch học" });
+    }
+  });
+
+  app.post("/api/my-space/schedule-registration/cancel", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const bodySchema = z.object({
+        slotIds: z.array(z.string().uuid()).min(1).max(100),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Chọn buổi đăng ký cần hủy", errors: parsed.error.flatten() });
+      }
+      const eligibleStudents = await getScheduleRegistrationStudents(user.id);
+      const result = await cancelStudentTeacherBookingSlots(
+        eligibleStudents.map((student) => student.id),
+        parsed.data.slotIds,
+      );
+      res.json({ results: result });
+    } catch (error: any) {
+      console.error("Student schedule-registration cancel error:", error);
+      if (error instanceof TeacherBookingSchemaNotReadyError) {
+        return res.status(503).json({ message: error.message });
+      }
+      const status = error instanceof TeacherBookingValidationError ? 400 : 500;
+      res.status(status).json({ message: error?.message || "Không thể hủy buổi đã đăng ký" });
     }
   });
 

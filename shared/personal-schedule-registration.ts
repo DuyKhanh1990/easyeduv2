@@ -12,6 +12,23 @@ export const DEFAULT_PERSONAL_SCHEDULE_REGISTRATION_POLICY: PersonalScheduleRegi
 
 const BANGKOK_OFFSET = "+07:00";
 
+export function getPersonalScheduleCancellationCutoff(
+  sessionDate: string,
+  startTime: string,
+  cancellationAdvanceHours: number,
+): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(sessionDate) || !/^([01]\d|2[0-3]):[0-5]\d/.test(startTime)) {
+    return null;
+  }
+  const normalizedTime = startTime.slice(0, 5);
+  const sessionStart = Date.parse(`${sessionDate}T${normalizedTime}:00${BANGKOK_OFFSET}`);
+  if (!Number.isFinite(sessionStart)) return null;
+  const leadHours = Number.isInteger(cancellationAdvanceHours) && cancellationAdvanceHours >= 0
+    ? cancellationAdvanceHours
+    : 0;
+  return new Date(sessionStart - leadHours * 60 * 60 * 1000);
+}
+
 export function isPersonalScheduleRegistrationOpen(
   sessionDate: string,
   startTime: string,

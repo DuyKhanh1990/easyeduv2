@@ -213,6 +213,13 @@ app.use((req, res, next) => {
     console.warn("[AutoCheckout] Job startup failed:", err);
   }
 
+  try {
+    const { startTeacherBookingFinalizer } = await import("./jobs/teacher-booking-finalizer");
+    startTeacherBookingFinalizer();
+  } catch (err) {
+    console.warn("[TeacherBooking] Finalizer startup failed:", err);
+  }
+
   // Convert only MKV attachments referenced by My Space assignments.
   try {
     const { startAssignmentMkvDerivativeWorker } = await import("./services/assignment-mkv-derivative.service");

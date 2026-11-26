@@ -20,6 +20,7 @@ type FeePackage = {
   fee: number | string;
   sessions: number | string;
   totalAmount: number | string;
+  purchasedAmount?: number;
   courseName?: string;
   remainingSessions?: number;
   totalSessions?: number;
@@ -120,26 +121,34 @@ export function TeacherBookingDetailsStep({
   const newPackages = optionsQuery.data?.newPackages ?? [];
   const selectedShiftCount = selectedSessions.reduce((total, session) => total + session.shifts.length, 0);
   const selectedPackageSessions = selectedPackage
-    ? Number(packageSource === "existing" ? selectedPackage.remainingSessions : selectedPackage.sessions) || 0
+    ? packageSource === "existing"
+      ? Number(selectedPackage.remainingSessions) || 0
+      : selectedPackage.type === "buổi"
+        ? Number.MAX_SAFE_INTEGER
+        : Number(selectedPackage.sessions) || 0
     : 0;
   const selectedPackageTotalSessions = selectedPackage
     ? Number(packageSource === "existing"
       ? selectedPackage.totalSessions
       : selectedPackage.sessions) || 0
     : 0;
-  const fullPackageAmount = selectedPackage
-    ? (selectedPackage.type === "buổi"
-      ? (Number(selectedPackage.fee) || 0) * (Number(selectedPackage.sessions) || 0)
-      : Number(selectedPackage.totalAmount) || 0)
+  const perSessionAmount = selectedPackage
+    ? packageSource === "existing"
+      ? (Number(selectedPackage.purchasedAmount) || 0) / Math.max(1, Number(selectedPackage.totalSessions) || 1)
+      : selectedPackage.type === "buổi"
+        ? Number(selectedPackage.fee) || 0
+        : (Number(selectedPackage.totalAmount) || 0) / Math.max(1, Number(selectedPackage.sessions) || 1)
     : 0;
+  const selectedBookingAmount = perSessionAmount * selectedShiftCount;
   const depositBalance = Number(optionsQuery.data?.depositBalance) || 0;
-  const hasEnoughDeposit = packageSource === "existing" || depositBalance >= fullPackageAmount;
+  const hasEnoughDeposit = packageSource === "existing" || depositBalance >= selectedBookingAmount;
   const depositHintIsEnough = packageSource === "new" && selectedPackage
     ? hasEnoughDeposit
     : newPackages.some((item) => {
-      const amount = item.type === "buổi"
-        ? (Number(item.fee) || 0) * (Number(item.sessions) || 0)
-        : Number(item.totalAmount) || 0;
+      const perSession = item.type === "buổi"
+        ? Number(item.fee) || 0
+        : (Number(item.totalAmount) || 0) / Math.max(1, Number(item.sessions) || 1);
+      const amount = perSession * Math.max(1, selectedShiftCount);
       return amount > 0 && depositBalance >= amount;
     });
   const canConfirm = Boolean(
@@ -185,13 +194,19 @@ export function TeacherBookingDetailsStep({
     },
     onSuccess: (result) => {
       requestKeyRef.current = null;
+      const pendingCount = Number(result.pendingSessions) || 0;
       toast({
-        title: isEnglish ? "Registration complete" : "Đăng ký thành công",
-        description: result.invoiceCode
+        title: pendingCount > 0
+          ? isEnglish ? "Registration recorded" : "Đã ghi nhận đăng ký"
+          : isEnglish ? "Registration complete" : "Đăng ký thành công",
+        description: pendingCount > 0
+          ? `${result.bookedSessions} ${isEnglish ? "sessions finalized" : "buổi đã chốt"} · ${pendingCount} ${isEnglish ? "waiting for their cutoff" : "buổi đang chờ đến hạn chốt"}`
+          : result.invoiceCode
           ? `${isEnglish ? "Receipt" : "Phiếu thu"} ${result.invoiceCode} · ${result.bookedSessions} ${isEnglish ? "sessions booked" : "buổi đã xếp"} · ${result.remainingSessions} ${isEnglish ? "remaining" : "buổi còn lại"}`
           : `${result.bookedSessions} ${isEnglish ? "sessions booked" : "buổi đã xếp"} · ${result.remainingSessions} ${isEnglish ? "remaining" : "buổi còn lại"}`,
       });
       void queryClient.invalidateQueries({ queryKey: ["/api/my-space/schedule-registration/options"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/my-space/schedule-registration/registrations"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/my-space/schedule-registration/teachers"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/my-space/calendar/student"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/my-space/calendar/student/classes"] });

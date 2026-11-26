@@ -1,6 +1,11 @@
 import { db } from "./base";
-import { studentWalletTransactions } from "@shared/schema";
+import {
+  studentWalletTransactions,
+  teacherBookingBatches,
+  teacherBookingSlots,
+} from "@shared/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
+import { teacherBookingSchemaIsReady } from "./teacher-booking-schema";
 
 export interface WalletEntryInput {
   studentId: string;
@@ -63,10 +68,22 @@ export async function getStudentWalletBalance(
       ),
     );
 
-  return rows.reduce((balance, row) => {
+  const ledgerBalance = rows.reduce((balance, row) => {
     const amount = parseFloat(row.amount ?? "0") || 0;
     return balance + (row.type === "credit" ? amount : -amount);
   }, 0);
+  if (category !== "Đặt cọc" || !(await teacherBookingSchemaIsReady())) return ledgerBalance;
+  const pendingRows = await db
+    .select({ amount: teacherBookingSlots.sessionPrice })
+    .from(teacherBookingSlots)
+    .innerJoin(teacherBookingBatches, eq(teacherBookingBatches.id, teacherBookingSlots.batchId))
+    .where(and(
+      eq(teacherBookingBatches.studentId, studentId),
+      eq(teacherBookingBatches.packageSource, "new"),
+      eq(teacherBookingSlots.status, "pending"),
+    ));
+  const reserved = pendingRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+  return Math.max(0, ledgerBalance - reserved);
 }
 
 export async function getNetWalletAmountByInvoiceAndCategory(invoiceId: string, category: string): Promise<number> {
@@ -279,6 +296,19 @@ export async function transferStudentWallet(input: WalletTransferInput) {
       "Học phí": Math.max(0, balances["Học phí"]),
       "Đặt cọc": Math.max(0, balances["Đặt cọc"]),
     };
+    const pendingReservations = await teacherBookingSchemaIsReady()
+      ? await tx
+        .select({ amount: teacherBookingSlots.sessionPrice })
+        .from(teacherBookingSlots)
+        .innerJoin(teacherBookingBatches, eq(teacherBookingBatches.id, teacherBookingSlots.batchId))
+        .where(and(
+          eq(teacherBookingBatches.studentId, input.fromStudentId),
+          eq(teacherBookingBatches.packageSource, "new"),
+          eq(teacherBookingSlots.status, "pending"),
+        ))
+      : [];
+    const reservedDeposit = pendingReservations.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+    available["Đặt cọc"] = Math.max(0, available["Đặt cọc"] - reservedDeposit);
     const requestedTotal = requested["Học phí"] + requested["Đặt cọc"];
     const availableTotal = available["Học phí"] + available["Đặt cọc"];
     const lines: TransferLine[] = [];

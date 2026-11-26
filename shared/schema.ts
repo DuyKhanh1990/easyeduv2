@@ -2081,6 +2081,71 @@ export type StudentWalletTransaction = typeof studentWalletTransactions.$inferSe
 export type InsertStudentWalletTransaction = z.infer<typeof insertStudentWalletTransactionSchema>;
 
 // ==========================================
+// PERSONAL TEACHER BOOKING HOLDS
+// ==========================================
+// A booking batch records the learner's selected teacher/package once; each
+// selected lesson has an independent cancellation deadline and lifecycle.
+export const teacherBookingBatches = pgTable("teacher_booking_batches", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  requestKey: uuid("request_key").notNull().unique(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  studentId: uuid("student_id").notNull().references(() => students.id, { onDelete: "cascade" }),
+  locationId: uuid("location_id").notNull().references(() => locations.id),
+  packageId: uuid("package_id").notNull().references(() => courseFeePackages.id),
+  packageSource: varchar("package_source", { length: 20 }).notNull(), // existing | new (deposit wallet)
+  packageName: varchar("package_name", { length: 255 }).notNull(),
+  packageType: varchar("package_type", { length: 20 }).notNull(),
+  learningMode: varchar("learning_mode", { length: 20 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  studentCreatedIdx: index("teacher_booking_batches_student_created_idx").on(table.studentId, table.createdAt),
+  packageIdx: index("teacher_booking_batches_package_idx").on(table.studentId, table.locationId, table.packageId),
+}));
+
+export const teacherBookingSlots = pgTable("teacher_booking_slots", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  batchId: uuid("batch_id").notNull().references(() => teacherBookingBatches.id, { onDelete: "cascade" }),
+  teacherId: uuid("teacher_id").notNull().references(() => staff.id),
+  sessionDate: date("session_date").notNull(),
+  shiftTemplateId: uuid("shift_template_id").notNull().references(() => shiftTemplates.id),
+  startTime: time("start_time").notNull(),
+  endTime: time("end_time").notNull(),
+  cancellationCutoffAt: timestamp("cancellation_cutoff_at").notNull(),
+  sessionPrice: decimal("session_price", { precision: 15, scale: 2 }).notNull().default("0"),
+  status: varchar("status", { length: 20 }).notNull().default("pending"), // pending | cancelled | finalized | failed
+  classId: uuid("class_id").references(() => classes.id, { onDelete: "set null" }),
+  classSessionId: uuid("class_session_id").references(() => classSessions.id, { onDelete: "set null" }),
+  studentSessionId: uuid("student_session_id").references(() => studentSessions.id, { onDelete: "set null" }),
+  cancelledAt: timestamp("cancelled_at"),
+  finalizedAt: timestamp("finalized_at"),
+  failureReason: text("failure_reason"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  batchSlotUnique: uniqueIndex("teacher_booking_slots_batch_date_shift_uidx")
+    .on(table.batchId, table.sessionDate, table.shiftTemplateId),
+  pendingCutoffIdx: index("teacher_booking_slots_pending_cutoff_idx").on(table.status, table.cancellationCutoffAt),
+  teacherDateIdx: index("teacher_booking_slots_teacher_date_idx").on(table.teacherId, table.sessionDate),
+  batchIdx: index("teacher_booking_slots_batch_idx").on(table.batchId, table.status),
+}));
+
+// One class series groups all booking batches for the same learner, center,
+// and package product. Teacher assignment remains on each class session.
+export const teacherBookingClassSeries = pgTable("teacher_booking_class_series", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: uuid("student_id").notNull().references(() => students.id, { onDelete: "cascade" }),
+  locationId: uuid("location_id").notNull().references(() => locations.id),
+  packageId: uuid("package_id").notNull().references(() => courseFeePackages.id),
+  classId: uuid("class_id").notNull().references(() => classes.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  studentLocationPackageUnique: uniqueIndex("teacher_booking_class_series_student_location_package_uidx")
+    .on(table.studentId, table.locationId, table.packageId),
+  classIdx: index("teacher_booking_class_series_class_idx").on(table.classId),
+}));
+
+// ==========================================
 // QUESTIONS (Ngân hàng câu hỏi)
 // ==========================================
 export const questions = pgTable("questions", {

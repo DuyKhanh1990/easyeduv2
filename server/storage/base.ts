@@ -24,6 +24,7 @@ export {
   invoices, invoiceItems, invoicePaymentSchedule, invoiceSessionAllocations, invoiceCommissions, studentComments,
   tuitionPackageChangeRequests, tuitionPackageChangeOperations, tuitionPackageSessionAdjustments,
   studentWalletTransactions, attendanceFeeRules,
+  teacherBookingBatches, teacherBookingSlots, teacherBookingClassSeries,
   invoicePrintTemplates,
   financeTransactionCategories, financePromotions, financeVouchers, financeVoucherUsages,
   rolePermissions,

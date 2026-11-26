@@ -7,7 +7,12 @@ import {
   courseFeePackages, financePromotions, invoices, invoiceItems,
 } from "./base";
 import { attendanceFeeRules, sessionContents, activityLogs, publicHolidays, classSessionTeacherAssignments, classGradeBooks, departments, roles, staffAssignments } from "@shared/schema";
-import { studentWalletTransactions } from "@shared/schema";
+import {
+  studentWalletTransactions,
+  teacherBookingBatches,
+  teacherBookingSlots,
+} from "@shared/schema";
+import { teacherBookingSchemaIsReady } from "./teacher-booking-schema";
 import { getPreferredSystemTrainingTeacherRoleId } from "@shared/teacher-role-priority";
 import {
   buildTeacherTimeAssignments,
@@ -2471,6 +2476,22 @@ export async function scheduleClassStudents(classId: string, configs: any[], use
                   depositBalance += row.type === "credit" ? amt : -amt;
                 }
               }
+              const pendingBookingReservations = await teacherBookingSchemaIsReady()
+                ? await tx
+                  .select({ amount: teacherBookingSlots.sessionPrice })
+                  .from(teacherBookingSlots)
+                  .innerJoin(teacherBookingBatches, eq(teacherBookingBatches.id, teacherBookingSlots.batchId))
+                  .where(and(
+                    eq(teacherBookingBatches.studentId, sid),
+                    eq(teacherBookingBatches.packageSource, "new"),
+                    eq(teacherBookingSlots.status, "pending"),
+                  ))
+                : [];
+              const reservedDeposit = pendingBookingReservations.reduce(
+                (sum, reservation) => sum + (Number(reservation.amount) || 0),
+                0,
+              );
+              depositBalance = Math.max(0, depositBalance - reservedDeposit);
               if (depositBalance > 0) {
                 const deductionAmt = Math.min(depositBalance, grandTotal);
                 const fmtAmt = deductionAmt.toLocaleString("vi-VN") + " đ";
