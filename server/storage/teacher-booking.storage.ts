@@ -346,21 +346,25 @@ async function assertPackageCapacity(
   input: ConfirmTeacherBookingInput,
   feePackage: FeePackageRow,
 ) {
-  const packageSessions = configuredSessionCount(feePackage.sessions);
   const selectedSessionCount = input.sessions.reduce((total, session) => total + session.shiftIds.length, 0);
-  if (!packageSessions) throw new TeacherBookingValidationError("Số buổi của gói học phí chưa được cấu hình hợp lệ.");
-  if (selectedSessionCount > packageSessions) {
-    throw new TeacherBookingValidationError(`Gói này có ${packageSessions} buổi, không thể đăng ký ${selectedSessionCount} ca cùng lúc.`);
-  }
 
   if (input.packageSource === "existing") {
     const purchasedPackages = await getPurchasedPackages(tx, input.studentId, input.locationId);
     const purchased = purchasedPackages.find((item) => item.id === feePackage.id);
     if (!purchased) throw new TeacherBookingValidationError("Học viên chưa có gói học phí đã thanh toán còn buổi.");
+    if (purchased.totalSessions <= 0) {
+      throw new TeacherBookingValidationError("Gói đã thanh toán không có số buổi hợp lệ.");
+    }
     if (selectedSessionCount > purchased.remainingSessions) {
       throw new TeacherBookingValidationError(`Gói này chỉ còn ${purchased.remainingSessions} buổi chưa xếp.`);
     }
-    return { packageSessions, purchased, totalAmount: 0, depositBalance: 0 };
+    return { packageSessions: purchased.totalSessions, purchased, totalAmount: 0, depositBalance: 0 };
+  }
+
+  const packageSessions = configuredSessionCount(feePackage.sessions);
+  if (!packageSessions) throw new TeacherBookingValidationError("Số buổi của gói học phí chưa được cấu hình hợp lệ.");
+  if (selectedSessionCount > packageSessions) {
+    throw new TeacherBookingValidationError(`Gói này có ${packageSessions} buổi, không thể đăng ký ${selectedSessionCount} ca cùng lúc.`);
   }
 
   const totalAmount = money(
@@ -764,7 +768,9 @@ export async function confirmTeacherBooking(input: ConfirmTeacherBookingInput) {
       packageName: feePackage.name,
       totalSessions: packageState.packageSessions,
       bookedSessions: classSessionRows.length,
-      remainingSessions: Math.max(0, packageState.packageSessions - classSessionRows.length),
+      remainingSessions: packageState.purchased
+        ? Math.max(0, packageState.purchased.remainingSessions - classSessionRows.length)
+        : Math.max(0, packageState.packageSessions - classSessionRows.length),
       locationName: location.name,
     };
   });
