@@ -10,6 +10,7 @@ import {
   GraduationCap,
   MapPin,
   Users,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TeacherBookingDetailsStep } from "./TeacherBookingDetailsStep";
@@ -656,13 +657,28 @@ export function TeacherBookingDialog({
                               session,
                               shift,
                             }))).map(({ session, shift }, index) => (
-                              <div key={`${session.sessionDate}:${shift.id}`} className="rounded-lg bg-[#fff7ed] px-2.5 py-2">
-                                <span className="block text-xs font-semibold text-[#a95727]">
-                                  {index + 1}. {shift.name}: {shift.locationName || selectedLocation?.name}
-                                </span>
-                                <span className="mt-0.5 block text-[11px] font-medium text-[#c4773e]">
-                                  {shift.startTime} – {shift.endTime} · {session.dateLabel}
-                                </span>
+                              <div key={`${session.sessionDate}:${shift.id}`} className="flex items-start justify-between gap-1 rounded-lg bg-[#fff7ed] px-2.5 py-2">
+                                <div className="min-w-0">
+                                  <span className="block text-xs font-semibold text-[#a95727]">
+                                    {index + 1}. {shift.name}: {shift.locationName || selectedLocation?.name}
+                                  </span>
+                                  <span className="mt-0.5 block text-[11px] font-medium text-[#c4773e]">
+                                    {shift.startTime} – {shift.endTime} · {session.dateLabel}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  aria-label={isEnglish
+                                    ? `Remove ${shift.name} on ${session.dateLabel}`
+                                    : `Bỏ chọn ${shift.name} ngày ${session.dateLabel}`}
+                                  title={isEnglish ? "Remove this shift" : "Bỏ chọn ca này"}
+                                  onClick={() => setSelectedSlots((current) =>
+                                    current.filter((slot) => !(slot.date === session.sessionDate && slot.shift.id === shift.id)),
+                                  )}
+                                  className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[#b7652e] transition-colors hover:bg-[#f7e3d1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c4773e]"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
                               </div>
                             ))
                           ) : (isEnglish ? "No shift selected" : "Chưa chọn ca")}
