@@ -47,14 +47,16 @@ type BookingDetailsStepProps = {
   };
   locationId: string;
   locationName: string;
-  dateLabel: string;
-  sessionDate: string;
-  selectedShifts: {
-    id: string;
-    name: string;
-    startTime: string;
-    endTime: string;
-    locationName: string;
+  selectedSessions: {
+    sessionDate: string;
+    dateLabel: string;
+    shifts: {
+      id: string;
+      name: string;
+      startTime: string;
+      endTime: string;
+      locationName: string;
+    }[];
   }[];
   isEnglish: boolean;
   selectedFeePackageId: string;
@@ -83,9 +85,7 @@ export function TeacherBookingDetailsStep({
   student,
   locationId,
   locationName,
-  dateLabel,
-  sessionDate,
-  selectedShifts,
+  selectedSessions,
   isEnglish,
   selectedFeePackageId,
   onFeePackageChange,
@@ -119,7 +119,7 @@ export function TeacherBookingDetailsStep({
     : optionsQuery.data?.newPackages ?? [];
   const selectedPackage = availablePackages.find((item) => item.id === selectedFeePackageId);
   const newPackages = optionsQuery.data?.newPackages ?? [];
-  const selectedShiftCount = selectedShifts.length;
+  const selectedShiftCount = selectedSessions.reduce((total, session) => total + session.shifts.length, 0);
   const selectedPackageSessions = selectedPackage
     ? Number(packageSource === "existing" ? selectedPackage.remainingSessions : selectedPackage.sessions) || 0
     : 0;
@@ -165,8 +165,10 @@ export function TeacherBookingDetailsStep({
           studentId: student.id,
           teacherId,
           locationId,
-          sessionDate,
-          shiftIds: selectedShifts.map((shift) => shift.id),
+          sessions: selectedSessions.map((session) => ({
+            sessionDate: session.sessionDate,
+            shiftIds: session.shifts.map((shift) => shift.id),
+          })),
           packageId: selectedPackage.id,
           packageSource,
           learningMode,
@@ -488,7 +490,11 @@ export function TeacherBookingDetailsStep({
                 <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-[#6f9285]" />
                 <div className="min-w-0">
                   <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#829089]">{isEnglish ? "Lesson date" : "Ngày học"}</dt>
-                  <dd className="mt-0.5 capitalize text-[#405c53]">{dateLabel}</dd>
+                  <dd className="mt-0.5 space-y-1 capitalize text-[#405c53]">
+                    {selectedSessions.map((session) => (
+                      <div key={session.sessionDate}>{session.dateLabel}</div>
+                    ))}
+                  </dd>
                 </div>
               </div>
               <div className="flex gap-3">
@@ -496,10 +502,15 @@ export function TeacherBookingDetailsStep({
                 <div className="min-w-0">
                   <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#829089]">{isEnglish ? "Selected shifts" : "Các ca đã chọn"}</dt>
                   <dd className="mt-1 space-y-2 text-[#405c53]">
-                    {selectedShifts.map((shift) => (
-                      <div key={shift.id}>
-                        <span className="block font-medium">{shift.name}</span>
-                        <span className="block text-xs text-[#71827a]">{shift.locationName || locationName} · {shift.startTime}–{shift.endTime}</span>
+                    {selectedSessions.map((session) => (
+                      <div key={session.sessionDate} className="space-y-1.5">
+                        <span className="block text-xs font-semibold capitalize text-[#71827a]">{session.dateLabel}</span>
+                        {session.shifts.map((shift) => (
+                          <div key={`${session.sessionDate}:${shift.id}`}>
+                            <span className="block font-medium">{shift.name}</span>
+                            <span className="block text-xs text-[#71827a]">{shift.locationName || locationName} · {shift.startTime}–{shift.endTime}</span>
+                          </div>
+                        ))}
                       </div>
                     ))}
                   </dd>

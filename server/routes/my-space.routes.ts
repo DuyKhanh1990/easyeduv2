@@ -2178,17 +2178,24 @@ export function registerMySpaceRoutes(app: Express): void {
       const user = req.user as any;
       if (!user) return res.status(401).json({ message: "Unauthorized" });
 
-      const bodySchema = z.object({
+      const bodySchema = z.preprocess((body: any) => {
+        if (body && !Array.isArray(body.sessions) && body.sessionDate && Array.isArray(body.shiftIds)) {
+          return { ...body, sessions: [{ sessionDate: body.sessionDate, shiftIds: body.shiftIds }] };
+        }
+        return body;
+      }, z.object({
         studentId: z.string().uuid(),
         teacherId: z.string().uuid(),
         locationId: z.string().uuid(),
-        sessionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        shiftIds: z.array(z.string().uuid()).min(1).max(20),
+        sessions: z.array(z.object({
+          sessionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          shiftIds: z.array(z.string().uuid()).min(1).max(20),
+        })).min(1).max(366),
         packageId: z.string().uuid(),
         packageSource: z.enum(["existing", "new"]),
         learningMode: z.enum(["offline", "online"]),
         requestKey: z.string().uuid(),
-      });
+      }));
       const parsed = bodySchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: "Thông tin đăng ký chưa hợp lệ", errors: parsed.error.flatten() });

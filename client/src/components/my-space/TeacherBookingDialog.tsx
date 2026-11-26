@@ -55,6 +55,11 @@ type Availability = {
 
 type ViewMode = "week" | "month";
 
+type SelectedBookingSlot = {
+  date: string;
+  shift: Availability["shifts"][number];
+};
+
 type TeacherBookingDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -178,7 +183,7 @@ export function TeacherBookingDialog({
   const [focusedDate, setFocusedDate] = useState(() => new Date());
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [locationId, setLocationId] = useState("");
-  const [selectedShiftIds, setSelectedShiftIds] = useState<string[]>([]);
+  const [selectedSlots, setSelectedSlots] = useState<SelectedBookingSlot[]>([]);
   const [bookingStep, setBookingStep] = useState<"schedule" | "details">("schedule");
   const [selectedFeePackageId, setSelectedFeePackageId] = useState("");
   const [learningMode, setLearningMode] = useState<"offline" | "online" | null>(null);
@@ -188,7 +193,7 @@ export function TeacherBookingDialog({
       setFocusedDate(new Date());
       setViewMode("week");
       setLocationId("");
-      setSelectedShiftIds([]);
+      setSelectedSlots([]);
       setBookingStep("schedule");
       setSelectedFeePackageId("");
       setLearningMode(null);
@@ -230,16 +235,31 @@ export function TeacherBookingDialog({
   }, [locationId, query.data, sharedLocations]);
 
   useEffect(() => {
-    setSelectedShiftIds([]);
-  }, [focusedDate, locationId]);
+    setSelectedSlots([]);
+  }, [locationId]);
 
   const dayMap = useMemo(
     () => new Map((query.data?.days ?? []).map((day) => [day.date, day])),
     [query.data?.days],
   );
   const selectedDay = dayMap.get(dateKey(focusedDate));
-  const selectedShifts = query.data?.shifts.filter((shift) => selectedShiftIds.includes(shift.id)) ?? [];
+  const focusedDateKey = dateKey(focusedDate);
   const selectedLocation = sharedLocations.find((location) => location.id === locationId);
+  const selectedSessions = useMemo(() => {
+    const byDate = new Map<string, SelectedBookingSlot[]>();
+    for (const slot of selectedSlots) {
+      const current = byDate.get(slot.date) ?? [];
+      current.push(slot);
+      byDate.set(slot.date, current);
+    }
+    return [...byDate.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, slots]) => ({
+        sessionDate: date,
+        dateLabel: formatDate(parseDate(date), { weekday: "long", year: "numeric" }, locale),
+        shifts: slots.map((slot) => slot.shift),
+      }));
+  }, [locale, selectedSlots]);
   const weekDays = Array.from({ length: 7 }, (_, index) => addDays(mondayOf(focusedDate), index));
   const monthStart = new Date(focusedDate.getFullYear(), focusedDate.getMonth(), 1);
   const monthEnd = new Date(focusedDate.getFullYear(), focusedDate.getMonth() + 1, 0);
@@ -254,20 +274,23 @@ export function TeacherBookingDialog({
 
   const goToDate = (date: Date) => {
     setFocusedDate(date);
-    setSelectedShiftIds([]);
   };
 
   const toggleShift = (shiftId: string) => {
     const shift = query.data?.shifts.find((item) => item.id === shiftId);
-    if (!shift || getSlotStatus(selectedDay, shiftId) !== "available") return;
+    if (!shift) return;
+    const currentDate = dateKey(focusedDate);
+    const alreadySelected = selectedSlots.some((item) => item.date === currentDate && item.shift.id === shiftId);
+    if (!alreadySelected && getSlotStatus(selectedDay, shiftId) !== "available") return;
 
-    setSelectedShiftIds((current) => {
-      if (current.includes(shiftId)) return current.filter((id) => id !== shiftId);
-      const conflicts = current.some((id) => {
-        const selected = query.data?.shifts.find((item) => item.id === id);
-        return selected ? shiftsOverlap(selected, shift) : false;
-      });
-      return conflicts ? current : [...current, shiftId];
+    setSelectedSlots((current) => {
+      if (alreadySelected) {
+        return current.filter((item) => !(item.date === currentDate && item.shift.id === shiftId));
+      }
+      const conflicts = current.some((item) =>
+        item.date === currentDate && shiftsOverlap(item.shift, shift),
+      );
+      return conflicts ? current : [...current, { date: currentDate, shift }];
     });
   };
 
@@ -487,16 +510,15 @@ export function TeacherBookingDialog({
                       {query.data.shifts.map((shift) => {
                         const status = getSlotStatus(selectedDay, shift.id);
                         const isAvailable = status === "available";
-                        const isSelected = selectedShiftIds.includes(shift.id) && isAvailable;
-                        const overlapsSelected = !isSelected && selectedShiftIds.some((selectedId) => {
-                          const selected = query.data.shifts.find((item) => item.id === selectedId);
-                          return selected ? shiftsOverlap(selected, shift) : false;
-                        });
+                        const isSelected = selectedSlots.some((item) => item.date === focusedDateKey && item.shift.id === shift.id);
+                        const overlapsSelected = !isSelected && selectedSlots.some((item) =>
+                          item.date === focusedDateKey && shiftsOverlap(item.shift, shift),
+                        );
                         return (
                           <button
                             key={shift.id}
                             type="button"
-                            disabled={!isAvailable || overlapsSelected}
+                            disabled={(!isAvailable && !isSelected) || overlapsSelected}
                             aria-pressed={isSelected}
                             onClick={() => toggleShift(shift.id)}
                             title={overlapsSelected
@@ -551,17 +573,17 @@ export function TeacherBookingDialog({
                 <p className="truncate text-xs text-[#71827a]">
                   {student.fullName} · {selectedLocation?.name ?? (isEnglish ? "Choose a center" : "Chọn cơ sở")}
                 </p>
-                {selectedShifts.length > 0 && (
+                {selectedSlots.length > 0 && (
                   <p className="truncate text-[11px] font-medium text-[#405c53]">
-                    {selectedShifts.length === 1
-                      ? `${selectedShifts[0].name} · ${selectedShifts[0].startTime}–${selectedShifts[0].endTime}`
-                      : (isEnglish ? `${selectedShifts.length} shifts selected` : `Đã chọn ${selectedShifts.length} ca`)}
+                    {selectedSlots.length === 1
+                      ? `${selectedSlots[0].shift.name} · ${selectedSlots[0].date} · ${selectedSlots[0].shift.startTime}–${selectedSlots[0].shift.endTime}`
+                      : (isEnglish ? `${selectedSlots.length} shifts selected` : `Đã chọn ${selectedSlots.length} ca`)}
                   </p>
                 )}
               </div>
               <Button
                 type="button"
-                disabled={selectedShifts.length === 0}
+                disabled={selectedSlots.length === 0}
                 onClick={() => setBookingStep("details")}
                 size="sm"
                 className="h-9 shrink-0 rounded-lg bg-[#4d857a] px-3 text-xs text-white disabled:opacity-60"
@@ -608,8 +630,12 @@ export function TeacherBookingDialog({
                     <div className="flex gap-3">
                       <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-[#6f9285]" />
                       <div className="min-w-0">
-                        <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#829089]">{isEnglish ? "Lesson date" : "Ngày học"}</dt>
-                        <dd className="mt-0.5 text-sm font-medium capitalize text-[#405c53]">{selectedDateLabel}</dd>
+                        <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#829089]">{isEnglish ? "Selected dates" : "Ngày học đã chọn"}</dt>
+                        <dd className="mt-0.5 space-y-1 text-sm font-medium capitalize text-[#405c53]">
+                          {selectedSessions.length > 0
+                            ? selectedSessions.map((session) => <div key={session.sessionDate}>{session.dateLabel}</div>)
+                            : (isEnglish ? "No date selected" : "Chưa chọn ngày")}
+                        </dd>
                       </div>
                     </div>
                     <div className="flex gap-3">
@@ -617,14 +643,19 @@ export function TeacherBookingDialog({
                       <div className="min-w-0">
                         <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#829089]">{isEnglish ? "Class shift" : "Ca học"}</dt>
                         <dd className="mt-0.5 text-sm font-medium text-[#405c53]">
-                          {selectedShifts.length > 0 ? (
+                          {selectedSlots.length > 0 ? (
                             <div className="space-y-1.5">
-                              {selectedShifts.map((shift) => (
-                                <div key={shift.id}>
-                                  <span className="block">{shift.name}</span>
-                                  <span className="mt-0.5 block text-xs font-normal text-[#71827a]">
-                                    {shift.locationName || selectedLocation?.name} · {shift.startTime}–{shift.endTime}
-                                  </span>
+                              {selectedSessions.map((session) => (
+                                <div key={session.sessionDate} className="space-y-1.5">
+                                  <span className="block text-xs font-semibold capitalize text-[#71827a]">{session.dateLabel}</span>
+                                  {session.shifts.map((shift) => (
+                                    <div key={`${session.sessionDate}:${shift.id}`}>
+                                      <span className="block">{shift.name}</span>
+                                      <span className="mt-0.5 block text-xs font-normal text-[#71827a]">
+                                        {shift.locationName || selectedLocation?.name} · {shift.startTime}–{shift.endTime}
+                                      </span>
+                                    </div>
+                                  ))}
                                 </div>
                               ))}
                             </div>
@@ -637,10 +668,10 @@ export function TeacherBookingDialog({
                   <div className="border-t border-[#e7ede8] pt-4">
                     <Button
                       type="button"
-                      disabled={selectedShifts.length === 0}
+                      disabled={selectedSlots.length === 0}
                       onClick={() => setBookingStep("details")}
                       className="min-h-11 w-full rounded-xl bg-[#4d857a] font-semibold text-white disabled:opacity-60"
-                      title={selectedShifts.length === 0
+                      title={selectedSlots.length === 0
                         ? (isEnglish ? "Select at least one shift first." : "Vui lòng chọn ít nhất một ca trước.")
                         : undefined}
                     >
@@ -668,9 +699,7 @@ export function TeacherBookingDialog({
               student={student}
               locationId={locationId}
               locationName={selectedLocation?.name ?? ""}
-              dateLabel={selectedDateLabel}
-              sessionDate={dateKey(focusedDate)}
-              selectedShifts={selectedShifts}
+              selectedSessions={selectedSessions}
               isEnglish={isEnglish}
               selectedFeePackageId={selectedFeePackageId}
               onFeePackageChange={setSelectedFeePackageId}

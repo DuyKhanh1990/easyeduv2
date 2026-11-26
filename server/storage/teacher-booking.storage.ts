@@ -52,8 +52,7 @@ type ConfirmTeacherBookingInput = {
   studentId: string;
   teacherId: string;
   locationId: string;
-  sessionDate: string;
-  shiftIds: string[];
+  sessions: { sessionDate: string; shiftIds: string[] }[];
   packageId: string;
   packageSource: "existing" | "new";
   learningMode: "offline" | "online";
@@ -348,16 +347,17 @@ async function assertPackageCapacity(
   feePackage: FeePackageRow,
 ) {
   const packageSessions = configuredSessionCount(feePackage.sessions);
+  const selectedSessionCount = input.sessions.reduce((total, session) => total + session.shiftIds.length, 0);
   if (!packageSessions) throw new TeacherBookingValidationError("Số buổi của gói học phí chưa được cấu hình hợp lệ.");
-  if (input.shiftIds.length > packageSessions) {
-    throw new TeacherBookingValidationError(`Gói này có ${packageSessions} buổi, không thể đăng ký ${input.shiftIds.length} ca cùng lúc.`);
+  if (selectedSessionCount > packageSessions) {
+    throw new TeacherBookingValidationError(`Gói này có ${packageSessions} buổi, không thể đăng ký ${selectedSessionCount} ca cùng lúc.`);
   }
 
   if (input.packageSource === "existing") {
     const purchasedPackages = await getPurchasedPackages(tx, input.studentId, input.locationId);
     const purchased = purchasedPackages.find((item) => item.id === feePackage.id);
     if (!purchased) throw new TeacherBookingValidationError("Học viên chưa có gói học phí đã thanh toán còn buổi.");
-    if (input.shiftIds.length > purchased.remainingSessions) {
+    if (selectedSessionCount > purchased.remainingSessions) {
       throw new TeacherBookingValidationError(`Gói này chỉ còn ${purchased.remainingSessions} buổi chưa xếp.`);
     }
     return { packageSessions, purchased, totalAmount: 0, depositBalance: 0 };
@@ -379,9 +379,10 @@ async function assertPackageCapacity(
 async function assertAvailability(
   tx: any,
   input: ConfirmTeacherBookingInput,
+  selection: ConfirmTeacherBookingInput["sessions"][number],
 ) {
   const todayAndTime = getBangkokDateAndTime();
-  if (!isValidDateKey(input.sessionDate) || input.sessionDate < todayAndTime.date) {
+  if (!isValidDateKey(selection.sessionDate) || selection.sessionDate < todayAndTime.date) {
     throw new TeacherBookingValidationError("Ngày học đã chọn không hợp lệ hoặc đã qua.");
   }
 
@@ -396,11 +397,11 @@ async function assertAvailability(
     })
     .from(shiftTemplates)
     .where(and(
-      inArray(shiftTemplates.id, input.shiftIds),
+      inArray(shiftTemplates.id, selection.shiftIds),
       eq(shiftTemplates.locationId, input.locationId),
       eq(shiftTemplates.type, "class"),
     ));
-  if (shifts.length !== input.shiftIds.length || shifts.some((shift: any) => shift.status !== "active")) {
+  if (shifts.length !== selection.shiftIds.length || shifts.some((shift: any) => shift.status !== "active")) {
     throw new TeacherBookingValidationError("Một hoặc nhiều ca học không còn hoạt động tại cơ sở đã chọn.");
   }
   shifts.sort((a: any, b: any) =>
@@ -410,7 +411,7 @@ async function assertAvailability(
   for (let index = 0; index < shifts.length; index += 1) {
     const start = normalizeTime(shifts[index].startTime);
     const end = normalizeTime(shifts[index].endTime);
-    if (input.sessionDate === todayAndTime.date && start <= todayAndTime.time) {
+    if (selection.sessionDate === todayAndTime.date && start <= todayAndTime.time) {
       throw new TeacherBookingValidationError("Ca học đã bắt đầu hoặc đã qua giờ bắt đầu.");
     }
     for (let other = index + 1; other < shifts.length; other += 1) {
@@ -420,7 +421,7 @@ async function assertAvailability(
     }
   }
 
-  const weekday = new Date(`${input.sessionDate}T00:00:00.000Z`).getUTCDay();
+  const weekday = new Date(`${selection.sessionDate}T00:00:00.000Z`).getUTCDay();
   const [legacyAvailability, timeWindows] = await Promise.all([
     tx.select({
       shiftTemplateId: teacherAvailability.shiftTemplateId,
@@ -443,11 +444,11 @@ async function assertAvailability(
     )),
   ]);
   const activeLegacy = legacyAvailability.filter((row: any) =>
-    (!normalizeDate(row.effectiveFrom) || input.sessionDate >= normalizeDate(row.effectiveFrom))
-    && (!normalizeDate(row.effectiveTo) || input.sessionDate <= normalizeDate(row.effectiveTo)));
+    (!normalizeDate(row.effectiveFrom) || selection.sessionDate >= normalizeDate(row.effectiveFrom))
+    && (!normalizeDate(row.effectiveTo) || selection.sessionDate <= normalizeDate(row.effectiveTo)));
   const activeWindows = timeWindows.filter((row: any) =>
-    (!normalizeDate(row.effectiveFrom) || input.sessionDate >= normalizeDate(row.effectiveFrom))
-    && (!normalizeDate(row.effectiveTo) || input.sessionDate <= normalizeDate(row.effectiveTo)));
+    (!normalizeDate(row.effectiveFrom) || selection.sessionDate >= normalizeDate(row.effectiveFrom))
+    && (!normalizeDate(row.effectiveTo) || selection.sessionDate <= normalizeDate(row.effectiveTo)));
   const hasAvailabilityRules = activeLegacy.length > 0 || activeWindows.length > 0;
   if (hasAvailabilityRules && shifts.some((shift: any) =>
     !activeLegacy.some((row: any) => row.shiftTemplateId === shift.id)
@@ -468,7 +469,7 @@ async function assertAvailability(
     .from(classSessions)
     .innerJoin(shiftTemplates, eq(shiftTemplates.id, classSessions.shiftTemplateId))
     .where(and(
-      eq(classSessions.sessionDate, input.sessionDate),
+      eq(classSessions.sessionDate, selection.sessionDate),
       sql`LOWER(COALESCE(${classSessions.status}, '')) NOT IN ('cancelled', 'canceled')`,
       or(
         sql`${classSessions.teacherIds} @> ARRAY[${input.teacherId}]::uuid[]`,
@@ -530,14 +531,27 @@ export async function confirmTeacherBooking(input: ConfirmTeacherBookingInput) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.requestKey)) {
     throw new TeacherBookingValidationError("Mã đăng ký không hợp lệ.");
   }
-  if (!isValidDateKey(input.sessionDate)) throw new TeacherBookingValidationError("Ngày học không hợp lệ.");
-  if (input.shiftIds.length === 0 || new Set(input.shiftIds).size !== input.shiftIds.length) {
-    throw new TeacherBookingValidationError("Vui lòng chọn ca học hợp lệ.");
+  const totalSelected = input.sessions.reduce((total, session) => total + session.shiftIds.length, 0);
+  const selectedKeys = input.sessions.flatMap((session) => session.shiftIds.map((shiftId) => `${session.sessionDate}:${shiftId}`));
+  if (
+    totalSelected === 0
+    || input.sessions.some((session) =>
+      !isValidDateKey(session.sessionDate)
+      || session.shiftIds.length === 0
+      || new Set(session.shiftIds).size !== session.shiftIds.length,
+    )
+    || new Set(input.sessions.map((session) => session.sessionDate)).size !== input.sessions.length
+    || new Set(selectedKeys).size !== selectedKeys.length
+  ) {
+    throw new TeacherBookingValidationError("Vui lòng chọn các ca học hợp lệ, không trùng nhau.");
   }
 
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`teacher-booking-student:${input.studentId}`}))`);
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`teacher-booking-slot:${input.teacherId}:${input.sessionDate}`}))`);
+    const selectedDates = [...new Set(input.sessions.map((session) => session.sessionDate))].sort();
+    for (const sessionDate of selectedDates) {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`teacher-booking-slot:${input.teacherId}:${sessionDate}`}))`);
+    }
 
     const previous = await findExistingRequest(tx, input);
     if (previous) return previous;
@@ -545,7 +559,18 @@ export async function confirmTeacherBooking(input: ConfirmTeacherBookingInput) {
     const location = await assertTeacherAndStudentShareLocation(tx, input);
     const feePackage = await getPackageForBooking(tx, input);
     const packageState = await assertPackageCapacity(tx, input, feePackage);
-    const { shifts, weekday } = await assertAvailability(tx, input);
+    const scheduledSlots = (await Promise.all(input.sessions.map(async (selection) => {
+      const { shifts, weekday } = await assertAvailability(tx, input, selection);
+      return shifts.map((shift: any) => ({ sessionDate: selection.sessionDate, weekday, shift }));
+    }))).flat().sort((a, b) =>
+      a.sessionDate.localeCompare(b.sessionDate)
+      || normalizeTime(a.shift.startTime).localeCompare(normalizeTime(b.shift.startTime))
+      || a.shift.name.localeCompare(b.shift.name, "vi"),
+    );
+    const uniqueShiftIds = [...new Set(scheduledSlots.map((slot) => slot.shift.id))];
+    const scheduledWeekdays = [...new Set(scheduledSlots.map((slot) => slot.weekday))].sort((a, b) => a - b);
+    const startDate = scheduledSlots[0].sessionDate;
+    const endDate = scheduledSlots[scheduledSlots.length - 1].sessionDate;
 
     const [student] = await tx
       .select({ fullName: students.fullName, code: students.code })
@@ -572,13 +597,13 @@ export async function confirmTeacherBooking(input: ConfirmTeacherBookingInput) {
         courseId: feePackage.courseId,
         managerIds: [],
         teacherIds: [input.teacherId],
-        shiftTemplateIds: shifts.map((shift: any) => shift.id),
+        shiftTemplateIds: uniqueShiftIds,
         feePackageId: feePackage.id,
-        weekdays: [weekday],
+        weekdays: scheduledWeekdays,
         scheduleConfig: null,
         teachersConfig: null,
-        startDate: input.sessionDate,
-        endDate: input.sessionDate,
+        startDate,
+        endDate,
         maxStudents: 1,
         learningFormat: input.learningMode,
         status: "active",
@@ -589,9 +614,9 @@ export async function confirmTeacherBooking(input: ConfirmTeacherBookingInput) {
 
     const classSessionRows = await tx
       .insert(classSessions)
-      .values(shifts.map((shift: any, index: number) => ({
+      .values(scheduledSlots.map(({ shift, sessionDate, weekday }, index) => ({
         classId: createdClass.id,
-        sessionDate: input.sessionDate,
+        sessionDate,
         weekday,
         shiftTemplateId: shift.id,
         roomId: ZERO_ROOM_ID,
@@ -608,12 +633,12 @@ export async function confirmTeacherBooking(input: ConfirmTeacherBookingInput) {
         studentId: input.studentId,
         classId: createdClass.id,
         status: "active",
-        startDate: input.sessionDate,
-        endDate: input.sessionDate,
+        startDate,
+        endDate,
         totalSessions: classSessionRows.length,
         attendedSessions: 0,
         remainingSessions: classSessionRows.length,
-        scheduledWeekdays: [weekday],
+        scheduledWeekdays,
         createdBy: input.userId,
       } as any)
       .returning({ id: studentClasses.id });
