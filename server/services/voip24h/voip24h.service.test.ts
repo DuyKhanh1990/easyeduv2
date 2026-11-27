@@ -313,6 +313,27 @@ describe("VoIP24H extension list and click-to-call", () => {
       apiSecret: "dial-api-secret",
       isLonglive: true,
     }, "voip-dial-test-location", { extension: "201", phone: "0900000000" }))
-      .rejects.toThrow("VOIP24H chưa xác nhận cuộc gọi");
+      .rejects.toThrow("VOIP24H chưa xác nhận cuộc gọi: phản hồi thiếu mã cuộc gọi hoặc trạng thái");
+  });
+
+  it("includes provider status codes when the dial API returns a generic error", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        status: 1000,
+        data: { token: "dial-access-token" },
+      }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        status: 200,
+        message: "success",
+        data: { status: 2000, message: "Error", data: "" },
+      }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(dialVoip24h({
+      apiKey: "dial-api-key",
+      apiSecret: "dial-api-secret",
+      isLonglive: true,
+    }, "voip-dial-test-location", { extension: "201", phone: "0900000000" }))
+      .rejects.toThrow("VoIP24H từ chối lệnh gọi (HTTP 200; status=200; data.status=2000)");
   });
 });

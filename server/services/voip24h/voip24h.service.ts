@@ -275,22 +275,29 @@ export async function dialVoip24h(
   const call = operation?.data;
   const callId = String(call?.callid ?? "").trim();
   const state = String(call?.state ?? "").trim();
-  if (
-    !response.ok ||
-    Number(payload?.status) !== 200 ||
-    Number(operation?.status) !== 1000 ||
-    !call ||
-    typeof call !== "object" ||
-    !callId ||
-    !state
-  ) {
-    const providerMessage = typeof operation?.message === "string"
+  const outerStatus = payload?.status == null ? "missing" : String(payload.status);
+  const operationStatus = operation?.status == null ? "missing" : String(operation.status);
+  const providerMessage = typeof operation?.message === "string"
       ? operation.message
       : typeof payload?.message === "string"
         ? payload.message
         : "";
-    const detail = /^(success|ok)$/i.test(providerMessage.trim()) ? "" : providerMessage;
-    throw new Error(detail || `VOIP24H chưa xác nhận cuộc gọi: phản hồi thiếu mã cuộc gọi hoặc trạng thái (HTTP ${response.status}).`);
+  const statusSummary = `HTTP ${response.status}; status=${outerStatus}; data.status=${operationStatus}`;
+  const statusAccepted = response.ok &&
+    Number(payload?.status) === 200 &&
+    Number(operation?.status) === 1000 &&
+    !/^(error|failed)$/i.test(providerMessage.trim());
+  if (!statusAccepted) {
+    const detail = providerMessage && !/^(success|ok|error|failed)$/i.test(providerMessage.trim())
+      ? `: ${providerMessage.trim()}`
+      : "";
+    throw new Error(`VoIP24H từ chối lệnh gọi${detail} (${statusSummary}).`);
+  }
+  if (!call || typeof call !== "object" || Array.isArray(call) || !callId || !state) {
+    const callFields = call && typeof call === "object" && !Array.isArray(call)
+      ? Object.keys(call).slice(0, 12).join(", ") || "none"
+      : "none";
+    throw new Error(`VOIP24H chưa xác nhận cuộc gọi: phản hồi thiếu mã cuộc gọi hoặc trạng thái (${statusSummary}; data fields=[${callFields}]).`);
   }
   return {
     callId,
