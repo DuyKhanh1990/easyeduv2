@@ -73,8 +73,8 @@ export async function authenticateVoip24h(
     body: JSON.stringify({
       apiKey: credentials.apiKey,
       apiSecret: credentials.apiSecret,
-      // The documentation table defines this as a boolean; do not send "true" as a string.
-      isLonglive: credentials.isLonglive,
+        // The provider's executable example sends this field as the string "true"/"false".
+        isLonglive: String(credentials.isLonglive),
     }),
     signal,
   });

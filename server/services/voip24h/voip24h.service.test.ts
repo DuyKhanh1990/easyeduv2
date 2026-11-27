@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 describe("authenticateVoip24h", () => {
-  it("sends API credentials and a boolean lifetime flag, then parses the documented response", async () => {
+  it("sends API credentials and the documented string lifetime flag, then parses the response", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       message: "Success",
       status: 1000,
@@ -38,7 +38,7 @@ describe("authenticateVoip24h", () => {
     expect(JSON.parse(String(request.body))).toEqual({
       apiKey: "test-api-key",
       apiSecret: "test-api-secret",
-      isLonglive: true,
+      isLonglive: "true",
     });
     expect(result).toEqual({
       token: "test-access-token",
