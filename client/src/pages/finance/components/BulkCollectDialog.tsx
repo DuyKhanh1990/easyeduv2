@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -10,14 +10,15 @@ import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Search, Merge, X } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
+import { Search, Merge, X, QrCode } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/hooks/use-language";
 import { type InvoiceRow, type ScheduleItem, STATUS_CONFIG, isInvoicePaidLike, parseNum, fmtMoney } from "@/types/invoice-types";
 import { format } from "date-fns";
 import type { BulkCollectPrintData } from "./BulkCollectPrintPreview";
+import { getBankCode, sanitizeForBankPreservingCase } from "./qr-utils";
 
 export type { BulkCollectPrintData };
 
@@ -63,6 +64,12 @@ export function BulkCollectDialog({
   const [paymentMethod, setPaymentMethod] = useState<string>("cash");
   const [collectorName, setCollectorName] = useState<string>("");
   const [note, setNote] = useState<string>("");
+  const [qrImageError, setQrImageError] = useState(false);
+
+  const { data: locationsData = [] } = useQuery<any[]>({
+    queryKey: ["/api/locations"],
+    enabled: open && invoiceType === "Thu",
+  });
 
   const allSchedules = useMemo(
     () => Array.from(initialSchedules?.values() ?? []),
@@ -98,11 +105,85 @@ export function BulkCollectDialog({
     [allSchedules, checkedScheduleIds]
   );
 
+  const unpaidCheckedInvoices = useMemo(
+    () => checkedInvoices.filter(inv => !isInvoicePaidLike(inv.status)),
+    [checkedInvoices]
+  );
+
+  const unpaidCheckedSchedules = useMemo(
+    () => checkedSchedules.filter(s => !isInvoicePaidLike(s.status)),
+    [checkedSchedules]
+  );
+
   const totalAmount = useMemo(() => {
-    const invTotal = checkedInvoices.reduce((sum, inv) => sum + parseNum(inv.grandTotal), 0);
-    const schedTotal = checkedSchedules.reduce((sum, s) => sum + parseNum(s.amount), 0);
+    const invTotal = unpaidCheckedInvoices.reduce((sum, inv) => sum + parseNum(inv.grandTotal), 0);
+    const schedTotal = unpaidCheckedSchedules.reduce((sum, s) => sum + parseNum(s.amount), 0);
     return invTotal + schedTotal;
-  }, [checkedInvoices, checkedSchedules]);
+  }, [unpaidCheckedInvoices, unpaidCheckedSchedules]);
+
+  const qrLocationResolution = useMemo(() => {
+    const locationIds = new Set<string>();
+    let hasUnresolvedLocation = false;
+    for (const invoice of unpaidCheckedInvoices) {
+      const branchLocation = locationsData.find((location) =>
+        location.name === invoice.branch || location.locationName === invoice.branch
+      );
+      const locationId = invoice.locationId || branchLocation?.id;
+      if (locationId) locationIds.add(String(locationId));
+      else hasUnresolvedLocation = true;
+    }
+    for (const schedule of unpaidCheckedSchedules) {
+      if (schedule.locationId) locationIds.add(String(schedule.locationId));
+      else hasUnresolvedLocation = true;
+    }
+
+    if (locationIds.size > 1) return { issue: "multiple" as const, location: null };
+    if (hasUnresolvedLocation) return { issue: "unknown" as const, location: null };
+    if (locationIds.size === 1) {
+      const id = Array.from(locationIds)[0];
+      const location = locationsData.find((candidate) => String(candidate.id) === id) ?? null;
+      return { issue: location ? null : "missing" as const, location };
+    }
+    if (locationsData.length === 1) return { issue: null, location: locationsData[0] };
+    return { issue: "missing" as const, location: null };
+  }, [locationsData, unpaidCheckedInvoices, unpaidCheckedSchedules]);
+
+  const qrBankAccount = useMemo(() => {
+    const raw = qrLocationResolution.location?.bankAccounts;
+    try {
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      return Array.isArray(parsed)
+        ? parsed.find((account) => String(account?.bankAccount ?? "").trim()) ?? null
+        : null;
+    } catch {
+      return null;
+    }
+  }, [qrLocationResolution.location]);
+
+  const qrBankName = String(qrBankAccount?.bankName ?? "").trim();
+  const qrAccountNumber = String(qrBankAccount?.bankAccount ?? "").trim();
+  const qrAccountHolder = String(qrBankAccount?.accountHolder ?? "").trim();
+  const qrTransferContent = useMemo(() => {
+    const identities = Array.from(new Set(unpaidCheckedInvoices
+      .map((invoice) => [invoice.name?.trim(), invoice.studentCode?.trim()].filter(Boolean).join(" "))
+      .filter(Boolean)));
+    const identity = identities.length === 1 ? identities[0] : "THU GOP";
+    const codes = [
+      ...unpaidCheckedInvoices.map((invoice) => invoice.code),
+      ...unpaidCheckedSchedules.map((schedule) => schedule.code),
+    ].filter(Boolean);
+    return sanitizeForBankPreservingCase([identity, ...codes].join(" "), 160);
+  }, [unpaidCheckedInvoices, unpaidCheckedSchedules]);
+
+  const qrImageUrl = useMemo(() => {
+    if (!qrBankName || !qrAccountNumber || totalAmount <= 0) return null;
+    const bankCode = getBankCode(qrBankName);
+    return `https://img.vietqr.io/image/${encodeURIComponent(bankCode)}-${encodeURIComponent(qrAccountNumber)}-compact2.png?amount=${Math.round(totalAmount)}&addInfo=${encodeURIComponent(qrTransferContent)}&accountName=${encodeURIComponent(qrAccountHolder)}`;
+  }, [qrAccountHolder, qrAccountNumber, qrBankName, qrTransferContent, totalAmount]);
+
+  useEffect(() => {
+    setQrImageError(false);
+  }, [qrImageUrl]);
 
   const alreadyPaidCount = useMemo(
     () =>
@@ -138,8 +219,8 @@ export function BulkCollectDialog({
 
   const collectMutation = useMutation({
     mutationFn: async () => {
-      const unpaidInvoices = checkedInvoices.filter(inv => !isInvoicePaidLike(inv.status));
-      const unpaidSchedules = checkedSchedules.filter(s => !isInvoicePaidLike(s.status));
+      const unpaidInvoices = unpaidCheckedInvoices;
+      const unpaidSchedules = unpaidCheckedSchedules;
       const ids = unpaidInvoices.map(inv => inv.id);
       const scheduleIds = unpaidSchedules.map(s => s.id);
       if (ids.length === 0 && scheduleIds.length === 0)
@@ -210,8 +291,8 @@ export function BulkCollectDialog({
 
   const isPending = collectMutation.isPending;
 
-  const uncheckedInvoicesToPay = checkedInvoices.filter(inv => !isInvoicePaidLike(inv.status));
-  const uncheckedSchedulesToPay = checkedSchedules.filter(s => !isInvoicePaidLike(s.status));
+  const uncheckedInvoicesToPay = unpaidCheckedInvoices;
+  const uncheckedSchedulesToPay = unpaidCheckedSchedules;
   const uncheckedToPay = uncheckedInvoicesToPay.length + uncheckedSchedulesToPay.length;
 
   return (
@@ -365,6 +446,69 @@ export function BulkCollectDialog({
                 <div className="text-xs text-muted-foreground mt-1">
                   {t("finance.receiptsWillBeCollected", { count: uncheckedToPay, type: invoiceType === "Thu" ? t("finance.incomeWord") : t("finance.expenseWord") })}
                 </div>
+                {invoiceType === "Thu" && (
+                  <div className="mt-4 border-t border-purple-200 pt-4">
+                    {paymentMethod !== "transfer" ? (
+                      <p className="text-xs text-muted-foreground">
+                        {t("finance.bulkQrSelectTransfer")}
+                      </p>
+                    ) : qrLocationResolution.issue === "multiple" ? (
+                      <p className="text-xs text-amber-700">
+                        {t("finance.bulkQrMixedLocations")}
+                      </p>
+                    ) : qrLocationResolution.issue === "unknown" ? (
+                      <p className="text-xs text-amber-700">
+                        {t("finance.bulkQrLocationUnknown")}
+                      </p>
+                    ) : qrLocationResolution.issue || !qrBankAccount ? (
+                      <p className="text-xs text-amber-700">
+                        {qrLocationResolution.location?.paymentQrUrl
+                          ? t("finance.bulkQrStaticOnly")
+                          : t("finance.bulkQrBankNotConfigured")}
+                      </p>
+                    ) : qrImageError ? (
+                      <p className="text-xs text-rose-700">
+                        {t("finance.bulkQrImageError")}
+                      </p>
+                    ) : qrImageUrl ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-800">
+                          <QrCode className="h-4 w-4" />
+                          {t("finance.qrScanToPay")}
+                        </div>
+                        <div className="rounded-xl border border-purple-100 bg-white p-2 shadow-sm">
+                          <img
+                            src={qrImageUrl}
+                            alt={t("finance.paymentQrAlt")}
+                            className="h-56 w-56 object-contain"
+                            onError={() => setQrImageError(true)}
+                          />
+                        </div>
+                        <div className="text-xs font-medium text-slate-700">
+                          {qrBankName} · {qrAccountNumber}
+                        </div>
+                        {qrAccountHolder && (
+                          <div className="text-[11px] text-slate-600">{qrAccountHolder}</div>
+                        )}
+                        <div className="max-w-full break-words text-[11px] text-slate-600">
+                          {t("finance.bulkQrTransferContent")}: {qrTransferContent}
+                        </div>
+                        <p className="text-[11px] text-amber-800">
+                          {t("finance.bulkQrConfirmHint")}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-amber-700">
+                        {t("finance.bulkQrBankNotConfigured")}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {invoiceType === "Chi" && paymentMethod === "transfer" && (
+                  <p className="mt-4 border-t border-purple-200 pt-4 text-xs text-muted-foreground">
+                    {t("finance.bulkQrIncomeOnly")}
+                  </p>
+                )}
               </div>
 
               {/* Invoice breakdown */}
