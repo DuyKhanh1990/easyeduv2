@@ -27,6 +27,10 @@ const saveConfigSchema = z.object({
   isLonglive: z.boolean().optional(),
   sipServerIp: z.string().trim().max(255).optional(),
 });
+const revealConfigSchema = z.object({
+  locationId: locationIdSchema,
+  field: z.enum(["apiKey", "apiSecret"]),
+});
 const voipDialSchema = z.object({
   locationId: locationIdSchema,
   phone: z.string().trim().min(6).max(50),
@@ -264,6 +268,27 @@ export function registerVoip24hRoutes(app: Express) {
     } catch (error: any) {
       console.error("[VoIP24H] Read config failed:", error?.message || error);
       return res.status(500).json({ message: "Không thể đọc cấu hình VoIP24H" });
+    }
+  });
+
+  app.post("/api/call-center/voip24h/config/reveal", async (req, res) => {
+    if (!req.isSuperAdmin) return res.status(403).json({ message: "Chỉ Super Admin được truy cập" });
+    const parsed = revealConfigSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Thông tin cần xem không hợp lệ" });
+
+    try {
+      const saved = await getSavedConfig(parsed.data.locationId);
+      if (!saved || saved.decryptionFailed) {
+        return res.status(409).json({ message: "Không thể giải mã thông tin VoIP24H đã lưu" });
+      }
+      const value = saved[parsed.data.field];
+      if (!value) return res.status(404).json({ message: "Chưa có thông tin này được lưu" });
+
+      res.setHeader("Cache-Control", "no-store, private");
+      res.setHeader("Pragma", "no-cache");
+      return res.json({ value });
+    } catch {
+      return res.status(500).json({ message: "Không thể hiển thị thông tin VoIP24H đã lưu" });
     }
   });
 

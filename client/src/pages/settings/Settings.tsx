@@ -4499,6 +4499,8 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
   });
   const [showApiKey, setShowApiKey] = useState(false);
   const [showApiSecret, setShowApiSecret] = useState(false);
+  const [revealedCredentials, setRevealedCredentials] = useState<Partial<Record<"apiKey" | "apiSecret", string>>>({});
+  const [revealingCredential, setRevealingCredential] = useState<"apiKey" | "apiSecret" | null>(null);
   const [authTestResult, setAuthTestResult] = useState<{ expiresAt: string | null; isLonglive: boolean } | null>(null);
 
   useEffect(() => {
@@ -4531,9 +4533,45 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
   const activeSavedConfig =
     savedConfig?.locationId === selectedLocationId ? savedConfig : undefined;
 
+  const toggleCredentialVisibility = async (field: "apiKey" | "apiSecret") => {
+    const isVisible = field === "apiKey" ? showApiKey : showApiSecret;
+    const setVisible = field === "apiKey" ? setShowApiKey : setShowApiSecret;
+    if (isVisible) {
+      setVisible(false);
+      return;
+    }
+
+    if (form[field] === "********" && !revealedCredentials[field]) {
+      if (!selectedLocationId) return;
+      setRevealingCredential(field);
+      try {
+        const response = await apiRequest("POST", "/api/call-center/voip24h/config/reveal", {
+          locationId: selectedLocationId,
+          field,
+        });
+        const data = await response.json();
+        if (typeof data.value !== "string") throw new Error("Không nhận được thông tin đã lưu.");
+        setRevealedCredentials((current) => ({ ...current, [field]: data.value }));
+      } catch (error: any) {
+        toast({
+          title: "Không thể hiện thông tin",
+          description: error?.message || "Không đọc được thông tin đã lưu.",
+          variant: "destructive",
+        });
+        return;
+      } finally {
+        setRevealingCredential(null);
+      }
+    }
+    setVisible(true);
+  };
+
   useEffect(() => {
     setForm({ apiKey: "", apiSecret: "", isLonglive: true, sipServerIp: "" });
     setAuthTestResult(null);
+    setRevealedCredentials({});
+    setShowApiKey(false);
+    setShowApiSecret(false);
   }, [selectedLocationId]);
 
   useEffect(() => {
@@ -4596,6 +4634,9 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
     },
     onSuccess: (data: { message?: string }) => {
       toast({ title: "Đã lưu cấu hình", description: data.message || "Đã lưu cấu hình VoIP24H cho cơ sở này." });
+      setRevealedCredentials({});
+      setShowApiKey(false);
+      setShowApiSecret(false);
       queryClient.invalidateQueries({ queryKey: ["/api/call-center/voip24h/config", selectedLocationId] });
       queryClient.invalidateQueries({ queryKey: ["/api/call-center/staff-provider-lines"] });
     },
@@ -4648,7 +4689,7 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
                 Khách hàng / Cơ sở
               </label>
               <Select value={selectedLocationId} onValueChange={setSelectedLocationId}>
-                <SelectTrigger data-testid="select-voip24h-location">
+                <SelectTrigger data-testid="select-voip24h-location" disabled={Boolean(revealingCredential)}>
                   <SelectValue placeholder="Chọn khách hàng / cơ sở" />
                 </SelectTrigger>
                 <SelectContent>
@@ -4674,8 +4715,12 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
             <div className="relative">
               <Input
                 type={showApiKey ? "text" : "password"}
-                value={form.apiKey}
-                onChange={e => { setForm(p => ({ ...p, apiKey: e.target.value })); setAuthTestResult(null); }}
+                value={form.apiKey === "********" && showApiKey ? revealedCredentials.apiKey ?? "********" : form.apiKey}
+                onChange={e => {
+                  setForm(p => ({ ...p, apiKey: e.target.value }));
+                  setRevealedCredentials(current => ({ ...current, apiKey: undefined }));
+                  setAuthTestResult(null);
+                }}
                 placeholder={activeSavedConfig?.hasApiKey ? "Đã lưu — nhập giá trị mới nếu cần thay đổi" : "Nhập API Key VOIP24H"}
                 className="pr-9"
                 autoComplete="new-password"
@@ -4683,11 +4728,12 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
               />
               <button
                 type="button"
-                onClick={() => setShowApiKey(value => !value)}
+                onClick={() => void toggleCredentialVisibility("apiKey")}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 aria-label={showApiKey ? "Ẩn API Key" : "Hiện API Key"}
+                disabled={revealingCredential === "apiKey"}
               >
-                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {revealingCredential === "apiKey" ? <Loader2 className="h-4 w-4 animate-spin" /> : showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
           </div>
@@ -4697,8 +4743,12 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
             <div className="relative">
               <Input
                 type={showApiSecret ? "text" : "password"}
-                value={form.apiSecret}
-                onChange={e => { setForm(p => ({ ...p, apiSecret: e.target.value })); setAuthTestResult(null); }}
+                value={form.apiSecret === "********" && showApiSecret ? revealedCredentials.apiSecret ?? "********" : form.apiSecret}
+                onChange={e => {
+                  setForm(p => ({ ...p, apiSecret: e.target.value }));
+                  setRevealedCredentials(current => ({ ...current, apiSecret: undefined }));
+                  setAuthTestResult(null);
+                }}
                 placeholder={activeSavedConfig?.hasApiSecret ? "Đã lưu — nhập giá trị mới nếu cần thay đổi" : "Nhập API Secret VOIP24H"}
                 className="pr-9"
                 autoComplete="new-password"
@@ -4706,12 +4756,13 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
               />
               <button
                 type="button"
-                onClick={() => setShowApiSecret(value => !value)}
+                onClick={() => void toggleCredentialVisibility("apiSecret")}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 aria-label={showApiSecret ? "Ẩn API Secret" : "Hiện API Secret"}
                 data-testid="button-toggle-voip24h-api-secret"
+                disabled={revealingCredential === "apiSecret"}
               >
-                {showApiSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {revealingCredential === "apiSecret" ? <Loader2 className="h-4 w-4 animate-spin" /> : showApiSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
           </div>
