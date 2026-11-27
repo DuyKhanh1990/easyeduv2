@@ -5,7 +5,7 @@ description: Safe troubleshooting for VoIP24H authentication responses.
 
 Authentication diagnostics may expose the provider HTTP status, numeric status code, and response field names only. Never log or return API keys, API secrets, raw provider payloads, or access-token values.
 
-The provider's authentication page is internally inconsistent: its request summary lists a Bearer JWT header, while the executable authentication example omits it and describes this endpoint as the step that issues the token needed by later APIs. For the initial token request, follow the executable example and do not invent a Bearer value.
+The provider's authentication page is internally inconsistent: its request summary lists a Bearer JWT header, while the executable authentication example omits it and describes this endpoint as the step that issues the token needed by later APIs. The schema table marks `isLonglive` as an optional boolean, while the example serializes it as a string. For the initial token request, follow the bootstrap flow without an invented Bearer value and prefer the schema table's boolean type; an omitted-field retry can diagnose compatibility.
 
 **Why:** The user approved diagnostics for the provider response mismatch while preserving the secrecy of credentials and tokens.
 

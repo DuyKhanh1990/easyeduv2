@@ -68,13 +68,12 @@ export async function authenticateVoip24h(
   signal?: AbortSignal,
   options: { omitIsLonglive?: boolean } = {},
 ): Promise<Voip24hAuthResult> {
-  const requestBody: Record<string, string> = {
+  const requestBody: Record<string, string | boolean> = {
     apiKey: credentials.apiKey,
     apiSecret: credentials.apiSecret,
   };
   if (!options.omitIsLonglive) {
-    // The provider's executable example sends this field as the string "true"/"false".
-    requestBody.isLonglive = String(credentials.isLonglive);
+    requestBody.isLonglive = credentials.isLonglive;
   }
 
   const response = await fetch(VOIP24H_AUTH_URL, {
