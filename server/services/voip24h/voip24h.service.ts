@@ -66,16 +66,21 @@ const tokenRequests = new Map<string, { fingerprint: string; promise: Promise<st
 export async function authenticateVoip24h(
   credentials: Voip24hCredentials,
   signal?: AbortSignal,
+  options: { omitIsLonglive?: boolean } = {},
 ): Promise<Voip24hAuthResult> {
+  const requestBody: Record<string, string> = {
+    apiKey: credentials.apiKey,
+    apiSecret: credentials.apiSecret,
+  };
+  if (!options.omitIsLonglive) {
+    // The provider's executable example sends this field as the string "true"/"false".
+    requestBody.isLonglive = String(credentials.isLonglive);
+  }
+
   const response = await fetch(VOIP24H_AUTH_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      apiKey: credentials.apiKey,
-      apiSecret: credentials.apiSecret,
-        // The provider's executable example sends this field as the string "true"/"false".
-        isLonglive: String(credentials.isLonglive),
-    }),
+    body: JSON.stringify(requestBody),
     signal,
   });
 

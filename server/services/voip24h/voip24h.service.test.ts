@@ -48,6 +48,27 @@ describe("authenticateVoip24h", () => {
     });
   });
 
+  it("can omit the optional lifetime flag for the compatibility retry", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      message: "Success",
+      status: 1000,
+      data: { token: "test-access-token" },
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await authenticateVoip24h(
+      { apiKey: "test-api-key", apiSecret: "test-api-secret", isLonglive: true },
+      undefined,
+      { omitIsLonglive: true },
+    );
+
+    const [, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(request.body))).toEqual({
+      apiKey: "test-api-key",
+      apiSecret: "test-api-secret",
+    });
+  });
+
   it("rejects responses that do not contain a successful status and token", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
       message: "Invalid API credentials",

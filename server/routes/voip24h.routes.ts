@@ -246,6 +246,10 @@ async function checkCallHistoryPermission(req: any): Promise<boolean> {
   return permissions.canView || permissions.canViewAll;
 }
 
+function isVoip24hUnauthorized(error: unknown): boolean {
+  return error instanceof Error && /HTTP 401|provider status=401/.test(error.message);
+}
+
 export function registerVoip24hRoutes(app: Express) {
   app.get("/api/call-center/voip24h/config", async (req, res) => {
     if (!req.isSuperAdmin) return res.status(403).json({ message: "Chỉ Super Admin được truy cập" });
@@ -458,16 +462,34 @@ export function registerVoip24hRoutes(app: Express) {
         return res.status(400).json({ message: "Vui lòng nhập API Key và API Secret trước khi kiểm tra." });
       }
 
-      const result = await authenticateVoip24h({
+      const credentials = {
         apiKey,
         apiSecret,
         isLonglive: body.isLonglive ?? saved?.isLonglive ?? true,
-      }, controller.signal);
+      };
+      let result: Awaited<ReturnType<typeof authenticateVoip24h>>;
+      let usedDefaultLifetime = false;
+      try {
+        result = await authenticateVoip24h(credentials, controller.signal);
+      } catch (error) {
+        if (!isVoip24hUnauthorized(error)) throw error;
+        try {
+          // isLonglive is optional in the provider schema; retry once without it to isolate the documented type mismatch.
+          result = await authenticateVoip24h(credentials, controller.signal, { omitIsLonglive: true });
+          usedDefaultLifetime = true;
+        } catch (retryError: any) {
+          const firstMessage = error instanceof Error ? error.message : "Request mẫu thất bại";
+          const retryMessage = retryError instanceof Error ? retryError.message : "Request không có isLonglive thất bại";
+          throw new Error(`${firstMessage} Thử bỏ trường tùy chọn isLonglive cũng thất bại: ${retryMessage}`);
+        }
+      }
 
       // Never return the provider's access token to the browser or write it to logs.
       return res.json({
         ok: true,
-        message: "Xác thực VOIP24H thành công.",
+        message: usedDefaultLifetime
+          ? "Xác thực thành công khi bỏ isLonglive tùy chọn; token dùng thời hạn mặc định của VOIP24H."
+          : "Xác thực VOIP24H thành công.",
         createAt: result.createAt,
         expiresAt: result.expiresAt,
         isLonglive: result.isLonglive,
