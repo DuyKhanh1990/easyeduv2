@@ -31,6 +31,10 @@ const revealConfigSchema = z.object({
   locationId: locationIdSchema,
   field: z.enum(["apiKey", "apiSecret"]),
 });
+const revealStaffSipPasswordSchema = z.object({
+  locationId: locationIdSchema,
+  staffId: z.string().uuid(),
+});
 const voipDialSchema = z.object({
   locationId: locationIdSchema,
   phone: z.string().trim().min(6).max(50),
@@ -415,6 +419,39 @@ export function registerVoip24hRoutes(app: Express) {
     } catch (error: any) {
       console.error("[Call Center] Read staff provider lines failed:", error?.message || error);
       return res.status(500).json({ message: "Không thể đọc kết nối tổng đài của nhân sự" });
+    }
+  });
+
+  app.post("/api/call-center/voip24h/staff-sip-password/reveal", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    if (!(req.user as any)?.id) return res.status(401).json({ message: "Yêu cầu đăng nhập" });
+    if (req.isStudent) return res.status(403).json({ message: "Tài khoản học viên không được xem mật khẩu máy nhánh." });
+
+    const parsed = revealStaffSipPasswordSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Thông tin nhân sự hoặc cơ sở không hợp lệ." });
+    const { locationId, staffId } = parsed.data;
+    const allowedLocationIds = new Set(req.allowedLocationIds || []);
+    if (!req.isSuperAdmin && !allowedLocationIds.has(locationId)) {
+      return res.status(403).json({ message: "Bạn không có quyền truy cập cơ sở này." });
+    }
+
+    try {
+      const [assignment] = await db.select({ id: staffAssignments.id })
+        .from(staffAssignments)
+        .innerJoin(staff, eq(staff.id, staffAssignments.staffId))
+        .where(and(
+          eq(staffAssignments.staffId, staffId),
+          eq(staffAssignments.locationId, locationId),
+        ))
+        .limit(1);
+      if (!assignment) return res.status(403).json({ message: "Nhân sự này chưa được phân công tại cơ sở đã chọn." });
+
+      const password = (await getSavedSipPasswordMap(locationId))[staffId];
+      if (!password) return res.status(404).json({ message: "Chưa có mật khẩu SIP được lưu cho máy nhánh này." });
+      return res.json({ password });
+    } catch (error: any) {
+      console.error("[VoIP24H] Reveal staff SIP password failed:", error?.message || error);
+      return res.status(500).json({ message: "Không thể đọc mật khẩu SIP đã lưu." });
     }
   });
 

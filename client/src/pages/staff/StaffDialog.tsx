@@ -118,6 +118,8 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
   const [isCroppingAvatar, setIsCroppingAvatar] = useState(false);
   const [visibleOmicallPasswords, setVisibleOmicallPasswords] = useState<Record<string, boolean>>({});
   const [visibleVoip24hSipPasswords, setVisibleVoip24hSipPasswords] = useState<Record<string, boolean>>({});
+  const [revealedVoip24hSipPasswords, setRevealedVoip24hSipPasswords] = useState<Record<string, string>>({});
+  const [loadingVoip24hSipPasswords, setLoadingVoip24hSipPasswords] = useState<Record<string, boolean>>({});
   const [availableVoipExtensions, setAvailableVoipExtensions] = useState<Record<string, string[]>>({});
   const [loadingVoipExtensionsLocation, setLoadingVoipExtensionsLocation] = useState<string | null>(null);
   const codeAutoRef = useRef(!staff);
@@ -158,6 +160,8 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
       codeAutoRef.current = !isEditing;
       setVisibleOmicallPasswords({});
       setVisibleVoip24hSipPasswords({});
+      setRevealedVoip24hSipPasswords({});
+      setLoadingVoip24hSipPasswords({});
       voip24hManualEditsRef.current = {};
       form.reset({
         fullName: staff?.fullName || "",
@@ -187,6 +191,10 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
         status: staff?.status || "Hoạt động",
         dateOfBirth: staff?.dateOfBirth ? new Date(staff.dateOfBirth).toISOString().split('T')[0] : "",
       });
+    } else {
+      setVisibleVoip24hSipPasswords({});
+      setRevealedVoip24hSipPasswords({});
+      setLoadingVoip24hSipPasswords({});
     }
   }, [open, staff]);
 
@@ -510,6 +518,47 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
       return;
     }
     setShowPassword((visible) => !visible);
+  };
+
+  const handleVoip24hSipPasswordVisibility = async (locationId: string) => {
+    if (visibleVoip24hSipPasswords[locationId]) {
+      setVisibleVoip24hSipPasswords((current) => ({ ...current, [locationId]: false }));
+      return;
+    }
+
+    const enteredPassword = form.getValues("voip24hSipPasswords")?.[locationId];
+    if (enteredPassword || revealedVoip24hSipPasswords[locationId]) {
+      setVisibleVoip24hSipPasswords((current) => ({ ...current, [locationId]: true }));
+      return;
+    }
+
+    const hasSavedPassword = Boolean(providerLinesData?.voip24hSipPasswordsConfigured?.[locationId]);
+    if (!staff?.id || !hasSavedPassword) {
+      setVisibleVoip24hSipPasswords((current) => ({ ...current, [locationId]: true }));
+      return;
+    }
+
+    setLoadingVoip24hSipPasswords((current) => ({ ...current, [locationId]: true }));
+    try {
+      const response = await apiRequest("POST", "/api/call-center/voip24h/staff-sip-password/reveal", {
+        staffId: staff.id,
+        locationId,
+      });
+      const result = await response.json();
+      if (typeof result.password !== "string" || !result.password) {
+        throw new Error("Mật khẩu SIP đã lưu không đọc được.");
+      }
+      setRevealedVoip24hSipPasswords((current) => ({ ...current, [locationId]: result.password }));
+      setVisibleVoip24hSipPasswords((current) => ({ ...current, [locationId]: true }));
+    } catch (error: any) {
+      toast({
+        title: "Không thể hiển thị mật khẩu SIP",
+        description: error?.message || "Mật khẩu máy nhánh chưa được lưu hoặc bạn không có quyền xem.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingVoip24hSipPasswords((current) => ({ ...current, [locationId]: false }));
+    }
   };
 
   const FL = "text-[11px] font-semibold text-slate-500 uppercase tracking-wide";
@@ -938,13 +987,18 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
                               <div className="relative">
                                 <Input
                                   type={visibleVoip24hSipPasswords[line.locationId] ? "text" : "password"}
-                                  value={form.watch("voip24hSipPasswords")?.[line.locationId] || ""}
-                                  onChange={(event) =>
+                                  value={form.watch("voip24hSipPasswords")?.[line.locationId] ?? revealedVoip24hSipPasswords[line.locationId] ?? ""}
+                                  onChange={(event) => {
+                                    setRevealedVoip24hSipPasswords((current) => {
+                                      const next = { ...current };
+                                      delete next[line.locationId];
+                                      return next;
+                                    });
                                     form.setValue("voip24hSipPasswords", {
                                       ...(form.getValues("voip24hSipPasswords") || {}),
                                       [line.locationId]: event.target.value,
                                     }, { shouldDirty: true })
-                                  }
+                                  }}
                                   placeholder={providerLinesData?.voip24hSipPasswordsConfigured?.[line.locationId] ? "Để trống để giữ nguyên" : "Nhập mật khẩu máy nhánh"}
                                   className={cn(INP, "mt-1 pr-10")}
                                   autoComplete="new-password"
@@ -952,19 +1006,21 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
                                 />
                                 <button
                                   type="button"
-                                  onClick={() => setVisibleVoip24hSipPasswords((current) => ({
-                                    ...current,
-                                    [line.locationId]: !current[line.locationId],
-                                  }))}
+                                  onClick={() => handleVoip24hSipPasswordVisibility(line.locationId)}
+                                  disabled={Boolean(loadingVoip24hSipPasswords[line.locationId])}
                                   className="absolute right-2 top-1/2 mt-0.5 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
                                   aria-label={visibleVoip24hSipPasswords[line.locationId] ? "Ẩn mật khẩu SIP" : "Hiện mật khẩu SIP"}
                                   aria-pressed={Boolean(visibleVoip24hSipPasswords[line.locationId])}
                                 >
-                                  {visibleVoip24hSipPasswords[line.locationId] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                  {loadingVoip24hSipPasswords[line.locationId]
+                                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                                    : visibleVoip24hSipPasswords[line.locationId]
+                                      ? <EyeOff className="h-4 w-4" />
+                                      : <Eye className="h-4 w-4" />}
                                 </button>
                               </div>
                               <p className="mt-1 text-[11px] text-muted-foreground">
-                                Cần cho đăng nhập WebRTC; mật khẩu được mã hóa và không trả lại khi mở hồ sơ.
+                                Mật khẩu được mã hóa; bấm biểu tượng mắt để tải và xem mật khẩu đã lưu.
                               </p>
                             </div>
                           ) : (

@@ -5,8 +5,8 @@ description: Product rule for shared call-center credentials and per-staff provi
 
 Store provider connection credentials once per center in Settings. Assign extensions to each employee at each assigned center in the staff profile, with a separate labeled row for every provider configured at that center.
 
-VoIP24H uses the center-level API Key/Secret and requires only the employee's extension. Omicall has its own extension and may require a separate SIP password. Do not reuse one provider's extension or password for another provider.
+VoIP24H's REST click-to-call uses the center-level API Key/Secret and employee extension. Browser WebRTC registration additionally requires that employee's per-center SIP password; never use the API Secret as that password. Omicall has its own extension and may require a separate SIP password.
 
-**Why:** The user wants one staff interface that makes multi-provider assignments clear without duplicating configuration screens; VoIP24H's dial API authenticates with the shared provider account rather than a per-extension password.
+**Why:** REST API authentication does not register a browser SIP extension; WebRTC registration uses per-extension SIP credentials.
 
-**How to apply:** When adding a call-center provider, keep shared credentials in its center configuration and add provider-specific fields to the existing staff assignment section. Show one row per configured provider and assigned center; do not render inactive/unconfigured providers.
+**How to apply:** Keep shared provider credentials at the center level and per-employee extensions/passwords in staff assignments. Keep each provider's credentials separate and show one row per configured provider and assigned center.
