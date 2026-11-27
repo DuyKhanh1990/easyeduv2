@@ -4590,6 +4590,7 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
         apiKey: apiKeyToSend,
         apiSecret: apiSecretToSend,
         isLonglive: form.isLonglive,
+        sipServerIp: form.sipServerIp.trim(),
       });
       return res.json();
     },
@@ -4744,7 +4745,7 @@ function Voip24hConfig({ onSelectOmicall }: { onSelectOmicall: () => void }) {
               data-testid="input-voip24h-sip-server-ip"
             />
             <p className="mt-1 text-xs text-muted-foreground">
-              Dùng để đăng nhập máy nhánh WebRTC trên trình duyệt; không ảnh hưởng đến gọi qua softphone.
+              Nhập IP máy chủ SIP/WebRTC do VoIP24H cung cấp, không phải IP mạng của trung tâm. Tài liệu demo ghi “IP tổng đài”; hãy xác nhận đây là IP WebRTC. Chỉ dùng để đăng nhập máy nhánh trên trình duyệt.
             </p>
           </div>
 
