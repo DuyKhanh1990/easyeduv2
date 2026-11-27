@@ -85,7 +85,9 @@ export async function authenticateVoip24h(
 
   const payload = await response.json().catch(() => null) as any;
   const token = typeof payload?.data?.token === "string" ? payload.data.token : "";
-  if (!response.ok || Number(payload?.status) !== 1000 || !token) {
+  const providerStatus = Number(payload?.status);
+  const isSuccessfulProviderStatus = providerStatus === 200 || providerStatus === 1000;
+  if (!response.ok || !isSuccessfulProviderStatus || !token) {
     const statusSummary = typeof payload?.status === "number"
       || (typeof payload?.status === "string" && /^\d{1,8}$/.test(payload.status))
       ? String(payload.status)
@@ -94,8 +96,8 @@ export async function authenticateVoip24h(
         : `non-numeric (${typeof payload.status})`;
     const reason = !response.ok
       ? `HTTP ${response.status} is not successful`
-      : Number(payload?.status) !== 1000
-        ? "provider status is not 1000"
+      : !isSuccessfulProviderStatus
+        ? "provider status is neither 200 nor 1000"
         : "expected string token at data.token is missing";
     throw new Error(
       `VOIP24H authentication response mismatch: ${reason}; `
@@ -108,14 +110,16 @@ export async function authenticateVoip24h(
   return {
     token,
     createAt: typeof payload?.data?.createAt === "string" ? payload.data.createAt : null,
-    expiresAt: typeof payload?.data?.expried === "string"
-      ? payload.data.expried
-      : typeof payload?.data?.expired === "string"
-        ? payload.data.expired
+    expiresAt: typeof payload?.data?.expired === "string"
+      ? payload.data.expired
+      : typeof payload?.data?.expried === "string"
+        ? payload.data.expried
         : null,
-    isLonglive: typeof payload?.data?.isLonglive === "boolean"
-      ? payload.data.isLonglive
-      : credentials.isLonglive,
+    isLonglive: typeof payload?.data?.isLongLive === "boolean"
+      ? payload.data.isLongLive
+      : typeof payload?.data?.isLonglive === "boolean"
+        ? payload.data.isLonglive
+        : credentials.isLonglive,
   };
 }
 

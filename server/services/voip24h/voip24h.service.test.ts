@@ -12,15 +12,15 @@ afterEach(() => {
 });
 
 describe("authenticateVoip24h", () => {
-  it("sends API credentials and the documented boolean lifetime flag, then parses the response", async () => {
+  it("accepts provider status 200 and the current response field casing", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       message: "Success",
-      status: 1000,
+      status: 200,
       data: {
         token: "test-access-token",
         createAt: "2026-11-21 10:00:00",
-        expried: "2026-11-28 10:00:00",
-        isLonglive: true,
+        expired: "2026-11-28 10:00:00",
+        isLongLive: true,
       },
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
@@ -48,15 +48,19 @@ describe("authenticateVoip24h", () => {
     });
   });
 
-  it("can omit the optional lifetime flag for the compatibility retry", async () => {
+  it("accepts legacy status and response field casing without the optional flag", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       message: "Success",
       status: 1000,
-      data: { token: "test-access-token" },
+      data: {
+        token: "test-access-token",
+        expried: "2026-11-28 10:00:00",
+        isLonglive: false,
+      },
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await authenticateVoip24h(
+    const result = await authenticateVoip24h(
       { apiKey: "test-api-key", apiSecret: "test-api-secret", isLonglive: true },
       undefined,
       { omitIsLonglive: true },
@@ -66,6 +70,12 @@ describe("authenticateVoip24h", () => {
     expect(JSON.parse(String(request.body))).toEqual({
       apiKey: "test-api-key",
       apiSecret: "test-api-secret",
+    });
+    expect(result).toEqual({
+      token: "test-access-token",
+      createAt: null,
+      expiresAt: "2026-11-28 10:00:00",
+      isLonglive: false,
     });
   });
 
@@ -89,7 +99,7 @@ describe("authenticateVoip24h", () => {
 
     expect(authError).toBeInstanceOf(Error);
     expect((authError as Error).message).toContain(
-      "provider status is not 1000; provider status=4001; "
+      "provider status is neither 200 nor 1000; provider status=4001; "
       + "top-level fields=[message, status, data]; data fields=[none]",
     );
   });
