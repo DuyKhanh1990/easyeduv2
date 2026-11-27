@@ -94,7 +94,7 @@ export const navigation: NavEntry[] = [
         href: "/my-space/calendar",
         icon: CalendarDays,
         visibilitySubTabs: [
-          { value: "schedule-registration", name: "Đăng ký lịch" },
+          { value: "schedule-registration", name: "Đăng ký lịch", defaultVisible: false },
         ],
       },
       { name: "Bài tập của tôi", href: "/my-space/assignments", icon: ClipboardList },

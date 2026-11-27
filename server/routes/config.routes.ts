@@ -2801,6 +2801,7 @@ export function registerConfigRoutes(app: Express): void {
           "item:/reconciliation": false,
         };
         const availabilityMigrationKey = "sidebarVisibilityAvailabilityDefaultOffV1";
+        const scheduleRegistrationMigrationKey = "sidebarVisibilityScheduleRegistrationDefaultOffV1";
         await tx.insert(systemSettings)
           .values({ key: migrationKey, value: "pending" })
           .onConflictDoNothing();
@@ -2819,13 +2820,28 @@ export function registerConfigRoutes(app: Express): void {
           .where(eq(systemSettings.key, availabilityMigrationKey))
           .for("update")
           .limit(1);
+        await tx.insert(systemSettings)
+          .values({ key: scheduleRegistrationMigrationKey, value: "pending" })
+          .onConflictDoNothing();
+        const [scheduleRegistrationMigration] = await tx.select({ value: systemSettings.value })
+          .from(systemSettings)
+          .where(eq(systemSettings.key, scheduleRegistrationMigrationKey))
+          .for("update")
+          .limit(1);
         if (migration?.value !== "done") {
           Object.assign(current, defaultOffs);
         }
         if (availabilityMigration?.value !== "done") {
           current["item:/my-space/availability"] = false;
         }
-        if (migration?.value !== "done" || availabilityMigration?.value !== "done") {
+        if (scheduleRegistrationMigration?.value !== "done") {
+          current["subtab:/my-space/calendar:schedule-registration"] = false;
+        }
+        if (
+          migration?.value !== "done"
+          || availabilityMigration?.value !== "done"
+          || scheduleRegistrationMigration?.value !== "done"
+        ) {
           const value = JSON.stringify(current);
           await tx.insert(systemSettings)
             .values({ key: "sidebarVisibility", value })
@@ -2838,6 +2854,12 @@ export function registerConfigRoutes(app: Express): void {
             .where(eq(systemSettings.key, migrationKey));
           await tx.insert(systemSettings)
             .values({ key: availabilityMigrationKey, value: "done" })
+            .onConflictDoUpdate({
+              target: systemSettings.key,
+              set: { value: "done", updatedAt: new Date() },
+            });
+          await tx.insert(systemSettings)
+            .values({ key: scheduleRegistrationMigrationKey, value: "done" })
             .onConflictDoUpdate({
               target: systemSettings.key,
               set: { value: "done", updatedAt: new Date() },
