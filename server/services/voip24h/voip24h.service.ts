@@ -273,23 +273,28 @@ export async function dialVoip24h(
   const payload = await response.json().catch(() => null) as any;
   const operation = payload?.data;
   const call = operation?.data;
+  const callId = String(call?.callid ?? "").trim();
+  const state = String(call?.state ?? "").trim();
   if (
     !response.ok ||
     Number(payload?.status) !== 200 ||
     Number(operation?.status) !== 1000 ||
     !call ||
-    typeof call !== "object"
+    typeof call !== "object" ||
+    !callId ||
+    !state
   ) {
-    const detail = typeof operation?.message === "string"
+    const providerMessage = typeof operation?.message === "string"
       ? operation.message
       : typeof payload?.message === "string"
         ? payload.message
         : "";
-    throw new Error(detail || `VOIP24H không khởi tạo được cuộc gọi (HTTP ${response.status}).`);
+    const detail = /^(success|ok)$/i.test(providerMessage.trim()) ? "" : providerMessage;
+    throw new Error(detail || `VOIP24H chưa xác nhận cuộc gọi: phản hồi thiếu mã cuộc gọi hoặc trạng thái (HTTP ${response.status}).`);
   }
   return {
-    callId: String(call.callid || ""),
-    state: String(call.state || ""),
+    callId,
+    state,
     phone: String(call.phone || input.phone),
     extension: String(call.extension || input.extension),
   };

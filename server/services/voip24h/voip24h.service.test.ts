@@ -290,4 +290,29 @@ describe("VoIP24H extension list and click-to-call", () => {
       .toBe("application/x-www-form-urlencoded");
     expect(String(request.body)).toBe("extension=201&phone=0900000000");
   });
+
+  it("rejects a dial response that omits the provider call id or state", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        status: 1000,
+        data: { token: "dial-access-token" },
+      }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        status: 200,
+        message: "success",
+        data: {
+          status: 1000,
+          message: "Success",
+          data: { callid: "", state: "", phone: "0900000000", extension: "201" },
+        },
+      }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(dialVoip24h({
+      apiKey: "dial-api-key",
+      apiSecret: "dial-api-secret",
+      isLonglive: true,
+    }, "voip-dial-test-location", { extension: "201", phone: "0900000000" }))
+      .rejects.toThrow("VOIP24H chưa xác nhận cuộc gọi");
+  });
 });

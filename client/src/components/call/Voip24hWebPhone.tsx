@@ -37,7 +37,7 @@ type DirectCallRequest = {
   displayName?: string;
 };
 
-type PhoneStatus = "idle" | "loading" | "registering" | "registered" | "calling" | "incoming" | "active" | "error";
+type PhoneStatus = "idle" | "loading" | "registering" | "registered" | "calling" | "incoming" | "answering" | "active" | "error";
 
 function readIncomingNumber(data: unknown): string {
   if (typeof data === "string" || typeof data === "number") return String(data);
@@ -269,11 +269,12 @@ export function Voip24hWebPhone() {
   };
 
   const answerCall = () => {
+    setStatus("answering");
+    setError("");
     try {
       voip24hWebRtc.answer();
-      setStatus("active");
-      setError("");
     } catch (callError) {
+      setStatus("incoming");
       setError(getErrorMessage(callError));
     }
   };
@@ -340,11 +341,12 @@ export function Voip24hWebPhone() {
     registered: "Đã kết nối, sẵn sàng gọi",
     calling: "Đang gọi…",
     incoming: "Có cuộc gọi đến",
+    answering: "Đã nghe máy, đang kết nối…",
     active: "Đang trong cuộc gọi",
     error: "Không kết nối được",
   };
   const busy = status === "loading" || status === "registering";
-  const inCall = status === "calling" || status === "active";
+  const inCall = status === "calling" || status === "answering" || status === "active";
 
   return (
     <div className="fixed bottom-4 right-4 z-[10020] font-sans">
