@@ -163,3 +163,4 @@
 - [Teacher availability semantics](teacher-availability-semantics.md) — registrations are optional; an active registration constrains scheduling, but no active record means free availability.
 - [Teacher booking packages and receipts](teacher-booking-deposit-receipt.md) — exact selected sessions consume package availability; new package receipts debit deposit once, with delayed booking kept separate.
 - [Schedule registration tab visibility](schedule-registration-tab-visibility.md) — the registration tab has a system-wide show/hide switch; hiding it affects presentation, not booking APIs or data.
+- [VoIP24H authentication diagnostics](voip24h-auth-diagnostics.md) — diagnose response shape using status and field names only; never log or return credentials or tokens.

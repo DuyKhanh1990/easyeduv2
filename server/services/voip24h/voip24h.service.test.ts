@@ -55,11 +55,52 @@ describe("authenticateVoip24h", () => {
       data: {},
     }), { status: 200, headers: { "Content-Type": "application/json" } })));
 
-    await expect(authenticateVoip24h({
-      apiKey: "invalid",
-      apiSecret: "invalid",
-      isLonglive: false,
-    })).rejects.toThrow("Invalid API credentials");
+    let authError: unknown;
+    try {
+      await authenticateVoip24h({
+        apiKey: "invalid",
+        apiSecret: "invalid",
+        isLonglive: false,
+      });
+    } catch (error) {
+      authError = error;
+    }
+
+    expect(authError).toBeInstanceOf(Error);
+    expect((authError as Error).message).toContain(
+      "provider status is not 1000; provider status=4001; "
+      + "top-level fields=[message, status, data]; data fields=[none]",
+    );
+  });
+
+  it("reports safe response-field diagnostics without exposing token values", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      message: "Success",
+      status: 1000,
+      data: {
+        access_token: "must-not-appear-in-error",
+        token_type: "Bearer",
+      },
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    let authError: unknown;
+    try {
+      await authenticateVoip24h({
+        apiKey: "test-api-key",
+        apiSecret: "test-api-secret",
+        isLonglive: true,
+      });
+    } catch (error) {
+      authError = error;
+    }
+
+    expect(authError).toBeInstanceOf(Error);
+    const errorMessage = (authError as Error).message;
+    expect(errorMessage).toContain(
+      "expected string token at data.token is missing; provider status=1000; "
+      + "top-level fields=[message, status, data]; data fields=[access_token, token_type]",
+    );
+    expect(errorMessage).not.toContain("must-not-appear-in-error");
   });
 });
 

@@ -6,6 +6,14 @@ const VOIP24H_CALL_RECORDING_URL = "https://api.voip24h.vn/v3/call/recording";
 const VOIP24H_EXTENSION_LIST_URL = "https://api.voip24h.vn/v3/extension/list";
 const VOIP24H_CALL_DIAL_URL = "https://api.voip24h.vn/v3/call/dial";
 
+function responseFieldNames(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "none";
+  const names = Object.keys(value)
+    .filter((name) => /^[A-Za-z][A-Za-z0-9_]*$/.test(name))
+    .slice(0, 20);
+  return names.length ? names.join(", ") : "none";
+}
+
 export type Voip24hCredentials = {
   apiKey: string;
   apiSecret: string;
@@ -74,8 +82,23 @@ export async function authenticateVoip24h(
   const payload = await response.json().catch(() => null) as any;
   const token = typeof payload?.data?.token === "string" ? payload.data.token : "";
   if (!response.ok || Number(payload?.status) !== 1000 || !token) {
-    const detail = typeof payload?.message === "string" ? payload.message : "";
-    throw new Error(detail || `VOIP24H không xác thực được (HTTP ${response.status}).`);
+    const statusSummary = typeof payload?.status === "number"
+      || (typeof payload?.status === "string" && /^\d{1,8}$/.test(payload.status))
+      ? String(payload.status)
+      : payload?.status == null
+        ? "missing"
+        : `non-numeric (${typeof payload.status})`;
+    const reason = !response.ok
+      ? `HTTP ${response.status} is not successful`
+      : Number(payload?.status) !== 1000
+        ? "provider status is not 1000"
+        : "expected string token at data.token is missing";
+    throw new Error(
+      `VOIP24H authentication response mismatch: ${reason}; `
+      + `provider status=${statusSummary}; `
+      + `top-level fields=[${responseFieldNames(payload)}]; `
+      + `data fields=[${responseFieldNames(payload?.data)}].`,
+    );
   }
 
   return {
