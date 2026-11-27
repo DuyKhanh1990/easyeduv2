@@ -312,7 +312,7 @@ describe("VoIP24H extension list and click-to-call", () => {
       apiKey: "dial-api-key",
       apiSecret: "dial-api-secret",
       isLonglive: true,
-    }, "voip-dial-test-location", { extension: "201", phone: "0900000000" }))
+    }, "voip-dial-empty-response-test-location", { extension: "201", phone: "0900000000" }))
       .rejects.toThrow("VOIP24H chưa xác nhận cuộc gọi: phản hồi thiếu mã cuộc gọi hoặc trạng thái");
   });
 
@@ -333,7 +333,7 @@ describe("VoIP24H extension list and click-to-call", () => {
       apiKey: "dial-api-key",
       apiSecret: "dial-api-secret",
       isLonglive: true,
-    }, "voip-dial-test-location", { extension: "201", phone: "0900000000" }))
+    }, "voip-dial-provider-error-test-location", { extension: "201", phone: "0900000000" }))
       .rejects.toThrow("VoIP24H từ chối lệnh gọi (HTTP 200; status=200; data.status=2000)");
   });
 });
