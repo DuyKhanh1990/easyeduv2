@@ -70,8 +70,31 @@ type StaffProviderLine = {
   locationName: string;
   provider: "omicall" | "voip24h";
 };
+type StaffProviderLinesResponse = {
+  providers: StaffProviderLine[];
+  voip24hExtensions: Record<string, string>;
+  voip24hSipPasswordsConfigured: Record<string, boolean>;
+};
 const STORED_PASSWORD_MASK = "••••••••";
 const AVATAR_CROP_SIZE = 280;
+
+async function fetchStaffProviderLines(
+  locationIds: string,
+  staffId?: string,
+): Promise<StaffProviderLinesResponse> {
+  const params = new URLSearchParams({ locationIds });
+  if (staffId) params.set("staffId", staffId);
+  const response = await fetch(`/api/call-center/staff-provider-lines?${params}`, {
+    credentials: "include",
+    cache: "no-store",
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || "Không thể tải cấu hình tổng đài theo cơ sở");
+  }
+  return response.json();
+}
 
 function clampAvatarOffset(
   offset: { x: number; y: number },
@@ -204,27 +227,12 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
   const omicallExtensions = form.watch("omicallExtensions");
   const omicallPasswords = form.watch("omicallPasswords");
   const locationIdsKey = [...new Set(selectedLocationIds || [])].sort().join(",");
-  const { data: providerLinesData, isLoading: providerLinesLoading, error: providerLinesError } = useQuery<{
-    providers: StaffProviderLine[];
-    voip24hExtensions: Record<string, string>;
-    voip24hSipPasswordsConfigured: Record<string, boolean>;
-  }>({
+  const { data: providerLinesData, isLoading: providerLinesLoading, error: providerLinesError } = useQuery<StaffProviderLinesResponse>({
     queryKey: ["/api/call-center/staff-provider-lines", staff?.id || "new", locationIdsKey],
     enabled: open && Boolean(locationIdsKey),
-    staleTime: 30_000,
-    queryFn: async () => {
-      const params = new URLSearchParams({ locationIds: locationIdsKey });
-      if (staff?.id) params.set("staffId", staff.id);
-      const response = await fetch(`/api/call-center/staff-provider-lines?${params}`, {
-        credentials: "include",
-        headers: getAuthHeaders(),
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.message || "Không thể tải cấu hình tổng đài theo cơ sở");
-      }
-      return response.json();
-    },
+    staleTime: 0,
+    refetchOnMount: "always",
+    queryFn: () => fetchStaffProviderLines(locationIdsKey, staff?.id),
   });
   const providerLines = providerLinesData?.providers || [];
   const voip24hExtensions = form.watch("voip24hExtensions");
@@ -475,16 +483,39 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
         ...(providerLinesData ? { voip24hSipPasswords: values.voip24hSipPasswords || {} } : {}),
       };
 
+      let savedStaffId = staff?.id as string | undefined;
+      let successDescription = "Cập nhật nhân sự thành công";
       if (staff) {
         await apiRequest("PUT", `/api/staff/${staff.id}`, payload);
-        toast({ title: "Thành công", description: "Cập nhật nhân sự thành công" });
       } else {
-        await apiRequest("POST", "/api/staff", payload);
-        toast({ title: "Thành công", description: "Thêm mới nhân sự thành công" });
+        const response = await apiRequest("POST", "/api/staff", payload);
+        const createdStaff = await response.json();
+        savedStaffId = createdStaff?.id;
+        successDescription = "Thêm mới nhân sự thành công";
       }
-      queryClient.invalidateQueries({ queryKey: ["/api/staff"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/my-space/schedule-registration/teachers"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/call-center/staff-provider-lines"] });
+
+      if (savedStaffId && providerLinesData) {
+        const savedLocationIdsKey = [...new Set(payload.locationIds)].sort().join(",");
+        const freshProviderLines = await fetchStaffProviderLines(savedLocationIdsKey, savedStaffId);
+        for (const line of freshProviderLines.providers.filter((provider) => provider.provider === "voip24h")) {
+          const expectedExtension = (payload.voip24hExtensions?.[line.locationId] || "").trim();
+          const actualExtension = (freshProviderLines.voip24hExtensions?.[line.locationId] || "").trim();
+          if (actualExtension !== expectedExtension) {
+            throw new Error(`Số máy lẻ tại ${line.locationName} chưa được lưu. Hãy nhập lại rồi bấm Cập nhật.`);
+          }
+        }
+        queryClient.setQueryData(
+          ["/api/call-center/staff-provider-lines", savedStaffId, savedLocationIdsKey],
+          freshProviderLines,
+        );
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/staff"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/my-space/schedule-registration/teachers"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/call-center/staff-provider-lines"] }),
+      ]);
+      toast({ title: "Thành công", description: successDescription });
       onOpenChange(false);
     } catch (error: any) {
       console.error("Submit staff error details:", error);
@@ -922,6 +953,11 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
                     const isVoip24h = line.provider === "voip24h";
                     const providerName = isVoip24h ? "VoIP24H" : "Omicall";
                     const datalistId = `voip24h-extension-options-${line.locationId}`;
+                    const hasSavedVoip24hPassword = Boolean(providerLinesData?.voip24hSipPasswordsConfigured?.[line.locationId]);
+                    const savedVoip24hExtension = providerLinesData?.voip24hExtensions?.[line.locationId] || "";
+                    const currentVoip24hExtension = voip24hExtensions?.[line.locationId] || "";
+                    const voip24hExtensionChanged = isVoip24h
+                      && savedVoip24hExtension.trim().toLowerCase() !== currentVoip24hExtension.trim().toLowerCase();
                     return (
                       <div key={`${line.locationId}-${line.provider}`} className="rounded-xl border border-indigo-100 bg-white/80 p-3">
                         <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -982,7 +1018,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
                           {isVoip24h ? (
                             <div>
                               <FormLabel className={FL}>
-                                Mật khẩu SIP {providerLinesData?.voip24hSipPasswordsConfigured?.[line.locationId] ? "(đã lưu)" : ""}
+                                Mật khẩu SIP {hasSavedVoip24hPassword ? "(đã lưu)" : ""}
                               </FormLabel>
                               <div className="relative">
                                 <Input
@@ -999,7 +1035,7 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
                                       [line.locationId]: event.target.value,
                                     }, { shouldDirty: true })
                                   }}
-                                  placeholder={providerLinesData?.voip24hSipPasswordsConfigured?.[line.locationId] ? "Để trống để giữ nguyên" : "Nhập mật khẩu máy nhánh"}
+                                  placeholder={hasSavedVoip24hPassword && !voip24hExtensionChanged ? "Để trống để giữ nguyên" : "Nhập mật khẩu máy nhánh"}
                                   className={cn(INP, "mt-1 pr-10")}
                                   autoComplete="new-password"
                                   data-testid={`input-voip24h-sip-password-${line.locationId}`}
@@ -1020,7 +1056,9 @@ export function StaffDialog({ open, onOpenChange, staff, allStaff = [] }: StaffD
                                 </button>
                               </div>
                               <p className="mt-1 text-[11px] text-muted-foreground">
-                                Mật khẩu được mã hóa; bấm biểu tượng mắt để tải và xem mật khẩu đã lưu.
+                                {voip24hExtensionChanged
+                                  ? "Đã đổi số máy lẻ; cần nhập mật khẩu SIP tương ứng với máy mới."
+                                  : "Mật khẩu được mã hóa; bấm biểu tượng mắt để tải và xem mật khẩu đã lưu."}
                               </p>
                             </div>
                           ) : (
