@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { CalendarDays, ChevronLeft, ChevronRight, List, Calendar, Eye, Loader2 } from "lucide-react";
 import { useLanguage } from "@/hooks/use-language";
+import { useSidebarVisibility } from "@/hooks/use-sidebar-visibility";
 import { CalendarStrip } from "@/components/my-space/calendar/CalendarStrip";
 import { CalendarMonthGrid } from "@/components/my-space/calendar/CalendarMonthGrid";
 import { SessionCard } from "@/components/my-space/calendar/SessionCard";
@@ -637,10 +638,16 @@ function StudentCalendarView({
 
 export function StudentCalendar() {
   const { t } = useLanguage();
+  const { isSubTabVisible } = useSidebarVisibility();
+  const scheduleRegistrationVisible = isSubTabVisible(
+    "/my-space/calendar",
+    "schedule-registration",
+    "MY SPACE",
+  );
   const routeSearch = useSearch();
   const routeParams = new URLSearchParams(routeSearch);
   const teacherId = routeParams.get("teacher");
-  const initialTab = routeParams.get("tab") === "schedule-registration"
+  const initialTab = routeParams.get("tab") === "schedule-registration" && scheduleRegistrationVisible
     ? "schedule-registration"
     : "personal-calendar";
   const [activePageTab, setActivePageTab] = useState(initialTab);
@@ -648,6 +655,11 @@ export function StudentCalendar() {
   const [todayRevision, setTodayRevision] = useState(0);
 
   useEffect(() => setActivePageTab(initialTab), [initialTab]);
+  useEffect(() => {
+    if (!scheduleRegistrationVisible && activePageTab === "schedule-registration") {
+      setActivePageTab("personal-calendar");
+    }
+  }, [activePageTab, scheduleRegistrationVisible]);
 
   if (teacherId) {
     return (
@@ -662,12 +674,14 @@ export function StudentCalendar() {
   return (
     <div className={cn(
       "mx-auto w-full",
-      activePageTab === "schedule-registration"
+      activePageTab === "schedule-registration" && scheduleRegistrationVisible
         ? "max-w-[1440px] px-1 py-2 sm:px-2"
         : "max-w-5xl space-y-4 px-3 py-4 sm:space-y-5 sm:px-4 sm:py-6"
     )}>
       <Tabs
-        value={activePageTab}
+        value={activePageTab === "schedule-registration" && scheduleRegistrationVisible
+          ? activePageTab
+          : "personal-calendar"}
         onValueChange={setActivePageTab}
         className="space-y-4"
       >
@@ -675,7 +689,10 @@ export function StudentCalendar() {
           className="flex flex-wrap items-center gap-2"
           data-page-guide-anchor
         >
-          <TabsList className="grid h-auto w-fit grid-cols-2 rounded-xl bg-muted p-1">
+          <TabsList className={cn(
+            "grid h-auto w-fit rounded-xl bg-muted p-1",
+            scheduleRegistrationVisible ? "grid-cols-2" : "grid-cols-1",
+          )}>
             <TabsTrigger
               value="personal-calendar"
               data-testid="tab-personal-calendar"
@@ -684,14 +701,16 @@ export function StudentCalendar() {
               <CalendarDays className="mr-2 h-4 w-4" />
               {t("mySpace.calendar.personalTab")}
             </TabsTrigger>
-            <TabsTrigger
-              value="schedule-registration"
-              data-testid="tab-schedule-registration"
-              className="min-h-10 rounded-lg px-4 data-[state=active]:!bg-primary data-[state=active]:!text-primary-foreground data-[state=active]:shadow-sm"
-            >
-              <Calendar className="mr-2 h-4 w-4" />
-              {t("mySpace.calendar.registrationTab")}
-            </TabsTrigger>
+            {scheduleRegistrationVisible && (
+              <TabsTrigger
+                value="schedule-registration"
+                data-testid="tab-schedule-registration"
+                className="min-h-10 rounded-lg px-4 data-[state=active]:!bg-primary data-[state=active]:!text-primary-foreground data-[state=active]:shadow-sm"
+              >
+                <Calendar className="mr-2 h-4 w-4" />
+                {t("mySpace.calendar.registrationTab")}
+              </TabsTrigger>
+            )}
           </TabsList>
         </div>
 
@@ -768,12 +787,14 @@ export function StudentCalendar() {
           )}
         </TabsContent>
 
-        <TabsContent
-          value="schedule-registration"
-          className="mt-0 data-[state=inactive]:hidden"
-        >
-          <StudentScheduleRegistration />
-        </TabsContent>
+        {scheduleRegistrationVisible && (
+          <TabsContent
+            value="schedule-registration"
+            className="mt-0 data-[state=inactive]:hidden"
+          >
+            <StudentScheduleRegistration />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

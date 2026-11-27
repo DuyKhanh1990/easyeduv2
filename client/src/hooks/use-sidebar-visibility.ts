@@ -26,13 +26,11 @@ export function buildDefaultVisibility(): Record<string, boolean> {
       defaults[`module:${entry.module}`] = true;
       for (const item of entry.items) {
         defaults[`item:${item.href}`] = item.defaultVisible ?? true;
-        if (item.subTabs) {
-          for (const sub of item.subTabs) {
-            defaults[`subtab:${item.href}:${sub.value}`] = sub.defaultVisible ?? true;
-            if (sub.subItems) {
-              for (const si of sub.subItems) {
-                defaults[`subitem:${item.href}:${sub.value}:${si.value}`] = true;
-              }
+        for (const sub of [...(item.subTabs ?? []), ...(item.visibilitySubTabs ?? [])]) {
+          defaults[`subtab:${item.href}:${sub.value}`] = sub.defaultVisible ?? true;
+          if (sub.subItems) {
+            for (const si of sub.subItems) {
+              defaults[`subitem:${item.href}:${sub.value}:${si.value}`] = true;
             }
           }
         }

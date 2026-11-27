@@ -162,3 +162,4 @@
 - [CMC S3 streaming uploads](cmc-s3-streaming.md) — CMC accepted server-side SigV4 streaming with UNSIGNED-PAYLOAD; browser presigned PUT returned AccessDenied in the tested configuration.
 - [Teacher availability semantics](teacher-availability-semantics.md) — registrations are optional; an active registration constrains scheduling, but no active record means free availability.
 - [Teacher booking packages and receipts](teacher-booking-deposit-receipt.md) — exact selected sessions consume package availability; new package receipts debit deposit once, with delayed booking kept separate.
+- [Schedule registration tab visibility](schedule-registration-tab-visibility.md) — the registration tab has a system-wide show/hide switch; hiding it affects presentation, not booking APIs or data.

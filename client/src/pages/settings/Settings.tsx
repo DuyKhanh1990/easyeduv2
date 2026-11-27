@@ -1351,7 +1351,11 @@ function ModulesManager() {
                   {mod.items.map(item => {
                     const itemVisible = isItemVisible(item.href, mod.module);
                     const disabledByParent = !modVisible;
-                    const hasSubTabs = item.subTabs && item.subTabs.length > 0;
+                    const visibilitySubTabs = [
+                      ...(item.subTabs ?? []),
+                      ...(item.visibilitySubTabs ?? []),
+                    ];
+                    const hasSubTabs = visibilitySubTabs.length > 0;
                     const itemExpanded = expandedItems.includes(item.href);
 
                     return (
@@ -1371,7 +1375,7 @@ function ModulesManager() {
                               >
                                 <item.icon className="w-4 h-4 text-muted-foreground shrink-0" />
                                 <span className="text-sm text-foreground">{item.permissionLabel ?? item.name}</span>
-                                <span className="text-xs text-muted-foreground ml-1">({item.subTabs!.length} tab)</span>
+                                <span className="text-xs text-muted-foreground ml-1">({visibilitySubTabs.length} tab)</span>
                                 {itemExpanded
                                   ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
                                   : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
@@ -1406,7 +1410,7 @@ function ModulesManager() {
                         {/* Sub-tabs list */}
                         {hasSubTabs && itemExpanded && (
                           <div className="divide-y border-t bg-muted/10">
-                            {item.subTabs!.map(sub => {
+                            {visibilitySubTabs.map(sub => {
                               const subVisible = isSubTabVisible(item.href, sub.value, mod.module);
                               const subDisabled = disabledByParent || !itemVisible;
                               const hasSubItems = sub.subItems && sub.subItems.length > 0;

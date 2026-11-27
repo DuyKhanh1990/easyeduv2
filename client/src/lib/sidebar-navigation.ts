@@ -54,6 +54,7 @@ export type NavItem = {
   permissionLabel?: string;
   defaultVisible?: boolean;
   subTabs?: SubTab[];
+  visibilitySubTabs?: SubTab[];
   permissionItems?: SubTabItem[];
 };
 
@@ -88,7 +89,14 @@ export const navigation: NavEntry[] = [
     color: "text-violet-600 dark:text-violet-400",
     icon: Users2,
     items: [
-      { name: "Lịch cá nhân", href: "/my-space/calendar", icon: CalendarDays },
+      {
+        name: "Lịch cá nhân",
+        href: "/my-space/calendar",
+        icon: CalendarDays,
+        visibilitySubTabs: [
+          { value: "schedule-registration", name: "Đăng ký lịch" },
+        ],
+      },
       { name: "Bài tập của tôi", href: "/my-space/assignments", icon: ClipboardList },
       { name: "Bảng điểm của tôi", href: "/my-space/score-sheet", icon: BarChart3 },
       { name: "Hoá đơn của tôi", href: "/my-space/invoices", icon: FileText },
